@@ -24,8 +24,8 @@ router.get("/search", async (req, res): Promise<void> => {
   ]);
 
   const results = [
-    ...wps.map((w) => ({ type: "workPlan" as const, id: w.id, label: `${w.code} — ${w.client}`, sublabel: w.title, route: `/work-plans/${w.id}` })),
-    ...emps.map((e) => ({ type: "employee" as const, id: e.id, label: e.name, sublabel: e.classification, route: `/employees/${e.id}` })),
+    ...wps.map((w) => ({ type: "workPlan" as const, id: w.id, label: `${w.code} — ${w.client}`, sublabel: w.title, route: `/work-plans` })),
+    ...emps.map((e) => ({ type: "employee" as const, id: e.id, label: e.name, sublabel: e.classification, route: `/employees` })),
     ...invs.map((i) => ({ type: "invoice" as const, id: i.id, label: `Invoice ${i.invoiceNumber}`, sublabel: `${i.periodStart} → ${i.periodEnd}`, route: `/invoices/${i.id}` })),
   ];
 

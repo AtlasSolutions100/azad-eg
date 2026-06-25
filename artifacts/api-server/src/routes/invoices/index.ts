@@ -7,6 +7,7 @@ import {
   lineItemsTable,
   employeesTable,
   progressReportsTable,
+  signaturesTable,
   type WorkPlan,
   type LineItemRow,
 } from "@workspace/db";
@@ -33,7 +34,7 @@ import { buildInvoice, toApiLineItem } from "../../lib/mappers";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
 import { parseTimeFile } from "../../lib/timeimport";
-import { buildInvoiceWorkbook, convertToPdf } from "../../lib/excel";
+import { buildInvoiceWorkbook, convertToPdf, resolveSignaturePath } from "../../lib/excel";
 import path from "node:path";
 
 const router: IRouter = Router();
@@ -103,7 +104,22 @@ router.post("/invoices", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Work plan not found" });
     return;
   }
-  const [row] = await db.insert(invoicesTable).values(parsed.data).returning();
+  // Carry-over: when no "previously billed" was supplied, derive it from the
+  // most recent already-billed (approved/exported) invoice on the same work
+  // plan — its total-to-date is the new invoice's previously-billed amount.
+  let previouslyBilled = parsed.data.previouslyBilled ?? 0;
+  if (parsed.data.previouslyBilled == null) {
+    const priors = await db.select().from(invoicesTable).where(eq(invoicesTable.workPlanId, wp.id));
+    const billed = priors
+      .filter((p) => p.status === "approved" || p.status === "exported")
+      .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd) || b.createdAt.getTime() - a.createdAt.getTime());
+    if (billed.length > 0) {
+      const latest = billed[0];
+      const li = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, latest.id));
+      previouslyBilled = buildInvoice(latest, wp, li).api.totalToDate;
+    }
+  }
+  const [row] = await db.insert(invoicesTable).values({ ...parsed.data, previouslyBilled }).returning();
   await recordAudit({ action: "created", entityType: "invoice", entityId: row.id, description: `Invoice ${row.invoiceNumber}` });
   res.status(201).json(CreateInvoiceResponse.parse(buildInvoice(row, wp, []).api));
 });
@@ -320,6 +336,12 @@ router.post("/invoices/:id/generate", async (req, res): Promise<void> => {
   const built = buildInvoice(ctx.invoice, ctx.workPlan, ctx.lineItems);
   const [pr] = await db.select().from(progressReportsTable).where(eq(progressReportsTable.invoiceId, id));
 
+  let signatureImagePath: string | null = null;
+  if (ctx.invoice.signatureId) {
+    const [sig] = await db.select().from(signaturesTable).where(eq(signaturesTable.id, ctx.invoice.signatureId));
+    if (sig) signatureImagePath = resolveSignaturePath(sig.imageUrl);
+  }
+
   const xlsxPath = await buildInvoiceWorkbook({
     invoiceNumber: ctx.invoice.invoiceNumber,
     invoiceDate: ctx.invoice.invoiceDate,
@@ -327,11 +349,31 @@ router.post("/invoices/:id/generate", async (req, res): Promise<void> => {
     periodEnd: ctx.invoice.periodEnd,
     poNumber: ctx.workPlan.poNumber,
     totalBudget: ctx.workPlan.totalBudget,
-    previouslyBilled: built.financials.previouslyBilled,
-    totalThisPeriod: built.financials.totalThisPeriod,
+    fringeRate: ctx.workPlan.fringeRate ?? 0,
+    fixedFeeRate: ctx.workPlan.fixedFeeRate ?? 0,
+    lineItems: ctx.lineItems.map((li) => ({
+      classification: li.classification,
+      employeeName: li.employeeName,
+      hours: li.hours,
+      rate: li.rate,
+      location: li.location,
+    })),
+    financials: {
+      laborTotal: built.financials.laborTotal,
+      fringeTotal: built.financials.fringeTotal,
+      fixedFee: built.financials.fixedFee,
+      fccm: built.financials.fccm,
+      otdtPremium: built.financials.otdtPremium,
+      otherDirectCosts: built.financials.otherDirectCosts,
+      totalThisPeriod: built.financials.totalThisPeriod,
+      previouslyBilled: built.financials.previouslyBilled,
+      totalToDate: built.financials.totalToDate,
+      remainingBalance: built.financials.remainingBalance,
+    },
     progress: pr
       ? { summary: pr.summary, workCompleted: pr.workCompleted, issues: pr.issues, percentComplete: pr.percentComplete }
       : null,
+    signatureImagePath,
   });
 
   let outPath = xlsxPath;

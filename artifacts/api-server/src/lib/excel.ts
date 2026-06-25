@@ -2,9 +2,9 @@ import ExcelJS from "exceljs";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { templatesDir, generatedDir, ensureDirs } from "./paths";
+import { templatesDir, generatedDir, uploadsDir, ensureDirs } from "./paths";
 import { logger } from "./logger";
 
 const execFileAsync = promisify(execFile);
@@ -13,6 +13,33 @@ const TEMPLATE_PATH = path.resolve(templatesDir, "bart-invoice-template.xlsm");
 const MASTER_SHEET = "Master File ";
 const INVOICE_SHEET = "Invoice";
 const PROGRESS_SHEET = "Progress Report";
+const LABOR_SHEET = "Sub Labor";
+
+// Row ranges in the LABOR ATTACHMENT ("Sub Labor") sheet. Home entries occupy
+// rows 7-17 (subtotal row 18) and Field entries rows 20-25 (subtotal row 26).
+const HOME_ROWS = { start: 7, end: 17 };
+const FIELD_ROWS = { start: 20, end: 25 };
+
+export interface ExportLineItem {
+  classification: string;
+  employeeName: string;
+  hours: number;
+  rate: number;
+  location: string; // "home" | "field"
+}
+
+export interface ExportFinancials {
+  laborTotal: number;
+  fringeTotal: number;
+  fixedFee: number;
+  fccm: number;
+  otdtPremium: number;
+  otherDirectCosts: number;
+  totalThisPeriod: number;
+  previouslyBilled: number;
+  totalToDate: number;
+  remainingBalance: number;
+}
 
 export interface InvoiceExportData {
   invoiceNumber: string;
@@ -21,20 +48,28 @@ export interface InvoiceExportData {
   periodEnd: string; // YYYY-MM-DD
   poNumber?: string | null;
   totalBudget: number;
-  previouslyBilled: number;
-  totalThisPeriod: number;
+  fringeRate: number; // percent, e.g. 120.58
+  fixedFeeRate: number; // percent, e.g. 8
+  lineItems: ExportLineItem[];
+  financials: ExportFinancials;
   progress?: {
     summary?: string | null;
     workCompleted?: string | null;
     issues?: string | null;
     percentComplete?: number | null;
   } | null;
+  /** Absolute path to a signature image to place on the Invoice sheet. */
+  signatureImagePath?: string | null;
 }
 
 function toDate(value: string): Date {
   // Treat YYYY-MM-DD as a calendar day in local time (noon avoids TZ rollover).
   const [y, m, d] = value.split("-").map((n) => parseInt(n, 10));
   return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+}
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
 function setValuePreserveStyle(ws: ExcelJS.Worksheet, address: string, value: ExcelJS.CellValue): void {
@@ -45,11 +80,71 @@ function setValuePreserveStyle(ws: ExcelJS.Worksheet, address: string, value: Ex
 }
 
 /**
- * Loads the master BART template, injects the values we control into the
- * canonical input cells, and writes a populated .xlsx. All formulas, number
- * formats, merged cells, column widths, and embedded images from the template
- * are preserved; only the explicit input cells below are overwritten. The
- * workbook is flagged for full recalculation so downstream formula cells
+ * Clears the value of a cell while keeping its style intact. Used to wipe the
+ * template's hardcoded sample labor rows before writing real data so stale
+ * figures cannot leak into (or double-count within) the generated attachment.
+ */
+function clearCell(ws: ExcelJS.Worksheet, address: string): void {
+  const cell = ws.getCell(address);
+  const style = cell.style;
+  cell.value = null;
+  cell.style = style;
+}
+
+/**
+ * Writes the invoice's labor line items into the LABOR ATTACHMENT sheet,
+ * grouped Home vs Field. We first clear the template's hardcoded sample rows,
+ * then write classification / name / hours / rate plus the computed amount and
+ * fully-burdened "Billed $" (labor * (1 + fringe) * (1 + fixed fee)) — mirroring
+ * the template's own per-row burden math. The SUBTOTAL/SUM rows in the template
+ * recompute from these values automatically.
+ */
+function writeLaborAttachment(ws: ExcelJS.Worksheet, data: InvoiceExportData): void {
+  const burdenFactor = (1 + data.fringeRate / 100) * (1 + data.fixedFeeRate / 100);
+
+  // Wipe both sample blocks first.
+  for (const block of [HOME_ROWS, FIELD_ROWS]) {
+    for (let r = block.start; r <= block.end; r++) {
+      for (const col of ["B", "C", "D", "E", "F", "H"]) {
+        clearCell(ws, `${col}${r}`);
+      }
+    }
+  }
+
+  const home = data.lineItems.filter((li) => li.location !== "field");
+  const field = data.lineItems.filter((li) => li.location === "field");
+
+  const writeRows = (items: ExportLineItem[], block: { start: number; end: number }): number => {
+    const capacity = block.end - block.start + 1;
+    const overflow = Math.max(0, items.length - capacity);
+    items.slice(0, capacity).forEach((li, idx) => {
+      const r = block.start + idx;
+      const amount = round2(li.hours * li.rate);
+      setValuePreserveStyle(ws, `B${r}`, li.classification);
+      setValuePreserveStyle(ws, `C${r}`, li.employeeName);
+      setValuePreserveStyle(ws, `D${r}`, li.hours);
+      setValuePreserveStyle(ws, `E${r}`, li.rate);
+      setValuePreserveStyle(ws, `F${r}`, amount);
+      setValuePreserveStyle(ws, `H${r}`, round2(amount * burdenFactor));
+    });
+    return overflow;
+  };
+
+  const overflow = writeRows(home, HOME_ROWS) + writeRows(field, FIELD_ROWS);
+  if (overflow > 0) {
+    logger.warn({ overflow }, "Labor attachment has more line items than template rows; extra rows omitted");
+  }
+}
+
+/**
+ * Loads the master BART template, injects the values we control, and writes a
+ * populated .xlsx. All formulas, number formats, merged cells, column widths,
+ * and embedded images from the template are preserved; only the explicit input
+ * cells below are overwritten. The headline billing figures are injected as the
+ * authoritative computed values (the deep cross-sheet formula chain in the
+ * template assumes a single hardcoded employee, so we drive the summary
+ * directly while still populating the labor attachment for supporting detail).
+ * The workbook is flagged for full recalculation so dependent formula cells
  * recompute when opened (in Excel or during LibreOffice PDF conversion).
  */
 export async function buildInvoiceWorkbook(data: InvoiceExportData): Promise<string> {
@@ -72,7 +167,22 @@ export async function buildInvoiceWorkbook(data: InvoiceExportData): Promise<str
   const invoice = wb.getWorksheet(INVOICE_SHEET);
   if (invoice) {
     if (data.poNumber) setValuePreserveStyle(invoice, "L8", data.poNumber);
-    setValuePreserveStyle(invoice, "J34", data.totalBudget);
+    // Billing summary (override the cross-sheet formula refs with authoritative values).
+    setValuePreserveStyle(invoice, "L27", data.financials.totalThisPeriod); // Amount due / line item
+    setValuePreserveStyle(invoice, "J34", data.totalBudget); // Total Work Plan Budget
+    // J35 is "=L30" in the template (a stale single-employee chain). Override with the
+    // authoritative this-period total so J37 (=J35+J36) and J38 (=J34-J37) recompute correctly.
+    setValuePreserveStyle(invoice, "J35", data.financials.totalThisPeriod); // This Period Billed
+    setValuePreserveStyle(invoice, "J36", data.financials.previouslyBilled); // Previously Billed
+    // J37/J38 are template formulas (=J35+J36, =J34-J37) but exceljs only stores stale cached
+    // results and headless soffice may not recalc, so write the authoritative backend values.
+    setValuePreserveStyle(invoice, "J37", data.financials.totalToDate); // Total Billed To Date
+    setValuePreserveStyle(invoice, "J38", data.financials.remainingBalance); // Remaining Balance
+  }
+
+  const labor = wb.getWorksheet(LABOR_SHEET);
+  if (labor) {
+    writeLaborAttachment(labor, data);
   }
 
   const progress = wb.getWorksheet(PROGRESS_SHEET);
@@ -85,6 +195,21 @@ export async function buildInvoiceWorkbook(data: InvoiceExportData): Promise<str
     }
   }
 
+  // Place the approver signature on the Invoice sheet, just above the signer line.
+  if (data.signatureImagePath && invoice && fs.existsSync(data.signatureImagePath)) {
+    try {
+      const ext = path.extname(data.signatureImagePath).replace(".", "").toLowerCase();
+      const extension = ext === "jpg" || ext === "jpeg" ? "jpeg" : ext === "gif" ? "gif" : "png";
+      const imageId = wb.addImage({ buffer: fs.readFileSync(data.signatureImagePath) as unknown as ExcelJS.Buffer, extension });
+      invoice.addImage(imageId, {
+        tl: { col: 1, row: 43 }, // ~B44, above "Mahsa Azad, President" (row 46)
+        ext: { width: 180, height: 55 },
+      });
+    } catch (err) {
+      logger.warn({ err }, "Failed to embed signature image into invoice");
+    }
+  }
+
   wb.calcProperties.fullCalcOnLoad = true;
 
   const safeNumber = data.invoiceNumber.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -94,16 +219,34 @@ export async function buildInvoiceWorkbook(data: InvoiceExportData): Promise<str
   return outPath;
 }
 
+/**
+ * Resolves the signature image's absolute path from its stored imageUrl
+ * (e.g. "/api/files/signature_123.png" -> uploadsDir/signature_123.png).
+ * Returns null when the file cannot be located.
+ */
+export function resolveSignaturePath(imageUrl: string | null | undefined): string | null {
+  if (!imageUrl) return null;
+  const filename = decodeURIComponent(path.basename(imageUrl));
+  const abs = path.resolve(uploadsDir, filename);
+  return fs.existsSync(abs) ? abs : null;
+}
+
 let sofficeBin: string | null = null;
 
 function resolveSoffice(): string {
   if (sofficeBin) return sofficeBin;
   const candidates = ["soffice", "libreoffice"];
   for (const c of candidates) {
-    sofficeBin = c;
-    return c;
+    try {
+      execFileSync("which", [c], { stdio: "ignore" });
+      sofficeBin = c;
+      return c;
+    } catch {
+      // not found on PATH, try next candidate
+    }
   }
-  return "soffice";
+  sofficeBin = "soffice";
+  return sofficeBin;
 }
 
 /**
