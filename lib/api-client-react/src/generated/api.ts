@@ -38,11 +38,26 @@ import type {
   InvoiceInput,
   InvoicePreview,
   InvoiceUpdate,
+  LaborOverride,
+  LaborOverrideInput,
   LineItem,
   LineItemInput,
   LineItemUpdate,
   ListInvoicesParams,
+  ListPackagesParams,
   NotFoundResponse,
+  PackageDetail,
+  PackageEmployeeGroup,
+  PackageInput,
+  PackageProgressReport,
+  PackageProgressReportInput,
+  PackageRollup,
+  PackageSummary,
+  PackageUpdate,
+  PackageValidationResult,
+  PackageWeek,
+  PackageWeekInput,
+  PackageWeekUpdate,
   ProcastStatus,
   ProgressReport,
   ProgressReportInput,
@@ -53,6 +68,9 @@ import type {
   Signature,
   SignatureUpload,
   TimeImportUpload,
+  TimesheetEntry,
+  TimesheetEntryInput,
+  TimesheetEntryUpdate,
   ValidationResult,
   WorkPlan,
   WorkPlanInput,
@@ -3117,6 +3135,1409 @@ export function useGetProcastStatus<TData = Awaited<ReturnType<typeof getProcast
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProcastStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListPackagesUrl = (params?: ListPackagesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/packages?${stringifiedParams}` : `/api/packages`
+}
+
+/**
+ * @summary List packages
+ */
+export const listPackages = async (params?: ListPackagesParams, options?: RequestInit): Promise<PackageSummary[]> => {
+
+  return customFetch<PackageSummary[]>(getListPackagesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPackagesQueryKey = (params?: ListPackagesParams,) => {
+    return [
+    `/api/packages`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListPackagesQueryOptions = <TData = Awaited<ReturnType<typeof listPackages>>, TError = ErrorType<unknown>>(params?: ListPackagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPackagesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPackages>>> = ({ signal }) => listPackages(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPackages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPackagesQueryResult = NonNullable<Awaited<ReturnType<typeof listPackages>>>
+export type ListPackagesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List packages
+ */
+
+export function useListPackages<TData = Awaited<ReturnType<typeof listPackages>>, TError = ErrorType<unknown>>(
+ params?: ListPackagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPackagesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreatePackageUrl = () => {
+
+
+
+
+  return `/api/packages`
+}
+
+/**
+ * @summary Create a package
+ */
+export const createPackage = async (packageInput: PackageInput, options?: RequestInit): Promise<PackageSummary> => {
+
+  return customFetch<PackageSummary>(getCreatePackageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packageInput)
+  }
+);}
+
+
+
+
+export const getCreatePackageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPackage>>, TError,{data: BodyType<PackageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPackage>>, TError,{data: BodyType<PackageInput>}, TContext> => {
+
+const mutationKey = ['createPackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPackage>>, {data: BodyType<PackageInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPackage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePackageMutationResult = NonNullable<Awaited<ReturnType<typeof createPackage>>>
+    export type CreatePackageMutationBody = BodyType<PackageInput>
+    export type CreatePackageMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a package
+ */
+export const useCreatePackage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPackage>>, TError,{data: BodyType<PackageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPackage>>,
+        TError,
+        {data: BodyType<PackageInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePackageMutationOptions(options));
+    }
+
+export const getListPackagesGroupedUrl = () => {
+
+
+
+
+  return `/api/packages/grouped`
+}
+
+/**
+ * @summary Packages grouped Employee -> Job Number -> Pay Period
+ */
+export const listPackagesGrouped = async ( options?: RequestInit): Promise<PackageEmployeeGroup[]> => {
+
+  return customFetch<PackageEmployeeGroup[]>(getListPackagesGroupedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPackagesGroupedQueryKey = () => {
+    return [
+    `/api/packages/grouped`
+    ] as const;
+    }
+
+
+export const getListPackagesGroupedQueryOptions = <TData = Awaited<ReturnType<typeof listPackagesGrouped>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPackagesGrouped>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPackagesGroupedQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPackagesGrouped>>> = ({ signal }) => listPackagesGrouped({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPackagesGrouped>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPackagesGroupedQueryResult = NonNullable<Awaited<ReturnType<typeof listPackagesGrouped>>>
+export type ListPackagesGroupedQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Packages grouped Employee -> Job Number -> Pay Period
+ */
+
+export function useListPackagesGrouped<TData = Awaited<ReturnType<typeof listPackagesGrouped>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPackagesGrouped>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPackagesGroupedQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPackageUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}`
+}
+
+/**
+ * @summary Get a package with weeks, entries, progress and rollup
+ */
+export const getPackage = async (id: number, options?: RequestInit): Promise<PackageDetail> => {
+
+  return customFetch<PackageDetail>(getGetPackageUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPackageQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}`
+    ] as const;
+    }
+
+
+export const getGetPackageQueryOptions = <TData = Awaited<ReturnType<typeof getPackage>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPackageQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPackage>>> = ({ signal }) => getPackage(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPackage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPackageQueryResult = NonNullable<Awaited<ReturnType<typeof getPackage>>>
+export type GetPackageQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Get a package with weeks, entries, progress and rollup
+ */
+
+export function useGetPackage<TData = Awaited<ReturnType<typeof getPackage>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPackageQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePackageUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}`
+}
+
+/**
+ * @summary Update a package
+ */
+export const updatePackage = async (id: number,
+    packageUpdate: PackageUpdate, options?: RequestInit): Promise<PackageSummary> => {
+
+  return customFetch<PackageSummary>(getUpdatePackageUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packageUpdate)
+  }
+);}
+
+
+
+
+export const getUpdatePackageMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePackage>>, TError,{id: number;data: BodyType<PackageUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePackage>>, TError,{id: number;data: BodyType<PackageUpdate>}, TContext> => {
+
+const mutationKey = ['updatePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePackage>>, {id: number;data: BodyType<PackageUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updatePackage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePackageMutationResult = NonNullable<Awaited<ReturnType<typeof updatePackage>>>
+    export type UpdatePackageMutationBody = BodyType<PackageUpdate>
+    export type UpdatePackageMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Update a package
+ */
+export const useUpdatePackage = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePackage>>, TError,{id: number;data: BodyType<PackageUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePackage>>,
+        TError,
+        {id: number;data: BodyType<PackageUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdatePackageMutationOptions(options));
+    }
+
+export const getDeletePackageUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}`
+}
+
+/**
+ * @summary Delete a package
+ */
+export const deletePackage = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePackageUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeletePackageMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePackage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePackage>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deletePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePackage>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deletePackage(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePackageMutationResult = NonNullable<Awaited<ReturnType<typeof deletePackage>>>
+
+    export type DeletePackageMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Delete a package
+ */
+export const useDeletePackage = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePackage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePackage>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeletePackageMutationOptions(options));
+    }
+
+export const getCreatePackageWeekUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/weeks`
+}
+
+/**
+ * @summary Add a week to a package
+ */
+export const createPackageWeek = async (id: number,
+    packageWeekInput: PackageWeekInput, options?: RequestInit): Promise<PackageWeek> => {
+
+  return customFetch<PackageWeek>(getCreatePackageWeekUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packageWeekInput)
+  }
+);}
+
+
+
+
+export const getCreatePackageWeekMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPackageWeek>>, TError,{id: number;data: BodyType<PackageWeekInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPackageWeek>>, TError,{id: number;data: BodyType<PackageWeekInput>}, TContext> => {
+
+const mutationKey = ['createPackageWeek'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPackageWeek>>, {id: number;data: BodyType<PackageWeekInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createPackageWeek(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePackageWeekMutationResult = NonNullable<Awaited<ReturnType<typeof createPackageWeek>>>
+    export type CreatePackageWeekMutationBody = BodyType<PackageWeekInput>
+    export type CreatePackageWeekMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a week to a package
+ */
+export const useCreatePackageWeek = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPackageWeek>>, TError,{id: number;data: BodyType<PackageWeekInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPackageWeek>>,
+        TError,
+        {id: number;data: BodyType<PackageWeekInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePackageWeekMutationOptions(options));
+    }
+
+export const getUpdatePackageWeekUrl = (id: number,
+    weekId: number,) => {
+
+
+
+
+  return `/api/packages/${id}/weeks/${weekId}`
+}
+
+/**
+ * @summary Update a package week
+ */
+export const updatePackageWeek = async (id: number,
+    weekId: number,
+    packageWeekUpdate: PackageWeekUpdate, options?: RequestInit): Promise<PackageWeek> => {
+
+  return customFetch<PackageWeek>(getUpdatePackageWeekUrl(id,weekId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packageWeekUpdate)
+  }
+);}
+
+
+
+
+export const getUpdatePackageWeekMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePackageWeek>>, TError,{id: number;weekId: number;data: BodyType<PackageWeekUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePackageWeek>>, TError,{id: number;weekId: number;data: BodyType<PackageWeekUpdate>}, TContext> => {
+
+const mutationKey = ['updatePackageWeek'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePackageWeek>>, {id: number;weekId: number;data: BodyType<PackageWeekUpdate>}> = (props) => {
+          const {id,weekId,data} = props ?? {};
+
+          return  updatePackageWeek(id,weekId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePackageWeekMutationResult = NonNullable<Awaited<ReturnType<typeof updatePackageWeek>>>
+    export type UpdatePackageWeekMutationBody = BodyType<PackageWeekUpdate>
+    export type UpdatePackageWeekMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Update a package week
+ */
+export const useUpdatePackageWeek = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePackageWeek>>, TError,{id: number;weekId: number;data: BodyType<PackageWeekUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePackageWeek>>,
+        TError,
+        {id: number;weekId: number;data: BodyType<PackageWeekUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdatePackageWeekMutationOptions(options));
+    }
+
+export const getDeletePackageWeekUrl = (id: number,
+    weekId: number,) => {
+
+
+
+
+  return `/api/packages/${id}/weeks/${weekId}`
+}
+
+/**
+ * @summary Delete a package week and its entries
+ */
+export const deletePackageWeek = async (id: number,
+    weekId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePackageWeekUrl(id,weekId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeletePackageWeekMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePackageWeek>>, TError,{id: number;weekId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePackageWeek>>, TError,{id: number;weekId: number}, TContext> => {
+
+const mutationKey = ['deletePackageWeek'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePackageWeek>>, {id: number;weekId: number}> = (props) => {
+          const {id,weekId} = props ?? {};
+
+          return  deletePackageWeek(id,weekId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePackageWeekMutationResult = NonNullable<Awaited<ReturnType<typeof deletePackageWeek>>>
+
+    export type DeletePackageWeekMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Delete a package week and its entries
+ */
+export const useDeletePackageWeek = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePackageWeek>>, TError,{id: number;weekId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePackageWeek>>,
+        TError,
+        {id: number;weekId: number},
+        TContext
+      > => {
+      return useMutation(getDeletePackageWeekMutationOptions(options));
+    }
+
+export const getCreateTimesheetEntryUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/entries`
+}
+
+/**
+ * @summary Add a timesheet entry
+ */
+export const createTimesheetEntry = async (id: number,
+    timesheetEntryInput: TimesheetEntryInput, options?: RequestInit): Promise<TimesheetEntry> => {
+
+  return customFetch<TimesheetEntry>(getCreateTimesheetEntryUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(timesheetEntryInput)
+  }
+);}
+
+
+
+
+export const getCreateTimesheetEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimesheetEntry>>, TError,{id: number;data: BodyType<TimesheetEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTimesheetEntry>>, TError,{id: number;data: BodyType<TimesheetEntryInput>}, TContext> => {
+
+const mutationKey = ['createTimesheetEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTimesheetEntry>>, {id: number;data: BodyType<TimesheetEntryInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createTimesheetEntry(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTimesheetEntryMutationResult = NonNullable<Awaited<ReturnType<typeof createTimesheetEntry>>>
+    export type CreateTimesheetEntryMutationBody = BodyType<TimesheetEntryInput>
+    export type CreateTimesheetEntryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a timesheet entry
+ */
+export const useCreateTimesheetEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTimesheetEntry>>, TError,{id: number;data: BodyType<TimesheetEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTimesheetEntry>>,
+        TError,
+        {id: number;data: BodyType<TimesheetEntryInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTimesheetEntryMutationOptions(options));
+    }
+
+export const getUpdateTimesheetEntryUrl = (id: number,
+    entryId: number,) => {
+
+
+
+
+  return `/api/packages/${id}/entries/${entryId}`
+}
+
+/**
+ * @summary Update a timesheet entry
+ */
+export const updateTimesheetEntry = async (id: number,
+    entryId: number,
+    timesheetEntryUpdate: TimesheetEntryUpdate, options?: RequestInit): Promise<TimesheetEntry> => {
+
+  return customFetch<TimesheetEntry>(getUpdateTimesheetEntryUrl(id,entryId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(timesheetEntryUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateTimesheetEntryMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimesheetEntry>>, TError,{id: number;entryId: number;data: BodyType<TimesheetEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTimesheetEntry>>, TError,{id: number;entryId: number;data: BodyType<TimesheetEntryUpdate>}, TContext> => {
+
+const mutationKey = ['updateTimesheetEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTimesheetEntry>>, {id: number;entryId: number;data: BodyType<TimesheetEntryUpdate>}> = (props) => {
+          const {id,entryId,data} = props ?? {};
+
+          return  updateTimesheetEntry(id,entryId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTimesheetEntryMutationResult = NonNullable<Awaited<ReturnType<typeof updateTimesheetEntry>>>
+    export type UpdateTimesheetEntryMutationBody = BodyType<TimesheetEntryUpdate>
+    export type UpdateTimesheetEntryMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Update a timesheet entry
+ */
+export const useUpdateTimesheetEntry = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTimesheetEntry>>, TError,{id: number;entryId: number;data: BodyType<TimesheetEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTimesheetEntry>>,
+        TError,
+        {id: number;entryId: number;data: BodyType<TimesheetEntryUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateTimesheetEntryMutationOptions(options));
+    }
+
+export const getDeleteTimesheetEntryUrl = (id: number,
+    entryId: number,) => {
+
+
+
+
+  return `/api/packages/${id}/entries/${entryId}`
+}
+
+/**
+ * @summary Delete a timesheet entry
+ */
+export const deleteTimesheetEntry = async (id: number,
+    entryId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteTimesheetEntryUrl(id,entryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTimesheetEntryMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimesheetEntry>>, TError,{id: number;entryId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTimesheetEntry>>, TError,{id: number;entryId: number}, TContext> => {
+
+const mutationKey = ['deleteTimesheetEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTimesheetEntry>>, {id: number;entryId: number}> = (props) => {
+          const {id,entryId} = props ?? {};
+
+          return  deleteTimesheetEntry(id,entryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTimesheetEntryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTimesheetEntry>>>
+
+    export type DeleteTimesheetEntryMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Delete a timesheet entry
+ */
+export const useDeleteTimesheetEntry = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTimesheetEntry>>, TError,{id: number;entryId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTimesheetEntry>>,
+        TError,
+        {id: number;entryId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTimesheetEntryMutationOptions(options));
+    }
+
+export const getGetPackageProgressReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/progress-report`
+}
+
+/**
+ * @summary Get a package progress report
+ */
+export const getPackageProgressReport = async (id: number, options?: RequestInit): Promise<PackageProgressReport> => {
+
+  return customFetch<PackageProgressReport>(getGetPackageProgressReportUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPackageProgressReportQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}/progress-report`
+    ] as const;
+    }
+
+
+export const getGetPackageProgressReportQueryOptions = <TData = Awaited<ReturnType<typeof getPackageProgressReport>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageProgressReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPackageProgressReportQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPackageProgressReport>>> = ({ signal }) => getPackageProgressReport(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPackageProgressReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPackageProgressReportQueryResult = NonNullable<Awaited<ReturnType<typeof getPackageProgressReport>>>
+export type GetPackageProgressReportQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Get a package progress report
+ */
+
+export function useGetPackageProgressReport<TData = Awaited<ReturnType<typeof getPackageProgressReport>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageProgressReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPackageProgressReportQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSavePackageProgressReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/progress-report`
+}
+
+/**
+ * @summary Create or update a package progress report
+ */
+export const savePackageProgressReport = async (id: number,
+    packageProgressReportInput: PackageProgressReportInput, options?: RequestInit): Promise<PackageProgressReport> => {
+
+  return customFetch<PackageProgressReport>(getSavePackageProgressReportUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packageProgressReportInput)
+  }
+);}
+
+
+
+
+export const getSavePackageProgressReportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePackageProgressReport>>, TError,{id: number;data: BodyType<PackageProgressReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof savePackageProgressReport>>, TError,{id: number;data: BodyType<PackageProgressReportInput>}, TContext> => {
+
+const mutationKey = ['savePackageProgressReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof savePackageProgressReport>>, {id: number;data: BodyType<PackageProgressReportInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  savePackageProgressReport(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SavePackageProgressReportMutationResult = NonNullable<Awaited<ReturnType<typeof savePackageProgressReport>>>
+    export type SavePackageProgressReportMutationBody = BodyType<PackageProgressReportInput>
+    export type SavePackageProgressReportMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or update a package progress report
+ */
+export const useSavePackageProgressReport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePackageProgressReport>>, TError,{id: number;data: BodyType<PackageProgressReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof savePackageProgressReport>>,
+        TError,
+        {id: number;data: BodyType<PackageProgressReportInput>},
+        TContext
+      > => {
+      return useMutation(getSavePackageProgressReportMutationOptions(options));
+    }
+
+export const getListLaborOverridesUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/overrides`
+}
+
+/**
+ * @summary List labor attachment overrides
+ */
+export const listLaborOverrides = async (id: number, options?: RequestInit): Promise<LaborOverride[]> => {
+
+  return customFetch<LaborOverride[]>(getListLaborOverridesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLaborOverridesQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}/overrides`
+    ] as const;
+    }
+
+
+export const getListLaborOverridesQueryOptions = <TData = Awaited<ReturnType<typeof listLaborOverrides>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLaborOverrides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLaborOverridesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLaborOverrides>>> = ({ signal }) => listLaborOverrides(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLaborOverrides>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLaborOverridesQueryResult = NonNullable<Awaited<ReturnType<typeof listLaborOverrides>>>
+export type ListLaborOverridesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List labor attachment overrides
+ */
+
+export function useListLaborOverrides<TData = Awaited<ReturnType<typeof listLaborOverrides>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLaborOverrides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLaborOverridesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveLaborOverrideUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/overrides`
+}
+
+/**
+ * @summary Create or update a labor attachment override
+ */
+export const saveLaborOverride = async (id: number,
+    laborOverrideInput: LaborOverrideInput, options?: RequestInit): Promise<LaborOverride> => {
+
+  return customFetch<LaborOverride>(getSaveLaborOverrideUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(laborOverrideInput)
+  }
+);}
+
+
+
+
+export const getSaveLaborOverrideMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveLaborOverride>>, TError,{id: number;data: BodyType<LaborOverrideInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveLaborOverride>>, TError,{id: number;data: BodyType<LaborOverrideInput>}, TContext> => {
+
+const mutationKey = ['saveLaborOverride'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveLaborOverride>>, {id: number;data: BodyType<LaborOverrideInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveLaborOverride(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveLaborOverrideMutationResult = NonNullable<Awaited<ReturnType<typeof saveLaborOverride>>>
+    export type SaveLaborOverrideMutationBody = BodyType<LaborOverrideInput>
+    export type SaveLaborOverrideMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or update a labor attachment override
+ */
+export const useSaveLaborOverride = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveLaborOverride>>, TError,{id: number;data: BodyType<LaborOverrideInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveLaborOverride>>,
+        TError,
+        {id: number;data: BodyType<LaborOverrideInput>},
+        TContext
+      > => {
+      return useMutation(getSaveLaborOverrideMutationOptions(options));
+    }
+
+export const getDeleteLaborOverrideUrl = (id: number,
+    cellKey: string,) => {
+
+
+
+
+  return `/api/packages/${id}/overrides/${cellKey}`
+}
+
+/**
+ * @summary Delete a labor attachment override
+ */
+export const deleteLaborOverride = async (id: number,
+    cellKey: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteLaborOverrideUrl(id,cellKey),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteLaborOverrideMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLaborOverride>>, TError,{id: number;cellKey: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteLaborOverride>>, TError,{id: number;cellKey: string}, TContext> => {
+
+const mutationKey = ['deleteLaborOverride'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLaborOverride>>, {id: number;cellKey: string}> = (props) => {
+          const {id,cellKey} = props ?? {};
+
+          return  deleteLaborOverride(id,cellKey,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteLaborOverrideMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLaborOverride>>>
+
+    export type DeleteLaborOverrideMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Delete a labor attachment override
+ */
+export const useDeleteLaborOverride = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLaborOverride>>, TError,{id: number;cellKey: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteLaborOverride>>,
+        TError,
+        {id: number;cellKey: string},
+        TContext
+      > => {
+      return useMutation(getDeleteLaborOverrideMutationOptions(options));
+    }
+
+export const getGetPackageValidationsUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/validations`
+}
+
+/**
+ * @summary Validate a package and flag anomalies
+ */
+export const getPackageValidations = async (id: number, options?: RequestInit): Promise<PackageValidationResult> => {
+
+  return customFetch<PackageValidationResult>(getGetPackageValidationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPackageValidationsQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}/validations`
+    ] as const;
+    }
+
+
+export const getGetPackageValidationsQueryOptions = <TData = Awaited<ReturnType<typeof getPackageValidations>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageValidations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPackageValidationsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPackageValidations>>> = ({ signal }) => getPackageValidations(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPackageValidations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPackageValidationsQueryResult = NonNullable<Awaited<ReturnType<typeof getPackageValidations>>>
+export type GetPackageValidationsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Validate a package and flag anomalies
+ */
+
+export function useGetPackageValidations<TData = Awaited<ReturnType<typeof getPackageValidations>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageValidations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPackageValidationsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPackageRollupUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/rollup`
+}
+
+/**
+ * @summary Labor rollup and computed financials for a package
+ */
+export const getPackageRollup = async (id: number, options?: RequestInit): Promise<PackageRollup> => {
+
+  return customFetch<PackageRollup>(getGetPackageRollupUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPackageRollupQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}/rollup`
+    ] as const;
+    }
+
+
+export const getGetPackageRollupQueryOptions = <TData = Awaited<ReturnType<typeof getPackageRollup>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageRollup>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPackageRollupQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPackageRollup>>> = ({ signal }) => getPackageRollup(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPackageRollup>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPackageRollupQueryResult = NonNullable<Awaited<ReturnType<typeof getPackageRollup>>>
+export type GetPackageRollupQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Labor rollup and computed financials for a package
+ */
+
+export function useGetPackageRollup<TData = Awaited<ReturnType<typeof getPackageRollup>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageRollup>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPackageRollupQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

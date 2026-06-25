@@ -13,4 +13,5 @@ export const SearchResultType = {
   workPlan: 'workPlan',
   employee: 'employee',
   invoice: 'invoice',
+  package: 'package',
 } as const;

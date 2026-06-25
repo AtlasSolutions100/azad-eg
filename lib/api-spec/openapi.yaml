@@ -20,6 +20,8 @@ tags:
     description: Classification rate reference data
   - name: invoices
     description: Invoice lifecycle and generation
+  - name: packages
+    description: Employee pay-period invoice packages
   - name: lineItems
     description: Invoice labor line items
   - name: progressReports
@@ -685,6 +687,350 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcastStatus"
 
+  /packages:
+    get:
+      operationId: listPackages
+      tags: [packages]
+      summary: List packages
+      parameters:
+        - name: employeeId
+          in: query
+          schema: { type: integer }
+        - name: workPlanId
+          in: query
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PackageSummary"
+    post:
+      operationId: createPackage
+      tags: [packages]
+      summary: Create a package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageSummary"
+  /packages/grouped:
+    get:
+      operationId: listPackagesGrouped
+      tags: [packages]
+      summary: Packages grouped Employee -> Job Number -> Pay Period
+      responses:
+        "200":
+          description: Grouped packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PackageEmployeeGroup"
+  /packages/{id}:
+    get:
+      operationId: getPackage
+      tags: [packages]
+      summary: Get a package with weeks, entries, progress and rollup
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Package detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updatePackage
+      tags: [packages]
+      summary: Update a package
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deletePackage
+      tags: [packages]
+      summary: Delete a package
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/weeks:
+    post:
+      operationId: createPackageWeek
+      tags: [packages]
+      summary: Add a week to a package
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageWeekInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageWeek"
+  /packages/{id}/weeks/{weekId}:
+    patch:
+      operationId: updatePackageWeek
+      tags: [packages]
+      summary: Update a package week
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: weekId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageWeekUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageWeek"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deletePackageWeek
+      tags: [packages]
+      summary: Delete a package week and its entries
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: weekId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/entries:
+    post:
+      operationId: createTimesheetEntry
+      tags: [packages]
+      summary: Add a timesheet entry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimesheetEntryInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimesheetEntry"
+  /packages/{id}/entries/{entryId}:
+    patch:
+      operationId: updateTimesheetEntry
+      tags: [packages]
+      summary: Update a timesheet entry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: entryId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimesheetEntryUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimesheetEntry"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTimesheetEntry
+      tags: [packages]
+      summary: Delete a timesheet entry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: entryId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/progress-report:
+    get:
+      operationId: getPackageProgressReport
+      tags: [packages]
+      summary: Get a package progress report
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Progress report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageProgressReport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: savePackageProgressReport
+      tags: [packages]
+      summary: Create or update a package progress report
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageProgressReportInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageProgressReport"
+  /packages/{id}/overrides:
+    get:
+      operationId: listLaborOverrides
+      tags: [packages]
+      summary: List labor attachment overrides
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Overrides
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LaborOverride"
+    put:
+      operationId: saveLaborOverride
+      tags: [packages]
+      summary: Create or update a labor attachment override
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LaborOverrideInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaborOverride"
+  /packages/{id}/overrides/{cellKey}:
+    delete:
+      operationId: deleteLaborOverride
+      tags: [packages]
+      summary: Delete a labor attachment override
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: cellKey
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/validations:
+    get:
+      operationId: getPackageValidations
+      tags: [packages]
+      summary: Validate a package and flag anomalies
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageValidationResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/rollup:
+    get:
+      operationId: getPackageRollup
+      tags: [packages]
+      summary: Labor rollup and computed financials for a package
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Rollup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageRollup"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   parameters:
     IdParam:
@@ -1252,8 +1598,401 @@ components:
       properties:
         type:
           type: string
-          enum: [workPlan, employee, invoice]
+          enum: [workPlan, employee, invoice, package]
         id: { type: integer }
         label: { type: string }
         sublabel: { type: ["string", "null"] }
         route: { type: string }
+
+    PackageSummary:
+      type: object
+      required:
+        - id
+        - employeeId
+        - employeeName
+        - workPlanId
+        - workPlanCode
+        - jobNumber
+        - client
+        - payPeriodStart
+        - payPeriodEnd
+        - previouslyBilled
+        - otherDirectCosts
+        - status
+        - invoiceDocStatus
+        - subCalcDocStatus
+        - progressReportDocStatus
+        - laborAttachmentDocStatus
+        - timesheetsDocStatus
+        - weekCount
+        - totalHours
+        - totalThisPeriod
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        employeeName: { type: string }
+        workPlanId: { type: integer }
+        workPlanCode: { type: string }
+        jobNumber: { type: string }
+        client: { type: string }
+        payPeriodStart: { type: string }
+        payPeriodEnd: { type: string }
+        invoiceNumber: { type: ["string", "null"] }
+        invoiceDate: { type: ["string", "null"] }
+        previouslyBilled: { type: number }
+        otherDirectCosts: { type: number }
+        signatureId: { type: ["integer", "null"] }
+        preparedBy: { type: ["string", "null"] }
+        approvedBy: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [draft, in_review, approved, exported]
+        invoiceDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        subCalcDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        progressReportDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        laborAttachmentDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        timesheetsDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        weekCount: { type: integer }
+        totalHours: { type: number }
+        totalThisPeriod: { type: number }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    DocStatus:
+      type: string
+      enum: [not_started, in_progress, ready]
+    PackageInput:
+      type: object
+      required: [employeeId, workPlanId, payPeriodStart, payPeriodEnd]
+      properties:
+        employeeId: { type: integer }
+        workPlanId: { type: integer }
+        payPeriodStart: { type: string }
+        payPeriodEnd: { type: string }
+        invoiceNumber: { type: string }
+        invoiceDate: { type: string }
+        previouslyBilled: { type: number }
+        otherDirectCosts: { type: number }
+        preparedBy: { type: string }
+    PackageUpdate:
+      type: object
+      properties:
+        payPeriodStart: { type: string }
+        payPeriodEnd: { type: string }
+        invoiceNumber: { type: string }
+        invoiceDate: { type: string }
+        previouslyBilled: { type: number }
+        otherDirectCosts: { type: number }
+        signatureId: { type: integer }
+        preparedBy: { type: string }
+        approvedBy: { type: string }
+        status:
+          type: string
+          enum: [draft, in_review, approved, exported]
+        invoiceDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        subCalcDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        progressReportDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        laborAttachmentDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+        timesheetsDocStatus:
+          $ref: "#/components/schemas/DocStatus"
+
+    PackageWeek:
+      type: object
+      required: [id, packageId, label, weekStart, weekEnd, sortOrder, createdAt]
+      properties:
+        id: { type: integer }
+        packageId: { type: integer }
+        label: { type: string }
+        weekStart: { type: string }
+        weekEnd: { type: string }
+        sortOrder: { type: integer }
+        createdAt: { type: string }
+    PackageWeekInput:
+      type: object
+      required: [label, weekStart, weekEnd]
+      properties:
+        label: { type: string, minLength: 1 }
+        weekStart: { type: string }
+        weekEnd: { type: string }
+        sortOrder: { type: integer }
+    PackageWeekUpdate:
+      type: object
+      properties:
+        label: { type: string, minLength: 1 }
+        weekStart: { type: string }
+        weekEnd: { type: string }
+        sortOrder: { type: integer }
+
+    TimesheetEntry:
+      type: object
+      required:
+        - id
+        - packageId
+        - weekId
+        - employeeName
+        - classification
+        - category
+        - location
+        - hoursMon
+        - hoursTue
+        - hoursWed
+        - hoursThu
+        - hoursFri
+        - hoursSat
+        - hoursSun
+        - totalHours
+        - rate
+        - amount
+      properties:
+        id: { type: integer }
+        packageId: { type: integer }
+        weekId: { type: integer }
+        employeeId: { type: ["integer", "null"] }
+        employeeName: { type: string }
+        classification: { type: string }
+        category:
+          $ref: "#/components/schemas/TimesheetCategory"
+        location:
+          type: string
+          enum: [home, field]
+        hoursMon: { type: number }
+        hoursTue: { type: number }
+        hoursWed: { type: number }
+        hoursThu: { type: number }
+        hoursFri: { type: number }
+        hoursSat: { type: number }
+        hoursSun: { type: number }
+        totalHours: { type: number }
+        rate: { type: number }
+        amount: { type: number }
+        taskNo: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+    TimesheetCategory:
+      type: string
+      enum: [regular, ot, dt, night, holiday, pto]
+    TimesheetEntryInput:
+      type: object
+      required: [weekId, employeeName, classification, category, location]
+      properties:
+        weekId: { type: integer }
+        employeeId: { type: integer }
+        employeeName: { type: string, minLength: 1 }
+        classification: { type: string, minLength: 1 }
+        category:
+          $ref: "#/components/schemas/TimesheetCategory"
+        location:
+          type: string
+          enum: [home, field]
+        hoursMon: { type: number }
+        hoursTue: { type: number }
+        hoursWed: { type: number }
+        hoursThu: { type: number }
+        hoursFri: { type: number }
+        hoursSat: { type: number }
+        hoursSun: { type: number }
+        rate: { type: number }
+        taskNo: { type: string }
+        notes: { type: string }
+    TimesheetEntryUpdate:
+      type: object
+      properties:
+        weekId: { type: integer }
+        employeeId: { type: integer }
+        employeeName: { type: string, minLength: 1 }
+        classification: { type: string, minLength: 1 }
+        category:
+          $ref: "#/components/schemas/TimesheetCategory"
+        location:
+          type: string
+          enum: [home, field]
+        hoursMon: { type: number }
+        hoursTue: { type: number }
+        hoursWed: { type: number }
+        hoursThu: { type: number }
+        hoursFri: { type: number }
+        hoursSat: { type: number }
+        hoursSun: { type: number }
+        rate: { type: number }
+        taskNo: { type: string }
+        notes: { type: string }
+
+    PackageProgressReport:
+      type: object
+      required: [id, packageId, percentComplete, summary]
+      properties:
+        id: { type: integer }
+        packageId: { type: integer }
+        percentComplete: { type: number }
+        summary: { type: string }
+        workPerformed: { type: ["string", "null"] }
+        concerns: { type: ["string", "null"] }
+        correctiveAction: { type: ["string", "null"] }
+        scheduleComment: { type: ["string", "null"] }
+        costForecast: { type: ["string", "null"] }
+        preparedBy: { type: ["string", "null"] }
+        reportDate: { type: ["string", "null"] }
+        uploadedFileUrl: { type: ["string", "null"] }
+        uploadedFileName: { type: ["string", "null"] }
+    PackageProgressReportInput:
+      type: object
+      properties:
+        percentComplete: { type: number }
+        summary: { type: string }
+        workPerformed: { type: string }
+        concerns: { type: string }
+        correctiveAction: { type: string }
+        scheduleComment: { type: string }
+        costForecast: { type: string }
+        preparedBy: { type: string }
+        reportDate: { type: string }
+        uploadedFileUrl: { type: string }
+        uploadedFileName: { type: string }
+
+    LaborOverride:
+      type: object
+      required: [id, packageId, cellKey, value, editedAt]
+      properties:
+        id: { type: integer }
+        packageId: { type: integer }
+        cellKey: { type: string }
+        value: { type: string }
+        editedBy: { type: ["string", "null"] }
+        editedAt: { type: string }
+    LaborOverrideInput:
+      type: object
+      required: [cellKey, value]
+      properties:
+        cellKey: { type: string, minLength: 1 }
+        value: { type: string }
+        editedBy: { type: string }
+
+    PackageLaborLine:
+      type: object
+      required: [employeeName, classification, category, location, hours, rate, amount]
+      properties:
+        employeeName: { type: string }
+        classification: { type: string }
+        category: { type: string }
+        location: { type: string }
+        hours: { type: number }
+        rate: { type: number }
+        amount: { type: number }
+    PackageRollup:
+      type: object
+      required:
+        - laborLines
+        - financials
+        - totalHours
+        - laborTotal
+        - fringeTotal
+        - overheadTotal
+        - fixedFee
+        - fccm
+        - otdtPremium
+        - otherDirectCosts
+        - totalThisPeriod
+        - previouslyBilled
+        - totalToDate
+        - remainingBalance
+        - percentExpended
+      properties:
+        laborLines:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageLaborLine"
+        financials:
+          type: array
+          items:
+            $ref: "#/components/schemas/FinancialLine"
+        totalHours: { type: number }
+        laborTotal: { type: number }
+        fringeTotal: { type: number }
+        overheadTotal: { type: number }
+        fixedFee: { type: number }
+        fccm: { type: number }
+        otdtPremium: { type: number }
+        otherDirectCosts: { type: number }
+        totalThisPeriod: { type: number }
+        previouslyBilled: { type: number }
+        totalToDate: { type: number }
+        remainingBalance: { type: number }
+        percentExpended: { type: number }
+
+    PackageDetail:
+      type: object
+      required: [package, weeks, entries, overrides, rollup]
+      properties:
+        package:
+          $ref: "#/components/schemas/PackageSummary"
+        weeks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageWeek"
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimesheetEntry"
+        progressReport:
+          oneOf:
+            - $ref: "#/components/schemas/PackageProgressReport"
+            - type: "null"
+        overrides:
+          type: array
+          items:
+            $ref: "#/components/schemas/LaborOverride"
+        rollup:
+          $ref: "#/components/schemas/PackageRollup"
+
+    PackagePayPeriod:
+      type: object
+      required: [payPeriodStart, payPeriodEnd, packages]
+      properties:
+        payPeriodStart: { type: string }
+        payPeriodEnd: { type: string }
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageSummary"
+    PackageJobGroup:
+      type: object
+      required: [workPlanId, workPlanCode, jobNumber, client, packages]
+      properties:
+        workPlanId: { type: integer }
+        workPlanCode: { type: string }
+        jobNumber: { type: string }
+        client: { type: string }
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageSummary"
+    PackageEmployeeGroup:
+      type: object
+      required: [employeeId, employeeName, jobs]
+      properties:
+        employeeId: { type: integer }
+        employeeName: { type: string }
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageJobGroup"
+
+    PackageValidationResult:
+      type: object
+      required: [packageId, isValid, flags]
+      properties:
+        packageId: { type: integer }
+        isValid: { type: boolean }
+        flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationFlag"

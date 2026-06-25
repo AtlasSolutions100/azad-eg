@@ -619,6 +619,7 @@ export const SearchResultType = {
   workPlan: 'workPlan',
   employee: 'employee',
   invoice: 'invoice',
+  package: 'package',
 } as const;
 
 export interface SearchResult {
@@ -628,6 +629,349 @@ export interface SearchResult {
   /** @nullable */
   sublabel?: string | null;
   route: string;
+}
+
+export type PackageSummaryStatus = typeof PackageSummaryStatus[keyof typeof PackageSummaryStatus];
+
+
+export const PackageSummaryStatus = {
+  draft: 'draft',
+  in_review: 'in_review',
+  approved: 'approved',
+  exported: 'exported',
+} as const;
+
+export type DocStatus = typeof DocStatus[keyof typeof DocStatus];
+
+
+export const DocStatus = {
+  not_started: 'not_started',
+  in_progress: 'in_progress',
+  ready: 'ready',
+} as const;
+
+export interface PackageSummary {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  workPlanId: number;
+  workPlanCode: string;
+  jobNumber: string;
+  client: string;
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  /** @nullable */
+  invoiceNumber?: string | null;
+  /** @nullable */
+  invoiceDate?: string | null;
+  previouslyBilled: number;
+  otherDirectCosts: number;
+  /** @nullable */
+  signatureId?: number | null;
+  /** @nullable */
+  preparedBy?: string | null;
+  /** @nullable */
+  approvedBy?: string | null;
+  status: PackageSummaryStatus;
+  invoiceDocStatus: DocStatus;
+  subCalcDocStatus: DocStatus;
+  progressReportDocStatus: DocStatus;
+  laborAttachmentDocStatus: DocStatus;
+  timesheetsDocStatus: DocStatus;
+  weekCount: number;
+  totalHours: number;
+  totalThisPeriod: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PackageInput {
+  employeeId: number;
+  workPlanId: number;
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  previouslyBilled?: number;
+  otherDirectCosts?: number;
+  preparedBy?: string;
+}
+
+export type PackageUpdateStatus = typeof PackageUpdateStatus[keyof typeof PackageUpdateStatus];
+
+
+export const PackageUpdateStatus = {
+  draft: 'draft',
+  in_review: 'in_review',
+  approved: 'approved',
+  exported: 'exported',
+} as const;
+
+export interface PackageUpdate {
+  payPeriodStart?: string;
+  payPeriodEnd?: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  previouslyBilled?: number;
+  otherDirectCosts?: number;
+  signatureId?: number;
+  preparedBy?: string;
+  approvedBy?: string;
+  status?: PackageUpdateStatus;
+  invoiceDocStatus?: DocStatus;
+  subCalcDocStatus?: DocStatus;
+  progressReportDocStatus?: DocStatus;
+  laborAttachmentDocStatus?: DocStatus;
+  timesheetsDocStatus?: DocStatus;
+}
+
+export interface PackageWeek {
+  id: number;
+  packageId: number;
+  label: string;
+  weekStart: string;
+  weekEnd: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface PackageWeekInput {
+  /** @minLength 1 */
+  label: string;
+  weekStart: string;
+  weekEnd: string;
+  sortOrder?: number;
+}
+
+export interface PackageWeekUpdate {
+  /** @minLength 1 */
+  label?: string;
+  weekStart?: string;
+  weekEnd?: string;
+  sortOrder?: number;
+}
+
+export type TimesheetEntryLocation = typeof TimesheetEntryLocation[keyof typeof TimesheetEntryLocation];
+
+
+export const TimesheetEntryLocation = {
+  home: 'home',
+  field: 'field',
+} as const;
+
+export type TimesheetCategory = typeof TimesheetCategory[keyof typeof TimesheetCategory];
+
+
+export const TimesheetCategory = {
+  regular: 'regular',
+  ot: 'ot',
+  dt: 'dt',
+  night: 'night',
+  holiday: 'holiday',
+  pto: 'pto',
+} as const;
+
+export interface TimesheetEntry {
+  id: number;
+  packageId: number;
+  weekId: number;
+  /** @nullable */
+  employeeId?: number | null;
+  employeeName: string;
+  classification: string;
+  category: TimesheetCategory;
+  location: TimesheetEntryLocation;
+  hoursMon: number;
+  hoursTue: number;
+  hoursWed: number;
+  hoursThu: number;
+  hoursFri: number;
+  hoursSat: number;
+  hoursSun: number;
+  totalHours: number;
+  rate: number;
+  amount: number;
+  /** @nullable */
+  taskNo?: string | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type TimesheetEntryInputLocation = typeof TimesheetEntryInputLocation[keyof typeof TimesheetEntryInputLocation];
+
+
+export const TimesheetEntryInputLocation = {
+  home: 'home',
+  field: 'field',
+} as const;
+
+export interface TimesheetEntryInput {
+  weekId: number;
+  employeeId?: number;
+  /** @minLength 1 */
+  employeeName: string;
+  /** @minLength 1 */
+  classification: string;
+  category: TimesheetCategory;
+  location: TimesheetEntryInputLocation;
+  hoursMon?: number;
+  hoursTue?: number;
+  hoursWed?: number;
+  hoursThu?: number;
+  hoursFri?: number;
+  hoursSat?: number;
+  hoursSun?: number;
+  rate?: number;
+  taskNo?: string;
+  notes?: string;
+}
+
+export type TimesheetEntryUpdateLocation = typeof TimesheetEntryUpdateLocation[keyof typeof TimesheetEntryUpdateLocation];
+
+
+export const TimesheetEntryUpdateLocation = {
+  home: 'home',
+  field: 'field',
+} as const;
+
+export interface TimesheetEntryUpdate {
+  weekId?: number;
+  employeeId?: number;
+  /** @minLength 1 */
+  employeeName?: string;
+  /** @minLength 1 */
+  classification?: string;
+  category?: TimesheetCategory;
+  location?: TimesheetEntryUpdateLocation;
+  hoursMon?: number;
+  hoursTue?: number;
+  hoursWed?: number;
+  hoursThu?: number;
+  hoursFri?: number;
+  hoursSat?: number;
+  hoursSun?: number;
+  rate?: number;
+  taskNo?: string;
+  notes?: string;
+}
+
+export interface PackageProgressReport {
+  id: number;
+  packageId: number;
+  percentComplete: number;
+  summary: string;
+  /** @nullable */
+  workPerformed?: string | null;
+  /** @nullable */
+  concerns?: string | null;
+  /** @nullable */
+  correctiveAction?: string | null;
+  /** @nullable */
+  scheduleComment?: string | null;
+  /** @nullable */
+  costForecast?: string | null;
+  /** @nullable */
+  preparedBy?: string | null;
+  /** @nullable */
+  reportDate?: string | null;
+  /** @nullable */
+  uploadedFileUrl?: string | null;
+  /** @nullable */
+  uploadedFileName?: string | null;
+}
+
+export interface PackageProgressReportInput {
+  percentComplete?: number;
+  summary?: string;
+  workPerformed?: string;
+  concerns?: string;
+  correctiveAction?: string;
+  scheduleComment?: string;
+  costForecast?: string;
+  preparedBy?: string;
+  reportDate?: string;
+  uploadedFileUrl?: string;
+  uploadedFileName?: string;
+}
+
+export interface LaborOverride {
+  id: number;
+  packageId: number;
+  cellKey: string;
+  value: string;
+  /** @nullable */
+  editedBy?: string | null;
+  editedAt: string;
+}
+
+export interface LaborOverrideInput {
+  /** @minLength 1 */
+  cellKey: string;
+  value: string;
+  editedBy?: string;
+}
+
+export interface PackageLaborLine {
+  employeeName: string;
+  classification: string;
+  category: string;
+  location: string;
+  hours: number;
+  rate: number;
+  amount: number;
+}
+
+export interface PackageRollup {
+  laborLines: PackageLaborLine[];
+  financials: FinancialLine[];
+  totalHours: number;
+  laborTotal: number;
+  fringeTotal: number;
+  overheadTotal: number;
+  fixedFee: number;
+  fccm: number;
+  otdtPremium: number;
+  otherDirectCosts: number;
+  totalThisPeriod: number;
+  previouslyBilled: number;
+  totalToDate: number;
+  remainingBalance: number;
+  percentExpended: number;
+}
+
+export interface PackageDetail {
+  package: PackageSummary;
+  weeks: PackageWeek[];
+  entries: TimesheetEntry[];
+  progressReport?: PackageProgressReport | null;
+  overrides: LaborOverride[];
+  rollup: PackageRollup;
+}
+
+export interface PackagePayPeriod {
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  packages: PackageSummary[];
+}
+
+export interface PackageJobGroup {
+  workPlanId: number;
+  workPlanCode: string;
+  jobNumber: string;
+  client: string;
+  packages: PackageSummary[];
+}
+
+export interface PackageEmployeeGroup {
+  employeeId: number;
+  employeeName: string;
+  jobs: PackageJobGroup[];
+}
+
+export interface PackageValidationResult {
+  packageId: number;
+  isValid: boolean;
+  flags: ValidationFlag[];
 }
 
 /**
@@ -642,5 +986,11 @@ q: string;
 export type ListInvoicesParams = {
 status?: string;
 workPlanId?: number;
+};
+
+export type ListPackagesParams = {
+employeeId?: number;
+workPlanId?: number;
+status?: string;
 };
 

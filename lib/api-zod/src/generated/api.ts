@@ -58,7 +58,7 @@ export const SearchQueryParams = zod.object({
 })
 
 export const SearchResponseItem = zod.object({
-  "type": zod.enum(['workPlan', 'employee', 'invoice']),
+  "type": zod.enum(['workPlan', 'employee', 'invoice', 'package']),
   "id": zod.number(),
   "label": zod.string(),
   "sublabel": zod.string().nullish(),
@@ -1060,6 +1060,690 @@ export const GetProcastStatusResponse = zod.object({
   "mode": zod.enum(['live', 'upload']),
   "lastSyncAt": zod.string().nullish(),
   "message": zod.string()
+})
+
+
+/**
+ * @summary List packages
+ */
+export const ListPackagesQueryParams = zod.object({
+  "employeeId": zod.coerce.number().optional(),
+  "workPlanId": zod.coerce.number().optional(),
+  "status": zod.coerce.string().optional()
+})
+
+export const ListPackagesResponseItem = zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "employeeName": zod.string(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "jobNumber": zod.string(),
+  "client": zod.string(),
+  "payPeriodStart": zod.string(),
+  "payPeriodEnd": zod.string(),
+  "invoiceNumber": zod.string().nullish(),
+  "invoiceDate": zod.string().nullish(),
+  "previouslyBilled": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "signatureId": zod.number().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "laborAttachmentDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "weekCount": zod.number(),
+  "totalHours": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListPackagesResponse = zod.array(ListPackagesResponseItem)
+
+
+/**
+ * @summary Create a package
+ */
+export const CreatePackageBody = zod.object({
+  "employeeId": zod.number(),
+  "workPlanId": zod.number(),
+  "payPeriodStart": zod.string(),
+  "payPeriodEnd": zod.string(),
+  "invoiceNumber": zod.string().optional(),
+  "invoiceDate": zod.string().optional(),
+  "previouslyBilled": zod.number().optional(),
+  "otherDirectCosts": zod.number().optional(),
+  "preparedBy": zod.string().optional()
+})
+
+export const CreatePackageResponse = zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "employeeName": zod.string(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "jobNumber": zod.string(),
+  "client": zod.string(),
+  "payPeriodStart": zod.string(),
+  "payPeriodEnd": zod.string(),
+  "invoiceNumber": zod.string().nullish(),
+  "invoiceDate": zod.string().nullish(),
+  "previouslyBilled": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "signatureId": zod.number().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "laborAttachmentDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "weekCount": zod.number(),
+  "totalHours": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Packages grouped Employee -> Job Number -> Pay Period
+ */
+export const ListPackagesGroupedResponseItem = zod.object({
+  "employeeId": zod.number(),
+  "employeeName": zod.string(),
+  "jobs": zod.array(zod.object({
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "jobNumber": zod.string(),
+  "client": zod.string(),
+  "packages": zod.array(zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "employeeName": zod.string(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "jobNumber": zod.string(),
+  "client": zod.string(),
+  "payPeriodStart": zod.string(),
+  "payPeriodEnd": zod.string(),
+  "invoiceNumber": zod.string().nullish(),
+  "invoiceDate": zod.string().nullish(),
+  "previouslyBilled": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "signatureId": zod.number().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "laborAttachmentDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "weekCount": zod.number(),
+  "totalHours": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+}))
+})
+export const ListPackagesGroupedResponse = zod.array(ListPackagesGroupedResponseItem)
+
+
+/**
+ * @summary Get a package with weeks, entries, progress and rollup
+ */
+export const GetPackageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetPackageResponse = zod.object({
+  "package": zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "employeeName": zod.string(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "jobNumber": zod.string(),
+  "client": zod.string(),
+  "payPeriodStart": zod.string(),
+  "payPeriodEnd": zod.string(),
+  "invoiceNumber": zod.string().nullish(),
+  "invoiceDate": zod.string().nullish(),
+  "previouslyBilled": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "signatureId": zod.number().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "laborAttachmentDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "weekCount": zod.number(),
+  "totalHours": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}),
+  "weeks": zod.array(zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "label": zod.string(),
+  "weekStart": zod.string(),
+  "weekEnd": zod.string(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.string()
+})),
+  "entries": zod.array(zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "weekId": zod.number(),
+  "employeeId": zod.number().nullish(),
+  "employeeName": zod.string(),
+  "classification": zod.string(),
+  "category": zod.enum(['regular', 'ot', 'dt', 'night', 'holiday', 'pto']),
+  "location": zod.enum(['home', 'field']),
+  "hoursMon": zod.number(),
+  "hoursTue": zod.number(),
+  "hoursWed": zod.number(),
+  "hoursThu": zod.number(),
+  "hoursFri": zod.number(),
+  "hoursSat": zod.number(),
+  "hoursSun": zod.number(),
+  "totalHours": zod.number(),
+  "rate": zod.number(),
+  "amount": zod.number(),
+  "taskNo": zod.string().nullish(),
+  "notes": zod.string().nullish()
+})),
+  "progressReport": zod.union([zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "percentComplete": zod.number(),
+  "summary": zod.string(),
+  "workPerformed": zod.string().nullish(),
+  "concerns": zod.string().nullish(),
+  "correctiveAction": zod.string().nullish(),
+  "scheduleComment": zod.string().nullish(),
+  "costForecast": zod.string().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "reportDate": zod.string().nullish(),
+  "uploadedFileUrl": zod.string().nullish(),
+  "uploadedFileName": zod.string().nullish()
+}),zod.null()]).optional(),
+  "overrides": zod.array(zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "cellKey": zod.string(),
+  "value": zod.string(),
+  "editedBy": zod.string().nullish(),
+  "editedAt": zod.string()
+})),
+  "rollup": zod.object({
+  "laborLines": zod.array(zod.object({
+  "employeeName": zod.string(),
+  "classification": zod.string(),
+  "category": zod.string(),
+  "location": zod.string(),
+  "hours": zod.number(),
+  "rate": zod.number(),
+  "amount": zod.number()
+})),
+  "financials": zod.array(zod.object({
+  "label": zod.string(),
+  "amount": zod.number(),
+  "note": zod.string().nullish(),
+  "emphasis": zod.boolean().nullish()
+})),
+  "totalHours": zod.number(),
+  "laborTotal": zod.number(),
+  "fringeTotal": zod.number(),
+  "overheadTotal": zod.number(),
+  "fixedFee": zod.number(),
+  "fccm": zod.number(),
+  "otdtPremium": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "previouslyBilled": zod.number(),
+  "totalToDate": zod.number(),
+  "remainingBalance": zod.number(),
+  "percentExpended": zod.number()
+})
+})
+
+
+/**
+ * @summary Update a package
+ */
+export const UpdatePackageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdatePackageBody = zod.object({
+  "payPeriodStart": zod.string().optional(),
+  "payPeriodEnd": zod.string().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "invoiceDate": zod.string().optional(),
+  "previouslyBilled": zod.number().optional(),
+  "otherDirectCosts": zod.number().optional(),
+  "signatureId": zod.number().optional(),
+  "preparedBy": zod.string().optional(),
+  "approvedBy": zod.string().optional(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']).optional(),
+  "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),
+  "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),
+  "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),
+  "laborAttachmentDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),
+  "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional()
+})
+
+export const UpdatePackageResponse = zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "employeeName": zod.string(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "jobNumber": zod.string(),
+  "client": zod.string(),
+  "payPeriodStart": zod.string(),
+  "payPeriodEnd": zod.string(),
+  "invoiceNumber": zod.string().nullish(),
+  "invoiceDate": zod.string().nullish(),
+  "previouslyBilled": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "signatureId": zod.number().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "laborAttachmentDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
+  "weekCount": zod.number(),
+  "totalHours": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a package
+ */
+export const DeletePackageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeletePackageResponse = zod.void()
+
+
+/**
+ * @summary Add a week to a package
+ */
+export const CreatePackageWeekParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+export const CreatePackageWeekBody = zod.object({
+  "label": zod.string().min(1),
+  "weekStart": zod.string(),
+  "weekEnd": zod.string(),
+  "sortOrder": zod.number().optional()
+})
+
+export const CreatePackageWeekResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "label": zod.string(),
+  "weekStart": zod.string(),
+  "weekEnd": zod.string(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Update a package week
+ */
+export const UpdatePackageWeekParams = zod.object({
+  "id": zod.coerce.number(),
+  "weekId": zod.coerce.number()
+})
+
+
+
+
+export const UpdatePackageWeekBody = zod.object({
+  "label": zod.string().min(1).optional(),
+  "weekStart": zod.string().optional(),
+  "weekEnd": zod.string().optional(),
+  "sortOrder": zod.number().optional()
+})
+
+export const UpdatePackageWeekResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "label": zod.string(),
+  "weekStart": zod.string(),
+  "weekEnd": zod.string(),
+  "sortOrder": zod.number(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a package week and its entries
+ */
+export const DeletePackageWeekParams = zod.object({
+  "id": zod.coerce.number(),
+  "weekId": zod.coerce.number()
+})
+
+export const DeletePackageWeekResponse = zod.void()
+
+
+/**
+ * @summary Add a timesheet entry
+ */
+export const CreateTimesheetEntryParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+
+export const CreateTimesheetEntryBody = zod.object({
+  "weekId": zod.number(),
+  "employeeId": zod.number().optional(),
+  "employeeName": zod.string().min(1),
+  "classification": zod.string().min(1),
+  "category": zod.enum(['regular', 'ot', 'dt', 'night', 'holiday', 'pto']),
+  "location": zod.enum(['home', 'field']),
+  "hoursMon": zod.number().optional(),
+  "hoursTue": zod.number().optional(),
+  "hoursWed": zod.number().optional(),
+  "hoursThu": zod.number().optional(),
+  "hoursFri": zod.number().optional(),
+  "hoursSat": zod.number().optional(),
+  "hoursSun": zod.number().optional(),
+  "rate": zod.number().optional(),
+  "taskNo": zod.string().optional(),
+  "notes": zod.string().optional()
+})
+
+export const CreateTimesheetEntryResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "weekId": zod.number(),
+  "employeeId": zod.number().nullish(),
+  "employeeName": zod.string(),
+  "classification": zod.string(),
+  "category": zod.enum(['regular', 'ot', 'dt', 'night', 'holiday', 'pto']),
+  "location": zod.enum(['home', 'field']),
+  "hoursMon": zod.number(),
+  "hoursTue": zod.number(),
+  "hoursWed": zod.number(),
+  "hoursThu": zod.number(),
+  "hoursFri": zod.number(),
+  "hoursSat": zod.number(),
+  "hoursSun": zod.number(),
+  "totalHours": zod.number(),
+  "rate": zod.number(),
+  "amount": zod.number(),
+  "taskNo": zod.string().nullish(),
+  "notes": zod.string().nullish()
+})
+
+
+/**
+ * @summary Update a timesheet entry
+ */
+export const UpdateTimesheetEntryParams = zod.object({
+  "id": zod.coerce.number(),
+  "entryId": zod.coerce.number()
+})
+
+
+
+
+
+export const UpdateTimesheetEntryBody = zod.object({
+  "weekId": zod.number().optional(),
+  "employeeId": zod.number().optional(),
+  "employeeName": zod.string().min(1).optional(),
+  "classification": zod.string().min(1).optional(),
+  "category": zod.enum(['regular', 'ot', 'dt', 'night', 'holiday', 'pto']).optional(),
+  "location": zod.enum(['home', 'field']).optional(),
+  "hoursMon": zod.number().optional(),
+  "hoursTue": zod.number().optional(),
+  "hoursWed": zod.number().optional(),
+  "hoursThu": zod.number().optional(),
+  "hoursFri": zod.number().optional(),
+  "hoursSat": zod.number().optional(),
+  "hoursSun": zod.number().optional(),
+  "rate": zod.number().optional(),
+  "taskNo": zod.string().optional(),
+  "notes": zod.string().optional()
+})
+
+export const UpdateTimesheetEntryResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "weekId": zod.number(),
+  "employeeId": zod.number().nullish(),
+  "employeeName": zod.string(),
+  "classification": zod.string(),
+  "category": zod.enum(['regular', 'ot', 'dt', 'night', 'holiday', 'pto']),
+  "location": zod.enum(['home', 'field']),
+  "hoursMon": zod.number(),
+  "hoursTue": zod.number(),
+  "hoursWed": zod.number(),
+  "hoursThu": zod.number(),
+  "hoursFri": zod.number(),
+  "hoursSat": zod.number(),
+  "hoursSun": zod.number(),
+  "totalHours": zod.number(),
+  "rate": zod.number(),
+  "amount": zod.number(),
+  "taskNo": zod.string().nullish(),
+  "notes": zod.string().nullish()
+})
+
+
+/**
+ * @summary Delete a timesheet entry
+ */
+export const DeleteTimesheetEntryParams = zod.object({
+  "id": zod.coerce.number(),
+  "entryId": zod.coerce.number()
+})
+
+export const DeleteTimesheetEntryResponse = zod.void()
+
+
+/**
+ * @summary Get a package progress report
+ */
+export const GetPackageProgressReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetPackageProgressReportResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "percentComplete": zod.number(),
+  "summary": zod.string(),
+  "workPerformed": zod.string().nullish(),
+  "concerns": zod.string().nullish(),
+  "correctiveAction": zod.string().nullish(),
+  "scheduleComment": zod.string().nullish(),
+  "costForecast": zod.string().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "reportDate": zod.string().nullish(),
+  "uploadedFileUrl": zod.string().nullish(),
+  "uploadedFileName": zod.string().nullish()
+})
+
+
+/**
+ * @summary Create or update a package progress report
+ */
+export const SavePackageProgressReportParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SavePackageProgressReportBody = zod.object({
+  "percentComplete": zod.number().optional(),
+  "summary": zod.string().optional(),
+  "workPerformed": zod.string().optional(),
+  "concerns": zod.string().optional(),
+  "correctiveAction": zod.string().optional(),
+  "scheduleComment": zod.string().optional(),
+  "costForecast": zod.string().optional(),
+  "preparedBy": zod.string().optional(),
+  "reportDate": zod.string().optional(),
+  "uploadedFileUrl": zod.string().optional(),
+  "uploadedFileName": zod.string().optional()
+})
+
+export const SavePackageProgressReportResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "percentComplete": zod.number(),
+  "summary": zod.string(),
+  "workPerformed": zod.string().nullish(),
+  "concerns": zod.string().nullish(),
+  "correctiveAction": zod.string().nullish(),
+  "scheduleComment": zod.string().nullish(),
+  "costForecast": zod.string().nullish(),
+  "preparedBy": zod.string().nullish(),
+  "reportDate": zod.string().nullish(),
+  "uploadedFileUrl": zod.string().nullish(),
+  "uploadedFileName": zod.string().nullish()
+})
+
+
+/**
+ * @summary List labor attachment overrides
+ */
+export const ListLaborOverridesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListLaborOverridesResponseItem = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "cellKey": zod.string(),
+  "value": zod.string(),
+  "editedBy": zod.string().nullish(),
+  "editedAt": zod.string()
+})
+export const ListLaborOverridesResponse = zod.array(ListLaborOverridesResponseItem)
+
+
+/**
+ * @summary Create or update a labor attachment override
+ */
+export const SaveLaborOverrideParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+export const SaveLaborOverrideBody = zod.object({
+  "cellKey": zod.string().min(1),
+  "value": zod.string(),
+  "editedBy": zod.string().optional()
+})
+
+export const SaveLaborOverrideResponse = zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "cellKey": zod.string(),
+  "value": zod.string(),
+  "editedBy": zod.string().nullish(),
+  "editedAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a labor attachment override
+ */
+export const DeleteLaborOverrideParams = zod.object({
+  "id": zod.coerce.number(),
+  "cellKey": zod.coerce.string()
+})
+
+export const DeleteLaborOverrideResponse = zod.void()
+
+
+/**
+ * @summary Validate a package and flag anomalies
+ */
+export const GetPackageValidationsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetPackageValidationsResponse = zod.object({
+  "packageId": zod.number(),
+  "isValid": zod.boolean(),
+  "flags": zod.array(zod.object({
+  "severity": zod.enum(['error', 'warning', 'info']),
+  "field": zod.string().nullish(),
+  "message": zod.string()
+}))
+})
+
+
+/**
+ * @summary Labor rollup and computed financials for a package
+ */
+export const GetPackageRollupParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetPackageRollupResponse = zod.object({
+  "laborLines": zod.array(zod.object({
+  "employeeName": zod.string(),
+  "classification": zod.string(),
+  "category": zod.string(),
+  "location": zod.string(),
+  "hours": zod.number(),
+  "rate": zod.number(),
+  "amount": zod.number()
+})),
+  "financials": zod.array(zod.object({
+  "label": zod.string(),
+  "amount": zod.number(),
+  "note": zod.string().nullish(),
+  "emphasis": zod.boolean().nullish()
+})),
+  "totalHours": zod.number(),
+  "laborTotal": zod.number(),
+  "fringeTotal": zod.number(),
+  "overheadTotal": zod.number(),
+  "fixedFee": zod.number(),
+  "fccm": zod.number(),
+  "otdtPremium": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "previouslyBilled": zod.number(),
+  "totalToDate": zod.number(),
+  "remainingBalance": zod.number(),
+  "percentExpended": zod.number()
 })
 
 
