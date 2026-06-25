@@ -1,0 +1,70 @@
+import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, workPlansTable } from "@workspace/db";
+import {
+  CreateWorkPlanBody,
+  UpdateWorkPlanBody,
+  ListWorkPlansResponse,
+  GetWorkPlanResponse,
+  CreateWorkPlanResponse,
+  UpdateWorkPlanResponse,
+} from "@workspace/api-zod";
+import { toApiWorkPlan } from "../lib/mappers";
+import { recordAudit } from "../lib/audit";
+
+const router: IRouter = Router();
+
+router.get("/work-plans", async (_req, res): Promise<void> => {
+  const rows = await db.select().from(workPlansTable).orderBy(workPlansTable.code);
+  res.json(ListWorkPlansResponse.parse(rows.map(toApiWorkPlan)));
+});
+
+router.post("/work-plans", async (req, res): Promise<void> => {
+  const parsed = CreateWorkPlanBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.insert(workPlansTable).values(parsed.data).returning();
+  await recordAudit({ action: "created", entityType: "workPlan", entityId: row.id, description: `Work plan ${row.code}` });
+  res.status(201).json(CreateWorkPlanResponse.parse(toApiWorkPlan(row)));
+});
+
+router.get("/work-plans/:id", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [row] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, id));
+  if (!row) {
+    res.status(404).json({ error: "Work plan not found" });
+    return;
+  }
+  res.json(GetWorkPlanResponse.parse(toApiWorkPlan(row)));
+});
+
+router.patch("/work-plans/:id", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const parsed = UpdateWorkPlanBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [row] = await db.update(workPlansTable).set(parsed.data).where(eq(workPlansTable.id, id)).returning();
+  if (!row) {
+    res.status(404).json({ error: "Work plan not found" });
+    return;
+  }
+  await recordAudit({ action: "updated", entityType: "workPlan", entityId: id, description: `Work plan ${row.code}` });
+  res.json(UpdateWorkPlanResponse.parse(toApiWorkPlan(row)));
+});
+
+router.delete("/work-plans/:id", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [row] = await db.delete(workPlansTable).where(eq(workPlansTable.id, id)).returning();
+  if (!row) {
+    res.status(404).json({ error: "Work plan not found" });
+    return;
+  }
+  await recordAudit({ action: "deleted", entityType: "workPlan", entityId: id, description: `Work plan ${row.code}` });
+  res.sendStatus(204);
+});
+
+export default router;

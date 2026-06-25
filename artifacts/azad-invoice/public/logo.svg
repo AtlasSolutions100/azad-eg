@@ -1,0 +1,6 @@
+<svg width="220" height="56" viewBox="0 0 220 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="52" height="52" rx="12" fill="#CFAF42"/>
+  <path d="M28 13L41 41H35.2L32.7 35H23.3L20.8 41H15L28 13ZM28 23.4L25 30.4H31L28 23.4Z" fill="#FFFFFF"/>
+  <text x="68" y="28" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#333333">AZAD</text>
+  <text x="68" y="44" font-family="Inter, sans-serif" font-size="11" font-weight="500" letter-spacing="1.5" fill="#5F5F5F">ENGINEERING PC</text>
+</svg>

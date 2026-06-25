@@ -3,13 +3,31 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Azad Invoice Automation API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Dashboard summaries and search
+  - name: workPlans
+    description: BART work plans / contract context
+  - name: employees
+    description: Employees and their classifications
+  - name: classifications
+    description: Classification rate reference data
+  - name: invoices
+    description: Invoice lifecycle and generation
+  - name: lineItems
+    description: Invoice labor line items
+  - name: progressReports
+    description: Invoice progress reports
+  - name: signatures
+    description: Signature library
+  - name: reference
+    description: Reference data, column definitions, audit log, integrations
 paths:
   /healthz:
     get:
@@ -24,7 +42,664 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /search:
+    get:
+      operationId: search
+      tags: [dashboard]
+      summary: Global search (client, employee, job number)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+
+  /work-plans:
+    get:
+      operationId: listWorkPlans
+      tags: [workPlans]
+      summary: List work plans
+      responses:
+        "200":
+          description: Work plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkPlan"
+    post:
+      operationId: createWorkPlan
+      tags: [workPlans]
+      summary: Create a work plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkPlanInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkPlan"
+  /work-plans/{id}:
+    get:
+      operationId: getWorkPlan
+      tags: [workPlans]
+      summary: Get a work plan
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Work plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateWorkPlan
+      tags: [workPlans]
+      summary: Update a work plan
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkPlanUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkPlan"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteWorkPlan
+      tags: [workPlans]
+      summary: Delete a work plan
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /employees:
+    get:
+      operationId: listEmployees
+      tags: [employees]
+      summary: List employees
+      responses:
+        "200":
+          description: Employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employee"
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      summary: Create an employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+  /employees/{id}:
+    get:
+      operationId: getEmployee
+      tags: [employees]
+      summary: Get an employee
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Employee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateEmployee
+      tags: [employees]
+      summary: Update an employee
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+    delete:
+      operationId: deleteEmployee
+      tags: [employees]
+      summary: Delete an employee
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /classifications:
+    get:
+      operationId: listClassifications
+      tags: [classifications]
+      summary: List classification rates
+      responses:
+        "200":
+          description: Classifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Classification"
+    post:
+      operationId: createClassification
+      tags: [classifications]
+      summary: Create a classification rate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassificationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Classification"
+  /classifications/{id}:
+    patch:
+      operationId: updateClassification
+      tags: [classifications]
+      summary: Update a classification rate
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassificationUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Classification"
+    delete:
+      operationId: deleteClassification
+      tags: [classifications]
+      summary: Delete a classification rate
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: List invoices
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: workPlanId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invoice"
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      summary: Create an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      summary: Get an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateInvoice
+      tags: [invoices]
+      summary: Update an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+    delete:
+      operationId: deleteInvoice
+      tags: [invoices]
+      summary: Delete an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+  /invoices/{id}/approve:
+    post:
+      operationId: approveInvoice
+      tags: [invoices]
+      summary: Approve an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalInput"
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+  /invoices/{id}/preview:
+    get:
+      operationId: getInvoicePreview
+      tags: [invoices]
+      summary: Get computed invoice preview (financial breakdown)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Computed preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoicePreview"
+  /invoices/{id}/validations:
+    get:
+      operationId: getInvoiceValidations
+      tags: [invoices]
+      summary: Get validation flags for an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationResult"
+  /invoices/{id}/time-import:
+    post:
+      operationId: importTimeData
+      tags: [invoices]
+      summary: Upload a Procast CSV/Excel export or weekly timesheet to parse labor hours
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TimeImportUpload"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+  /invoices/{id}/generate:
+    post:
+      operationId: generateInvoiceFile
+      tags: [invoices]
+      summary: Generate the populated Excel workbook or PDF for an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateInput"
+      responses:
+        "200":
+          description: Generated file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedFile"
+  /invoices/{id}/line-items:
+    get:
+      operationId: listLineItems
+      tags: [lineItems]
+      summary: List labor line items for an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Line items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LineItem"
+    post:
+      operationId: createLineItem
+      tags: [lineItems]
+      summary: Add a labor line item to an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineItemInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineItem"
+  /line-items/{id}:
+    patch:
+      operationId: updateLineItem
+      tags: [lineItems]
+      summary: Update a labor line item
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineItemUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineItem"
+    delete:
+      operationId: deleteLineItem
+      tags: [lineItems]
+      summary: Delete a labor line item
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /invoices/{id}/progress-report:
+    get:
+      operationId: getProgressReport
+      tags: [progressReports]
+      summary: Get the progress report for an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Progress report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressReport"
+    put:
+      operationId: saveProgressReport
+      tags: [progressReports]
+      summary: Create or update the progress report for an invoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgressReportInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressReport"
+
+  /signatures:
+    get:
+      operationId: listSignatures
+      tags: [signatures]
+      summary: List saved signatures
+      responses:
+        "200":
+          description: Signatures
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Signature"
+    post:
+      operationId: uploadSignature
+      tags: [signatures]
+      summary: Upload a signature image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SignatureUpload"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Signature"
+  /signatures/{id}:
+    delete:
+      operationId: deleteSignature
+      tags: [signatures]
+      summary: Delete a signature
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /column-definitions:
+    get:
+      operationId: listColumnDefinitions
+      tags: [reference]
+      summary: List column definitions (field reference)
+      responses:
+        "200":
+          description: Column definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ColumnDefinition"
+
+  /reference-data:
+    get:
+      operationId: listReferenceData
+      tags: [reference]
+      summary: List reference data entries (rates and pools)
+      responses:
+        "200":
+          description: Reference entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReferenceEntry"
+  /reference-data/{id}:
+    patch:
+      operationId: updateReferenceData
+      tags: [reference]
+      summary: Update a reference data entry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReferenceEntryUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferenceEntry"
+
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [reference]
+      summary: List audit log entries
+      responses:
+        "200":
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+
+  /procast/status:
+    get:
+      operationId: getProcastStatus
+      tags: [reference]
+      summary: Get Procast integration status
+      responses:
+        "200":
+          description: Procast status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcastStatus"
+
 components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +708,552 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
 
+    WorkPlan:
+      type: object
+      required:
+        - id
+        - code
+        - title
+        - client
+        - jobNumber
+        - totalBudget
+        - fringeRate
+        - fixedFeeRate
+        - billingCycle
+        - status
+        - createdAt
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        title: { type: string }
+        client: { type: string }
+        jobNumber: { type: string }
+        agreementNo: { type: ["string", "null"] }
+        poNumber: { type: ["string", "null"] }
+        wspProjectNo: { type: ["string", "null"] }
+        totalBudget: { type: number }
+        fringeRate: { type: number }
+        overheadRate: { type: ["number", "null"] }
+        fixedFeeRate: { type: number }
+        fccmRate: { type: ["number", "null"] }
+        billingCycle:
+          type: string
+          enum: [whole_month, last_friday]
+        status:
+          type: string
+          enum: [active, archived]
+        createdAt: { type: string }
+    WorkPlanInput:
+      type: object
+      required: [code, title, client, jobNumber, totalBudget, billingCycle]
+      properties:
+        code: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        client: { type: string, minLength: 1 }
+        jobNumber: { type: string, minLength: 1 }
+        agreementNo: { type: string }
+        poNumber: { type: string }
+        wspProjectNo: { type: string }
+        totalBudget: { type: number }
+        fringeRate: { type: number }
+        overheadRate: { type: number }
+        fixedFeeRate: { type: number }
+        fccmRate: { type: number }
+        billingCycle:
+          type: string
+          enum: [whole_month, last_friday]
+    WorkPlanUpdate:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        client: { type: string, minLength: 1 }
+        jobNumber: { type: string, minLength: 1 }
+        agreementNo: { type: string }
+        poNumber: { type: string }
+        wspProjectNo: { type: string }
+        totalBudget: { type: number }
+        fringeRate: { type: number }
+        overheadRate: { type: number }
+        fixedFeeRate: { type: number }
+        fccmRate: { type: number }
+        billingCycle:
+          type: string
+          enum: [whole_month, last_friday]
+        status:
+          type: string
+          enum: [active, archived]
+
+    Employee:
+      type: object
+      required: [id, name, classification, homeRate, active, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        classification: { type: string }
+        homeRate: { type: number }
+        fieldRate: { type: ["number", "null"] }
+        defaultTaskNo: { type: ["string", "null"] }
+        active: { type: boolean }
+        createdAt: { type: string }
+    EmployeeInput:
+      type: object
+      required: [name, classification, homeRate]
+      properties:
+        name: { type: string, minLength: 1 }
+        classification: { type: string, minLength: 1 }
+        homeRate: { type: number }
+        fieldRate: { type: number }
+        defaultTaskNo: { type: string }
+        active: { type: boolean }
+    EmployeeUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        classification: { type: string, minLength: 1 }
+        homeRate: { type: number }
+        fieldRate: { type: number }
+        defaultTaskNo: { type: string }
+        active: { type: boolean }
+
+    Classification:
+      type: object
+      required: [id, code, description, regularRate, location]
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        description: { type: string }
+        regularRate: { type: number }
+        otRate: { type: ["number", "null"] }
+        dtRate: { type: ["number", "null"] }
+        location:
+          type: string
+          enum: [home, field, both]
+        effectiveDate: { type: ["string", "null"] }
+    ClassificationInput:
+      type: object
+      required: [code, description, regularRate, location]
+      properties:
+        code: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        regularRate: { type: number }
+        otRate: { type: number }
+        dtRate: { type: number }
+        location:
+          type: string
+          enum: [home, field, both]
+        effectiveDate: { type: string }
+    ClassificationUpdate:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        regularRate: { type: number }
+        otRate: { type: number }
+        dtRate: { type: number }
+        location:
+          type: string
+          enum: [home, field, both]
+        effectiveDate: { type: string }
+
+    Invoice:
+      type: object
+      required:
+        - id
+        - workPlanId
+        - workPlanCode
+        - client
+        - invoiceNumber
+        - invoiceDate
+        - periodStart
+        - periodEnd
+        - status
+        - laborTotal
+        - fringeTotal
+        - overheadTotal
+        - fixedFee
+        - fccm
+        - otdtPremium
+        - otherDirectCosts
+        - totalThisPeriod
+        - previouslyBilled
+        - totalToDate
+        - remainingBalance
+        - percentExpended
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        workPlanId: { type: integer }
+        workPlanCode: { type: string }
+        client: { type: string }
+        invoiceNumber: { type: string }
+        invoiceDate: { type: string }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        status:
+          type: string
+          enum: [draft, in_review, approved, exported]
+        laborTotal: { type: number }
+        fringeTotal: { type: number }
+        overheadTotal: { type: number }
+        fixedFee: { type: number }
+        fccm: { type: number }
+        otdtPremium: { type: number }
+        otherDirectCosts: { type: number }
+        totalThisPeriod: { type: number }
+        previouslyBilled: { type: number }
+        totalToDate: { type: number }
+        remainingBalance: { type: number }
+        percentExpended: { type: number }
+        preparedBy: { type: ["string", "null"] }
+        approvedBy: { type: ["string", "null"] }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    InvoiceInput:
+      type: object
+      required: [workPlanId, invoiceNumber, invoiceDate, periodStart, periodEnd]
+      properties:
+        workPlanId: { type: integer }
+        invoiceNumber: { type: string, minLength: 1 }
+        invoiceDate: { type: string }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        previouslyBilled: { type: number }
+        otherDirectCosts: { type: number }
+        preparedBy: { type: string }
+    InvoiceUpdate:
+      type: object
+      properties:
+        invoiceNumber: { type: string, minLength: 1 }
+        invoiceDate: { type: string }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        previouslyBilled: { type: number }
+        otherDirectCosts: { type: number }
+        preparedBy: { type: string }
+        status:
+          type: string
+          enum: [draft, in_review, approved, exported]
+    ApprovalInput:
+      type: object
+      required: [approvedBy]
+      properties:
+        approvedBy: { type: string, minLength: 1 }
+        signatureId: { type: integer }
+
+    LineItem:
+      type: object
+      required:
+        - id
+        - invoiceId
+        - employeeName
+        - classification
+        - category
+        - location
+        - hours
+        - rate
+        - amount
+      properties:
+        id: { type: integer }
+        invoiceId: { type: integer }
+        employeeId: { type: ["integer", "null"] }
+        employeeName: { type: string }
+        classification: { type: string }
+        category:
+          type: string
+          enum: [regular, ot, dt, holiday, pto]
+        location:
+          type: string
+          enum: [home, field]
+        hours: { type: number }
+        rate: { type: number }
+        amount: { type: number }
+        taskNo: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+    LineItemInput:
+      type: object
+      required: [employeeName, classification, category, location, hours, rate]
+      properties:
+        employeeId: { type: integer }
+        employeeName: { type: string, minLength: 1 }
+        classification: { type: string, minLength: 1 }
+        category:
+          type: string
+          enum: [regular, ot, dt, holiday, pto]
+        location:
+          type: string
+          enum: [home, field]
+        hours: { type: number }
+        rate: { type: number }
+        taskNo: { type: string }
+        notes: { type: string }
+    LineItemUpdate:
+      type: object
+      properties:
+        employeeId: { type: integer }
+        employeeName: { type: string, minLength: 1 }
+        classification: { type: string, minLength: 1 }
+        category:
+          type: string
+          enum: [regular, ot, dt, holiday, pto]
+        location:
+          type: string
+          enum: [home, field]
+        hours: { type: number }
+        rate: { type: number }
+        taskNo: { type: string }
+        notes: { type: string }
+
+    ProgressReport:
+      type: object
+      required: [id, invoiceId, percentComplete, summary, reportDate]
+      properties:
+        id: { type: integer }
+        invoiceId: { type: integer }
+        percentComplete: { type: number }
+        summary: { type: string }
+        workCompleted: { type: ["string", "null"] }
+        workPlanned: { type: ["string", "null"] }
+        issues: { type: ["string", "null"] }
+        scheduleStatus: { type: ["string", "null"] }
+        budgetStatus: { type: ["string", "null"] }
+        preparedBy: { type: ["string", "null"] }
+        reportDate: { type: string }
+    ProgressReportInput:
+      type: object
+      required: [percentComplete, summary, reportDate]
+      properties:
+        percentComplete: { type: number }
+        summary: { type: string }
+        workCompleted: { type: string }
+        workPlanned: { type: string }
+        issues: { type: string }
+        scheduleStatus: { type: string }
+        budgetStatus: { type: string }
+        preparedBy: { type: string }
+        reportDate: { type: string }
+
+    Signature:
+      type: object
+      required: [id, name, imageUrl, isDefault, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        title: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
+        imageUrl: { type: string }
+        isDefault: { type: boolean }
+        createdAt: { type: string }
+    SignatureUpload:
+      type: object
+      required: [name, file]
+      properties:
+        name: { type: string }
+        title: { type: string }
+        email: { type: string }
+        file:
+          type: string
+          format: binary
+
+    TimeImportUpload:
+      type: object
+      required: [file]
+      properties:
+        source:
+          type: string
+          enum: [procast, timesheet]
+        file:
+          type: string
+          format: binary
+    ImportResult:
+      type: object
+      required: [importedCount, lineItems]
+      properties:
+        importedCount: { type: integer }
+        source: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+
+    GenerateInput:
+      type: object
+      required: [format]
+      properties:
+        format:
+          type: string
+          enum: [xlsx, pdf]
+    GeneratedFile:
+      type: object
+      required: [url, filename, format]
+      properties:
+        url: { type: string }
+        filename: { type: string }
+        format: { type: string }
+
+    InvoicePreview:
+      type: object
+      required: [invoice, lineItems, financials]
+      properties:
+        invoice:
+          $ref: "#/components/schemas/Invoice"
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+        financials:
+          type: array
+          items:
+            $ref: "#/components/schemas/FinancialLine"
+        budgetUsedPercent: { type: number }
+    FinancialLine:
+      type: object
+      required: [label, amount]
+      properties:
+        label: { type: string }
+        amount: { type: number }
+        note: { type: ["string", "null"] }
+        emphasis: { type: ["boolean", "null"] }
+
+    ValidationResult:
+      type: object
+      required: [invoiceId, isValid, flags]
+      properties:
+        invoiceId: { type: integer }
+        isValid: { type: boolean }
+        flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationFlag"
+    ValidationFlag:
+      type: object
+      required: [severity, message]
+      properties:
+        severity:
+          type: string
+          enum: [error, warning, info]
+        field: { type: ["string", "null"] }
+        message: { type: string }
+
+    ColumnDefinition:
+      type: object
+      required: [id, sheet, field, source, description]
+      properties:
+        id: { type: integer }
+        sheet: { type: string }
+        column: { type: ["string", "null"] }
+        field: { type: string }
+        source: { type: string }
+        formula: { type: ["string", "null"] }
+        description: { type: string }
+
+    ReferenceEntry:
+      type: object
+      required: [id, category, key, label, value]
+      properties:
+        id: { type: integer }
+        category: { type: string }
+        key: { type: string }
+        label: { type: string }
+        value: { type: string }
+        unit: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        updatedAt: { type: ["string", "null"] }
+    ReferenceEntryUpdate:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+
+    AuditLog:
+      type: object
+      required: [id, userName, action, entityType, createdAt]
+      properties:
+        id: { type: integer }
+        userId: { type: ["string", "null"] }
+        userName: { type: string }
+        action: { type: string }
+        entityType: { type: string }
+        entityId: { type: ["integer", "null"] }
+        description: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    ProcastStatus:
+      type: object
+      required: [connected, mode, message]
+      properties:
+        connected: { type: boolean }
+        mode:
+          type: string
+          enum: [live, upload]
+        lastSyncAt: { type: ["string", "null"] }
+        message: { type: string }
+
+    DashboardSummary:
+      type: object
+      required:
+        - totalInvoices
+        - draftCount
+        - approvedCount
+        - totalBilledThisMonth
+        - activeWorkPlans
+        - invoicesByStatus
+        - billingByWorkPlan
+        - recentActivity
+      properties:
+        totalInvoices: { type: integer }
+        draftCount: { type: integer }
+        approvedCount: { type: integer }
+        totalBilledThisMonth: { type: number }
+        totalBilledToDate: { type: number }
+        totalRemainingBudget: { type: number }
+        activeWorkPlans: { type: integer }
+        invoicesByStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        billingByWorkPlan:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkPlanBilling"
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+    StatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status: { type: string }
+        count: { type: integer }
+    WorkPlanBilling:
+      type: object
+      required: [workPlanCode, billed, budget]
+      properties:
+        workPlanCode: { type: string }
+        billed: { type: number }
+        budget: { type: number }
+
+    SearchResult:
+      type: object
+      required: [type, id, label, route]
+      properties:
+        type:
+          type: string
+          enum: [workPlan, employee, invoice]
+        id: { type: integer }
+        label: { type: string }
+        sublabel: { type: ["string", "null"] }
+        route: { type: string }

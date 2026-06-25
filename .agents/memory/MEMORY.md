@@ -1,0 +1,2 @@
+- [Invoice status state machine](invoice-state-machine.md) — transitions are enforced in routes, not the generic PATCH; generate is a preview unless already approved.
+- [LibreOffice PDF latency](pdf-export-latency.md) — soffice headless PDF render is ~14s; export UI must show progress or it reads as broken.

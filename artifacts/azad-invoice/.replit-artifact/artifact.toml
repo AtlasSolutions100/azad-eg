@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Azad Invoice Automation"
+version = "1.0.0"
+id = "artifacts/azad-invoice"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18302
+
+[services.development]
+run = "pnpm --filter @workspace/azad-invoice run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/azad-invoice", "run", "build" ]
+publicDir = "artifacts/azad-invoice/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18302"
+BASE_PATH = "/"
