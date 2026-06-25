@@ -1,0 +1,132 @@
+Final Revised Replit Prompt (Ready to Copy & Paste)
+MarkdownYou are an expert full-stack developer building a polished, high-performance web application on Replit for Azad Engineering PC.
+
+**Company & Branding**
+Use the Azad_Logo.jpeg prominently from the first screen. Primary accent color is the gold from the logo (#CF AF42 or closest high-quality match #D0B145). Use professional dark grays (#5F5F5F and #333333) for text and headers. Clean white backgrounds with subtle shadows. The overall feel must be modern, premium, trustworthy, fast, and compliance-focused.
+
+**Core Purpose – Phase 1**
+Build the Azad Engineering Invoice Automation Dashboard as an **Employee Pay Period Invoice Package** system for BART work.
+
+A Package = one employee + one job number (Work Plan, e.g. A.04-02) + one pay period.  
+Each package must contain these **5 separate documents** (use the uploaded files as the exact canonical templates):
+
+1. Invoice.xlsx (Professional Service Agreement Invoice)
+2. SubCalc.xlsx (Invoice Detail Attachment)
+3. ProgressReport.xlsx (Progress Report)
+4. LaborAttachment.xlsx (Labor Attachment / Sub Labor)
+5. Timesheets.xlsx (weekly timesheets – multiple weeks can belong to one pay period)
+
+**Dashboard UI Structure (Exact Requirements)**
+- Main dashboard shows searchable, filterable tiles/cards organized as: **Employee → Job Number → Pay Period**
+- Tiles are at the Pay Period level (weeks are grouped inside the pay period, not as separate top-level tiles)
+- Clicking a Pay Period tile opens the full **Package Workspace**
+- Inside the Package Workspace: clear tabs or clearly labeled sections for the 5 documents listed above
+- Provide an **“Umbrella View”** (summary/overview screen) for the entire employee + job number + pay period that shows all weeks + quick status of all 5 documents together
+- Global search bar that works across employee name, job number (e.g. A.04-02), and pay period dates
+
+**Data Flow & Automation (Must Be Crystal Clear & Formula-Driven)**
+- Hours and rates primarily come from Procast (Phase 1 = file upload of Procast export or weekly timesheets)
+- Weekly Timesheets → automatically populate and calculate into LaborAttachment.xlsx (hours per classification/role, daily breakdown, totals, etc.)
+- LaborAttachment.xlsx + stored rates + prior period data → automatically feed SubCalc.xlsx (all fringe benefits, overhead, fixed fee 8%, FCCM, Budget, Amount This Period, Previously Billed, Amount to Date, % Expended, Remaining Balance, etc. — all formulas must exist and work correctly)
+- SubCalc.xlsx → automatically rolls up into Invoice.xlsx (billing summary, Amount This Period, Previously Billed carry-over, Total Amount Due, certification section, etc.)
+- ProgressReport.xlsx has its own independent input section but links dates and calculated percentages from the other documents where relevant
+- All numbers must stay linked via formulas so that changing hours or prior billed values automatically updates downstream documents
+
+**Labor Attachment Editing Behavior**
+LaborAttachment.xlsx must support **both** modes:
+- Auto-population and calculation from uploaded timesheets / Procast data (recommended primary path)
+- Manual editing of cells by the user when needed (override capability)
+- Clear visual indication of which cells are auto-calculated vs manually edited
+
+**Procast API Connection Indicator (Prominent & Always Visible)**
+Add a clear status indicator in the top navigation bar or settings area:
+- Green indicator + text: “Live Pull Active – Last synced [timestamp]”
+- Yellow/Orange indicator + text: “Upload Mode – Not connected to Procast API”
+- Simple placeholder button labeled “Connect to Procast API” (for future live integration)
+For Phase 1 the entire system must work 100% reliably in Upload Mode with clear messaging to the user.
+
+**Progress Report Input (Dual Method)**
+In the Progress Report section of the package provide **both**:
+- Upload button (accept Excel, Word, or PDF narrative file)
+- Rich-text editor / form fields so the user can directly edit the bullet points under “Describe Work Performed…”, Concerns, Recommendation of Corrective Action, Schedule comment, Cost Forecast at Completion, etc.
+
+**Export Behavior**
+- Primary action: “Export Package” button generates a clean ZIP file containing:
+  - High-fidelity Excel versions of all 5 documents (Invoice.xlsx, SubCalc.xlsx, ProgressReport.xlsx, LaborAttachment.xlsx, Timesheets.xlsx) with working formulas preserved
+  - PDF versions of the client-facing documents (Invoice + Progress Report + Labor Attachment) ready for direct submission to WSP/BART
+- Also support individual export/download of any single document (Excel or PDF where applicable)
+
+**Phase 1 Scope & Priorities**
+- Focus on BART invoices. Single-employee packages are acceptable for v1 (design so multiple employees per package can be added later without major rework).
+- Use the following uploaded files as the exact templates to match in structure, formatting, merged cells, colors, and formulas:
+  - Professional Service Agreement Invoice.xlsx
+  - Invoice Detail Attachment .xlsx (Sub Calc)
+  - Progress Report .xlsx
+  - Labor Attachment .xlsx
+  - Timesheets .xlsx
+- Make the system feel like “one employee, one pay period, everything compliant and in one organized place.”
+
+**Success Criteria**
+Julie or Mahsa should be able to:
+1. Use global search or navigate tiles to reach any employee + job number + pay period
+2. Upload Procast time data or weekly timesheets
+3. Fill or upload the progress narrative using either method
+4. Review all 5 documents with correct linked numbers and working formulas
+5. Export the full package (ZIP with Excels + client PDFs) or individual documents that match their current manual output quality and are immediately usable for client submission
+
+Build this as a complete, production-ready, fast, and delightful full-stack web application on Replit. Use whatever modern performant stack Replit recommends for a polished dashboard with high-fidelity Excel generation that preserves formulas and formatting.
+
+Reference the uploaded spreadsheet files and Julie’s video transcript heavily for exact field names, data relationships, and calculation logic.
+
+What Changed From the Previous Version (Quick Reference)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+AreaPrevious VersionFinal Version (This Prompt)Output filesOne multi-tab Excel5 separate files + PDFs of client onesTile levelNot specified clearlyTiles per Pay Period (weeks grouped inside)Labor Attachment editingMostly autoBoth auto-calculated and manual editing allowedUI StructureGeneral workspaceExplicit: Employee → Job Number → Pay Period tiles + Umbrella View + tabs for 5 docsData flowGeneral descriptionVery explicit step-by-step with formula requirementsProcast indicatorMentionedProminent top-bar indicator with exact statesProgress Report inputUpload or fieldsBoth upload button AND rich-text fields requiredExportGeneralZIP with 5 Excels + 3 PDFs; also individual export
