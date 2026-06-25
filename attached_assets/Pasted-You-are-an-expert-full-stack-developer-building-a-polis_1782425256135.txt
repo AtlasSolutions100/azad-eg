@@ -1,0 +1,70 @@
+You are an expert full-stack developer building a polished, high-performance web application on Replit for Azad Engineering PC (civil engineering / construction management & inspection firm, primarily BART transit projects).
+
+**Company & Branding (use prominently from the start):**
+- Company: Azad Engineering PC
+- Logo: Use the provided Azad_Logo.jpeg (gold "A", gray "ZAD"). Make the gold accent color the primary brand color throughout the UI (#CF AF42 or closest high-quality gold from the logo; use #D0B145 as fallback). Pair with professional dark grays (#5F5F5F, #333333) for text/headers, clean whites, subtle shadows, and a modern finance/ops dashboard aesthetic. Sidebar or top nav in dark professional tone with gold accents on active states, buttons, and highlights. Make it feel premium, trustworthy, and "kick butt" — fast, intuitive, beautiful, zero friction.
+
+**Core Purpose (Phase 1):**
+Build a beautiful automation dashboard that lets Julie and Mahsa (and future team members) generate **exact replica** BART client invoices in their strict government-compliant multi-tab Excel format with almost zero manual work. Start with one BART Work Plan type (e.g. A.04-02 style like the attached SAMPLE INVOICE) but design the system to be easily extensible later for Caltrans and other contract types.
+
+**Key Pain Points to Solve:**
+- Manual transcription of Procast hours (including OT, DT, night shift regular, multiple EAs/task orders) into the exact Sub Labor / LABOR ATTACHMENT structure.
+- Copy-paste of progress reports from SharePoint.
+- Tedious updates to invoice date, sub-invoice number, billing period, Amount This Period, Previously Billed carry-over, all calculations (fringe ~120.58%, overhead, 8% fixed fee, FCCM, totals, % expended, remaining balance, etc.).
+- Signature placement on Invoice certification and Progress Report.
+- Producing pixel-perfect, formula-rich Excel outputs that clients accept without changes.
+
+**Primary User Flow (make this delightful and wizard-like or clearly step-driven):**
+1. Dashboard home: Overview of recent/pending invoices, quick "New BART Invoice" button, filters by client/work plan/status.
+2. Select Work Plan / Project / Billing Period (support whole month or last-Friday rules; provide date pickers + cheat sheet capability).
+3. Upload primary data:
+   - Procast time export (CSV or Excel) — system intelligently parses employee, hours by classification/role (Straight Time-Night, OT, DT, etc.), project/task order/EA identifiers.
+   - Progress report data (single Excel/CSV with narratives tagged by Work Plan/EA, or simple rich-text input per invoice for Phase 1).
+4. Smart mapping & review screen: System auto-maps hours to the correct Sub Labor lines. Show clear review table with flags for anomalies (e.g. unexpected classifications, potential OT rule issues). Allow light edits if needed.
+5. Calculations & carry-over: Auto-populate all formulas/derived fields. Use stored prior invoice data for "Previously Billed" where possible (or simple manual entry fallback).
+6. Signatures: Upload signature image(s) once in master settings; system auto-places them correctly on Invoice tab (certification) and Progress Report tab.
+7. Live preview: Show key populated sections (or full rendered view of critical tabs) so user can eyeball before generating.
+8. Generate & Export: One-click download of **exact .xlsx** matching their template structure (same tab names, merged cells, formatting, colors, and working Excel formulas where the original has them). Also option for PDF export that matches printed Excel look.
+9. Post-generation: Mark as complete, store version/history, optional activity log.
+
+**Excel Output Requirements (non-negotiable fidelity):**
+- Replicate the exact structure from the attached SAMPLE INVOICE .xlsm (tabs include Invoice, Sub Calc_revised or similar, Progress Report, Sub Labor / LABOR ATTACHMENT, and supporting tabs).
+- Preserve formulas for calculations so the file remains editable/tweakable by the Azad team.
+- All highlighted fields from Julie's video (invoice date, sub-invoice number, billing period from/to, Amount This Period, hours per person/role, Previously Billed, progress report dates/narrative, etc.) must be correctly populated.
+- Output must open in Excel and look/work identically to their current manual files for BART clients (government is strict — no creative freedom on format).
+
+**Data Model / Master Data (keep simple but extensible):**
+- Work Plans / Agreements (store budget, rates per classification if fixed, project numbers, task order/EA mappings, prior billed totals).
+- Employee / Classification mappings (to correctly interpret Procast exports).
+- Signature library (upload once, reuse).
+- Billing period rules / cheat sheet (uploadable).
+
+**Technical & Polish Requirements:**
+- Full-stack web app hosted on Replit. Use whatever modern, performant stack Replit recommends for a polished dashboard with strong Excel generation (openpyxl/xlsxwriter or equivalent for high-fidelity .xlsx output with formulas and formatting preserved).
+- Fast uploads/processing even with realistic monthly volume (~20 invoices).
+- Clean validation & error handling with helpful messages/flags.
+- Responsive but desktop-first (finance work is mostly desktop).
+- Professional, trustworthy UI with strong branding from the first screen.
+- Simple auth (Replit-native or easy login for Julie/Mahsa).
+- Make the whole experience feel like a "little early birthday present" — delightful, obvious, and dramatically faster than current process.
+
+**Phase 1 Scope Guardrails:**
+- Focus on one BART invoice type first (make it production-ready and perfect).
+- Design template engine and mapping logic so adding Caltrans (mileage logs, per diem, signed timesheets, CPR) is straightforward later.
+- No need for real-time Procast API in Phase 1 — file upload of exports is perfect.
+- Prioritize 100% output fidelity and ease-of-use over fancy features.
+
+**Success Criteria:**
+- User uploads Procast export + progress data → reviews mappings → adds signatures → generates .xlsx that matches the sample structure and numbers exactly (when given equivalent inputs).
+- The generated file is immediately usable with clients with minimal or zero manual cleanup.
+- UI feels fast, modern, branded, and obvious — Julie and Mahsa should be able to use it confidently after one short session.
+
+**Attached Resources (reference these heavily):**
+- Discovery transcript (Julie + Mahsa + Griselda onboarding call)
+- Video walkthrough by Julie highlighting every field that needs automation
+- SAMPLE INVOICE .xlsm (the exact multi-tab template to replicate)
+- Azad_Logo.jpeg (for branding)
+
+Build this as a complete, production-ready application. Start with a clean, professional dashboard and the core "New BART Invoice" flow. Make the Excel generation bulletproof for fidelity. Add thoughtful touches like progress indicators, helpful tooltips, and a clean review screen. This should feel like a high-end internal tool, not a generic form.
+
+Once built, provide clear instructions for the Azad team on how to use it for their first real BART invoice.
