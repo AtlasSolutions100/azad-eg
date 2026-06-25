@@ -195,18 +195,24 @@ export async function buildInvoiceWorkbook(data: InvoiceExportData): Promise<str
     }
   }
 
-  // Place the approver signature on the Invoice sheet, just above the signer line.
-  if (data.signatureImagePath && invoice && fs.existsSync(data.signatureImagePath)) {
+  // Place the approver signature on the Invoice sheet and the Progress Report
+  // sheet, just above each signer line.
+  if (data.signatureImagePath && fs.existsSync(data.signatureImagePath)) {
     try {
       const ext = path.extname(data.signatureImagePath).replace(".", "").toLowerCase();
       const extension = ext === "jpg" || ext === "jpeg" ? "jpeg" : ext === "gif" ? "gif" : "png";
-      const imageId = wb.addImage({ buffer: fs.readFileSync(data.signatureImagePath) as unknown as ExcelJS.Buffer, extension });
-      invoice.addImage(imageId, {
-        tl: { col: 1, row: 43 }, // ~B44, above "Mahsa Azad, President" (row 46)
-        ext: { width: 180, height: 55 },
-      });
+      const buffer = fs.readFileSync(data.signatureImagePath) as unknown as ExcelJS.Buffer;
+      const ext2: { width: number; height: number } = { width: 180, height: 55 };
+      if (invoice) {
+        const id = wb.addImage({ buffer, extension });
+        invoice.addImage(id, { tl: { col: 1, row: 43 }, ext: ext2 }); // ~B44, above "Mahsa Azad, President" (row 46)
+      }
+      if (progress) {
+        const id = wb.addImage({ buffer, extension });
+        progress.addImage(id, { tl: { col: 1, row: 26 }, ext: ext2 }); // signature block on the progress report
+      }
     } catch (err) {
-      logger.warn({ err }, "Failed to embed signature image into invoice");
+      logger.warn({ err }, "Failed to embed signature image into workbook");
     }
   }
 

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { db, signaturesTable } from "@workspace/db";
 import { ListSignaturesResponse, UploadSignatureResponse } from "@workspace/api-zod";
-import { upload } from "../lib/upload";
+import { imageUpload, detectImage } from "../lib/upload";
 import { uploadsDir, ensureDirs } from "../lib/paths";
 import { recordAudit } from "../lib/audit";
 
@@ -27,20 +27,26 @@ router.get("/signatures", async (_req, res): Promise<void> => {
   res.json(ListSignaturesResponse.parse(rows.map(toApi)));
 });
 
-router.post("/signatures", upload.single("file"), async (req, res): Promise<void> => {
+router.post("/signatures", imageUpload.single("file"), async (req, res): Promise<void> => {
   ensureDirs();
   const file = (req as unknown as { file?: { buffer: Buffer; originalname: string } }).file;
   const name = typeof req.body?.name === "string" ? req.body.name : "";
   if (!file) {
-    res.status(400).json({ error: "No file uploaded (expected field 'file')." });
+    res.status(400).json({ error: "No image uploaded (expected a PNG or JPEG in field 'file')." });
     return;
   }
   if (!name) {
     res.status(400).json({ error: "Signature name is required." });
     return;
   }
-  const ext = path.extname(file.originalname) || ".png";
-  const filename = `signature_${Date.now()}${ext}`;
+  // Verify the actual file content (magic bytes), not just the declared MIME, then
+  // use a server-normalized extension so untrusted filenames can't smuggle a type.
+  const detected = detectImage(file.buffer);
+  if (!detected) {
+    res.status(400).json({ error: "Uploaded file is not a valid PNG or JPEG image." });
+    return;
+  }
+  const filename = `signature_${Date.now()}${detected.ext}`;
   fs.writeFileSync(path.resolve(uploadsDir, filename), file.buffer);
 
   const [row] = await db

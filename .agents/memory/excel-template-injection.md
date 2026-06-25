@@ -29,13 +29,3 @@ of truth.
 **How to apply:** any time you populate this template, inject values, never rely
 on the template's own formula chain for totals. Preserve cell styling when
 overwriting (setValuePreserveStyle).
-
-## Verifying generation offline
-The api-server has no `tsx`; the dev workflow esbuild-bundles `src/index.ts` to
-`dist`. To exercise the generation libs in a one-off script, esbuild-bundle the
-script the same way: alias `@workspace/db` to `../../lib/db/src/index.ts` (its
-package `exports` point at a `.ts` dir that bare Node ESM can't resolve), include
-the full banner that defines `require`/`__dirname`/`__filename`, wrap the body in
-an async IIFE (avoid top-level await, which clashes with pino's bundled
-`require`), and run with `NODE_ENV=production` so pino skips the pino-pretty worker
-transport (which needs an unbundled worker.js).

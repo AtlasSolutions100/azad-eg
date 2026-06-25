@@ -1,5 +1,6 @@
 import { getAuth } from "@clerk/express";
 import type { Request, Response, NextFunction } from "express";
+import { auditContext } from "../lib/auditContext";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -23,5 +24,12 @@ export function requireAuth(
     return;
   }
   req.userId = userId;
-  next();
+  // Best-effort human-readable name from session claims, else the user id.
+  const claims = auth?.sessionClaims as Record<string, unknown> | undefined;
+  const userName =
+    (typeof claims?.name === "string" && claims.name) ||
+    [claims?.firstName, claims?.lastName].filter((s) => typeof s === "string" && s).join(" ").trim() ||
+    (typeof claims?.email === "string" && claims.email) ||
+    userId;
+  auditContext.run({ userId, userName: userName as string }, () => next());
 }
