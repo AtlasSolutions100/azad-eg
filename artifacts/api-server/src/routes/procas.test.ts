@@ -183,6 +183,156 @@ describe("procas integration", () => {
     expect(status.body.lastSyncAt).toBeTruthy();
   });
 
+  it("re-syncing the same period replaces line items instead of duplicating them", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `Resync Emp ${suffix}`, classification: "Engineer", homeRate: 150, fieldRate: 175 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({
+        code: `RESYNC-WP-${suffix}`,
+        title: "Resync WP",
+        client: "Client",
+        jobNumber: "JOB",
+        poNumber: "PO",
+        totalBudget: 100000,
+      })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+    const [inv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `RESYNC-INV-${suffix}`,
+        invoiceDate: "2026-02-01",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-01-15",
+      })
+      .returning();
+    createdInvoiceIds.push(inv.id);
+
+    // The same period returns the same two rows on every pull.
+    mockFetch((url) => {
+      if (url.includes("/health")) return new Response(null, { status: 200 });
+      if (url.includes("/timesheets")) {
+        return new Response(
+          JSON.stringify({
+            timesheets: [
+              { Employee: emp.name, Hours: "40", Rate: "150", Category: "Regular", Location: "Home" },
+              { Employee: emp.name, Hours: "5", Rate: "175", Category: "Overtime", Location: "Field" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    await request(app)
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
+      .expect(200);
+
+    // First sync imports both rows; nothing existed to replace.
+    const first = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
+    expect(first.status).toBe(200);
+    expect(first.body.importedCount).toBe(2);
+    expect(first.body.replacedCount).toBe(0);
+
+    // Second sync of the same period must replace, not stack: the prior two
+    // auto-imported rows are cleared and re-inserted, and replacedCount reports it.
+    const second = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
+    expect(second.status).toBe(200);
+    expect(second.body.importedCount).toBe(2);
+    expect(second.body.replacedCount).toBe(2);
+    expect(second.body.warnings.some((w: string) => /Replaced 2 previously imported/i.test(w))).toBe(true);
+
+    // Only the freshly pulled rows remain — no duplicate labor accumulated.
+    const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, inv.id));
+    expect(items).toHaveLength(2);
+    expect(items.every((i) => i.source === "procas")).toBe(true);
+  });
+
+  it("preserves a manually-added row across a Procas re-sync", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `Resync Mixed Emp ${suffix}`, classification: "Engineer", homeRate: 100 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({
+        code: `RESYNC-MIX-WP-${suffix}`,
+        title: "Resync Mixed WP",
+        client: "Client",
+        jobNumber: "JOB",
+        poNumber: "PO",
+        totalBudget: 100000,
+      })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+    const [inv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `RESYNC-MIX-INV-${suffix}`,
+        invoiceDate: "2026-02-01",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-01-15",
+      })
+      .returning();
+    createdInvoiceIds.push(inv.id);
+
+    mockFetch((url) => {
+      if (url.includes("/health")) return new Response(null, { status: 200 });
+      if (url.includes("/timesheets")) {
+        return new Response(
+          JSON.stringify({
+            timesheets: [{ Employee: emp.name, Hours: "8", Rate: "100", Category: "Regular", Location: "Home" }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    await request(app)
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
+      .expect(200);
+
+    // A hand-entered row should survive every re-sync.
+    const manual = await request(app)
+      .post(`/api/invoices/${inv.id}/line-items`)
+      .send({
+        employeeName: "Hand Entered",
+        classification: "Engineer",
+        category: "regular",
+        location: "home",
+        hours: 4,
+        rate: 50,
+      });
+    expect(manual.status).toBe(201);
+
+    // Two syncs of the same period: the imported row is replaced each time, the
+    // manual row is never touched.
+    await request(app).post(`/api/invoices/${inv.id}/procas-sync`).expect(200);
+    const second = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
+    expect(second.status).toBe(200);
+    expect(second.body.replacedCount).toBe(1);
+
+    const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, inv.id));
+    expect(items).toHaveLength(2);
+    const manualRow = items.find((i) => i.source === "manual");
+    const importedRow = items.find((i) => i.source === "procas");
+    expect(manualRow?.employeeName).toBe("Hand Entered");
+    expect(importedRow).toBeDefined();
+  });
+
   it("scheduled cycle skips entirely when Procas is in upload mode", async () => {
     const { runProcasSyncCycle } = await import("../lib/procasScheduler");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
