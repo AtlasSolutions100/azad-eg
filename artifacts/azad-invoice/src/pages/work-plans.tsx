@@ -34,11 +34,14 @@ export default function WorkPlans() {
       title: plan.title,
       client: plan.client,
       jobNumber: plan.jobNumber,
+      agreementNo: plan.agreementNo ?? undefined,
+      poNumber: plan.poNumber ?? undefined,
+      wspProjectNo: plan.wspProjectNo ?? undefined,
       totalBudget: plan.totalBudget,
-      fringeRate: plan.fringeRate,
-      overheadRate: plan.overheadRate,
-      fixedFeeRate: plan.fixedFeeRate,
-      fccmRate: plan.fccmRate,
+      fringeRate: plan.fringeRate ?? undefined,
+      overheadRate: plan.overheadRate ?? undefined,
+      fixedFeeRate: plan.fixedFeeRate ?? undefined,
+      fccmRate: plan.fccmRate ?? undefined,
       billingCycle: plan.billingCycle,
     });
     setOpen(true);
@@ -113,6 +116,38 @@ export default function WorkPlans() {
                   <SelectItem value="last_friday">Last Friday</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Agreement No</Label>
+              <Input value={formData.agreementNo || ''} onChange={e => setFormData({...formData, agreementNo: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>PO Number</Label>
+              <Input value={formData.poNumber || ''} onChange={e => setFormData({...formData, poNumber: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>WSP Project No</Label>
+              <Input value={formData.wspProjectNo || ''} onChange={e => setFormData({...formData, wspProjectNo: e.target.value})} />
+            </div>
+            <div className="col-span-2 border-t pt-4">
+              <p className="text-sm font-medium text-[#333333]">Burden rates (drive Fringe, Overhead, Fixed Fee &amp; FCCM in every document)</p>
+              <p className="text-xs text-[#5F5F5F]">Enter as percentages, e.g. 120.58 for 120.58%.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Fringe Rate (%)</Label>
+              <Input type="number" step="0.01" placeholder="120.58" value={formData.fringeRate ?? ''} onChange={e => setFormData({...formData, fringeRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Overhead Rate (%)</Label>
+              <Input type="number" step="0.01" value={formData.overheadRate ?? ''} onChange={e => setFormData({...formData, overheadRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Fixed Fee Rate (%)</Label>
+              <Input type="number" step="0.01" placeholder="8" value={formData.fixedFeeRate ?? ''} onChange={e => setFormData({...formData, fixedFeeRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
+            </div>
+            <div className="space-y-2">
+              <Label>FCCM Rate (%)</Label>
+              <Input type="number" step="0.01" value={formData.fccmRate ?? ''} onChange={e => setFormData({...formData, fccmRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
             </div>
             <div className="col-span-2 pt-4 flex justify-end">
               <Button type="submit" className="bg-[#CFAF42] text-white">
