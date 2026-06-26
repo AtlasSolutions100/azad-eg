@@ -1137,6 +1137,55 @@ export const DisconnectProcastResponse = zod.object({
 
 
 /**
+ * @summary Get the background Procast refresh schedule and last cycle result
+ */
+export const GetProcastSchedulerResponse = zod.object({
+  "connected": zod.boolean(),
+  "intervalMs": zod.number(),
+  "running": zod.boolean(),
+  "lastRunAt": zod.string().nullish(),
+  "lastSynced": zod.number(),
+  "lastFailed": zod.number(),
+  "lastSkipped": zod.boolean(),
+  "lastError": zod.string().nullish()
+})
+
+
+/**
+ * @summary Update the background Procast refresh interval
+ */
+export const UpdateProcastSchedulerBody = zod.object({
+  "intervalMs": zod.number()
+})
+
+export const UpdateProcastSchedulerResponse = zod.object({
+  "connected": zod.boolean(),
+  "intervalMs": zod.number(),
+  "running": zod.boolean(),
+  "lastRunAt": zod.string().nullish(),
+  "lastSynced": zod.number(),
+  "lastFailed": zod.number(),
+  "lastSkipped": zod.boolean(),
+  "lastError": zod.string().nullish()
+})
+
+
+/**
+ * @summary Run a full Procast refresh cycle for all open invoices immediately
+ */
+export const RefreshProcastNowResponse = zod.object({
+  "connected": zod.boolean(),
+  "intervalMs": zod.number(),
+  "running": zod.boolean(),
+  "lastRunAt": zod.string().nullish(),
+  "lastSynced": zod.number(),
+  "lastFailed": zod.number(),
+  "lastSkipped": zod.boolean(),
+  "lastError": zod.string().nullish()
+})
+
+
+/**
  * @summary List packages
  */
 export const ListPackagesQueryParams = zod.object({

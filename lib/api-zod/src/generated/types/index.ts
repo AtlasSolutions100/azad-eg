@@ -69,6 +69,8 @@ export * from './packageWeek';
 export * from './packageWeekInput';
 export * from './packageWeekUpdate';
 export * from './procastConnectInput';
+export * from './procastSchedulerInput';
+export * from './procastSchedulerStatus';
 export * from './procastStatus';
 export * from './procastStatusMode';
 export * from './progressReport';

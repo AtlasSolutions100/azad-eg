@@ -31,7 +31,11 @@ app.listen(port, async (err) => {
     logger.error({ err: seedErr }, "Database seed failed");
   }
 
-  startProcastScheduler();
+  try {
+    await startProcastScheduler();
+  } catch (schedErr) {
+    logger.error({ err: schedErr }, "Failed to start Procast scheduler");
+  }
 
   logger.info({ port }, "Server listening");
 });

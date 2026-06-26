@@ -1,5 +1,5 @@
-import { db, invoicesTable } from "@workspace/db";
-import { inArray } from "drizzle-orm";
+import { db, invoicesTable, procastSchedulerTable, type ProcastSchedulerRow } from "@workspace/db";
+import { inArray, eq } from "drizzle-orm";
 import { getProcastConnection } from "./procast";
 import { syncInvoiceFromProcast } from "./procastSync";
 import { logger } from "./logger";
@@ -10,15 +10,113 @@ import { logger } from "./logger";
 const OPEN_STATUSES = ["draft", "in_review"];
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
+// Guard rails for the user-configurable interval: at least 1 minute (so the
+// app can't hammer Procast) and at most 24 hours.
+export const MIN_INTERVAL_MS = 60 * 1000;
+export const MAX_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+const SCHEDULER_ID = 1;
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
 
-function intervalMs(): number {
+// Interval baked into the env var / default. Used only when the user hasn't
+// configured an interval from the UI.
+function envIntervalMs(): number {
   const raw = process.env["PROCAST_SYNC_INTERVAL_MS"];
   if (!raw) return DEFAULT_INTERVAL_MS;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_INTERVAL_MS;
+}
+
+export function clampInterval(ms: number): number {
+  return Math.min(MAX_INTERVAL_MS, Math.max(MIN_INTERVAL_MS, Math.round(ms)));
+}
+
+// Reads (creating on first use) the single-row scheduler state.
+async function getSchedulerRow(): Promise<ProcastSchedulerRow> {
+  const [existing] = await db
+    .select()
+    .from(procastSchedulerTable)
+    .where(eq(procastSchedulerTable.id, SCHEDULER_ID));
+  if (existing) return existing;
+  const [created] = await db
+    .insert(procastSchedulerTable)
+    .values({ id: SCHEDULER_ID })
+    .onConflictDoNothing()
+    .returning();
+  if (created) return created;
+  // A concurrent caller created it first; read it back.
+  const [row] = await db
+    .select()
+    .from(procastSchedulerTable)
+    .where(eq(procastSchedulerTable.id, SCHEDULER_ID));
+  return row;
+}
+
+// The interval actually in effect: a UI-configured value wins over the env var
+// / default. Always clamped to the safe range.
+export async function getEffectiveIntervalMs(): Promise<number> {
+  const row = await getSchedulerRow();
+  return clampInterval(row.intervalMs ?? envIntervalMs());
+}
+
+export interface ProcastSchedulerState {
+  intervalMs: number;
+  running: boolean;
+  lastRunAt: Date | null;
+  lastSynced: number;
+  lastFailed: number;
+  lastSkipped: boolean;
+  lastError: string | null;
+}
+
+export async function getSchedulerState(): Promise<ProcastSchedulerState> {
+  const row = await getSchedulerRow();
+  return {
+    intervalMs: clampInterval(row.intervalMs ?? envIntervalMs()),
+    running,
+    lastRunAt: row.lastRunAt,
+    lastSynced: row.lastSynced,
+    lastFailed: row.lastFailed,
+    lastSkipped: row.lastSkipped,
+    lastError: row.lastError,
+  };
+}
+
+// Persists a new interval and restarts the timer so the change takes effect
+// immediately. Returns the value actually stored (after clamping).
+export async function setSchedulerInterval(ms: number): Promise<number> {
+  const clamped = clampInterval(ms);
+  await getSchedulerRow();
+  await db
+    .update(procastSchedulerTable)
+    .set({ intervalMs: clamped })
+    .where(eq(procastSchedulerTable.id, SCHEDULER_ID));
+  if (timer) {
+    stopProcastScheduler();
+    await startProcastScheduler();
+  }
+  return clamped;
+}
+
+async function recordCycleResult(result: {
+  skipped: boolean;
+  synced: number;
+  failed: number;
+  error?: string | null;
+}): Promise<void> {
+  await getSchedulerRow();
+  await db
+    .update(procastSchedulerTable)
+    .set({
+      lastRunAt: new Date(),
+      lastSynced: result.synced,
+      lastFailed: result.failed,
+      lastSkipped: result.skipped,
+      lastError: result.error ?? null,
+    })
+    .where(eq(procastSchedulerTable.id, SCHEDULER_ID));
 }
 
 // Performs one scheduled refresh pass. Skips entirely when Procast is in upload
@@ -58,26 +156,46 @@ export async function runProcastSyncCycle(): Promise<{ skipped: boolean; synced:
   return { skipped: false, synced, failed };
 }
 
-async function tick(): Promise<void> {
-  if (running) return; // avoid overlapping runs if a cycle outlasts the interval
+// Runs a cycle and persists its outcome to the scheduler state, so the UI can
+// surface the result of the most recent automatic (or on-demand) pass. Guards
+// against overlapping runs the same way the timer tick does.
+export async function runAndRecordCycle(): Promise<ProcastSchedulerState> {
+  if (running) {
+    return getSchedulerState();
+  }
   running = true;
   try {
     const result = await runProcastSyncCycle();
+    await recordCycleResult(result);
     if (!result.skipped) {
-      logger.info({ synced: result.synced, failed: result.failed }, "Scheduled Procast sync cycle complete");
+      logger.info(
+        { synced: result.synced, failed: result.failed },
+        "Procast sync cycle complete",
+      );
     }
   } catch (e) {
-    logger.error({ err: e }, "Scheduled Procast sync cycle failed");
+    await recordCycleResult({
+      skipped: false,
+      synced: 0,
+      failed: 0,
+      error: e instanceof Error ? e.message : "Procast sync cycle failed",
+    });
+    logger.error({ err: e }, "Procast sync cycle failed");
   } finally {
     running = false;
   }
+  return getSchedulerState();
+}
+
+async function tick(): Promise<void> {
+  await runAndRecordCycle();
 }
 
 // Starts the background refresh loop. Idempotent: calling it again is a no-op
 // while a timer is already active.
-export function startProcastScheduler(): void {
+export async function startProcastScheduler(): Promise<void> {
   if (timer) return;
-  const ms = intervalMs();
+  const ms = await getEffectiveIntervalMs();
   timer = setInterval(() => {
     void tick();
   }, ms);

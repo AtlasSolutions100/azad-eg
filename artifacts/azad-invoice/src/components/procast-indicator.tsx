@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useGetProcastStatus,
   useConnectProcast,
   useDisconnectProcast,
+  useGetProcastScheduler,
+  useUpdateProcastScheduler,
+  useRefreshProcastNow,
   getGetProcastStatusQueryKey,
+  getGetProcastSchedulerQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -18,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RefreshCw, Wifi, WifiOff, Plug } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, Plug, Clock, CheckCircle2, AlertTriangle, Settings2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -30,11 +34,33 @@ export default function ProcastIndicator() {
   const connectProcast = useConnectProcast();
   const disconnectProcast = useDisconnectProcast();
 
+  const connected = status?.connected ?? false;
+
+  const { data: scheduler } = useGetProcastScheduler({
+    query: {
+      // Only meaningful once a live connection exists; poll while connected so
+      // the "last cycle" panel stays fresh.
+      queryKey: getGetProcastSchedulerQueryKey(),
+      enabled: connected,
+      refetchInterval: connected ? 30_000 : false,
+    },
+  });
+  const updateScheduler = useUpdateProcastScheduler();
+  const refreshNow = useRefreshProcastNow();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [intervalMinutes, setIntervalMinutes] = useState("");
 
-  const connected = status?.connected ?? false;
+  const schedulerMinutes = scheduler ? Math.round(scheduler.intervalMs / 60000) : null;
+
+  // Keep the editable interval field in sync with the server value when not
+  // actively being changed.
+  useEffect(() => {
+    if (schedulerMinutes != null) setIntervalMinutes(String(schedulerMinutes));
+  }, [schedulerMinutes]);
+
   const lastSync = status?.lastSyncAt ? new Date(status.lastSyncAt) : null;
 
   const headline = connected ? "Live Pull Active" : "Upload Mode";
@@ -45,7 +71,59 @@ export default function ProcastIndicator() {
     : "Not connected to Procast API";
 
   const refreshStatus = () =>
-    queryClient.invalidateQueries({ queryKey: getGetProcastStatusQueryKey() });
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: getGetProcastStatusQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetProcastSchedulerQueryKey() }),
+    ]);
+
+  const handleRefreshNow = async () => {
+    try {
+      const result = await refreshNow.mutateAsync();
+      await refreshStatus();
+      toast({
+        title: result.lastSkipped ? "Nothing to refresh" : "Refresh complete",
+        description: result.lastSkipped
+          ? "Procast is not connected, so no invoices were refreshed."
+          : `${result.lastSynced} invoice(s) synced${
+              result.lastFailed ? `, ${result.lastFailed} failed` : ""
+            }.`,
+        variant: result.lastFailed ? "destructive" : undefined,
+      });
+    } catch (e) {
+      toast({
+        title: "Refresh failed",
+        description: e instanceof Error ? e.message : "Could not refresh invoices.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveInterval = async () => {
+    const minutes = Number(intervalMinutes);
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
+      toast({
+        title: "Invalid interval",
+        description: "Enter a refresh interval between 1 minute and 1440 minutes (24 hours).",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (schedulerMinutes != null && minutes === schedulerMinutes) return;
+    try {
+      await updateScheduler.mutateAsync({ data: { intervalMs: Math.round(minutes) * 60000 } });
+      await refreshStatus();
+      toast({
+        title: "Schedule updated",
+        description: `Open invoices will now refresh every ${Math.round(minutes)} minute(s).`,
+      });
+    } catch (e) {
+      toast({
+        title: "Could not update schedule",
+        description: e instanceof Error ? e.message : "Failed to save the refresh interval.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleConnect = async () => {
     if (!baseUrl.trim() || !apiKey.trim()) return;
@@ -145,12 +223,112 @@ export default function ProcastIndicator() {
                   : "Procast is not connected. Upload timesheet files manually to build packages.")}
             </p>
             {connected ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {status?.baseUrl && (
                   <p className="truncate text-xs text-[#5F5F5F]">
                     <span className="font-medium text-[#333333]">Endpoint:</span> {status.baseUrl}
                   </p>
                 )}
+
+                <div className="space-y-2 rounded-md border border-[#EDE6CF] bg-[#FBF8EF] p-3">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-[#333333]">
+                    <RefreshCw className="h-3.5 w-3.5 text-[#CFAF42]" />
+                    Automatic refresh
+                  </div>
+
+                  <p className="flex items-center gap-1.5 text-xs text-[#5F5F5F]">
+                    <Clock className="h-3.5 w-3.5" />
+                    {schedulerMinutes != null
+                      ? `Every ${schedulerMinutes} minute${schedulerMinutes === 1 ? "" : "s"}`
+                      : "Loading schedule…"}
+                  </p>
+
+                  {scheduler && (
+                    <div className="text-xs text-[#5F5F5F]">
+                      {scheduler.lastRunAt ? (
+                        scheduler.lastSkipped ? (
+                          <span className="flex items-center gap-1.5 text-amber-600">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Last cycle skipped (not connected)
+                          </span>
+                        ) : scheduler.lastError ? (
+                          <span className="flex items-start gap-1.5 text-red-600">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                            <span>Last cycle errored: {scheduler.lastError}</span>
+                          </span>
+                        ) : (
+                          <span
+                            className={`flex items-center gap-1.5 ${
+                              scheduler.lastFailed ? "text-amber-600" : "text-emerald-600"
+                            }`}
+                          >
+                            {scheduler.lastFailed ? (
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                            ) : (
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            )}
+                            {scheduler.lastSynced} synced
+                            {scheduler.lastFailed ? `, ${scheduler.lastFailed} failed` : ""}
+                          </span>
+                        )
+                      ) : (
+                        <span className="italic">No automatic cycle has run yet.</span>
+                      )}
+                      {scheduler.lastRunAt && (
+                        <p className="mt-0.5 text-[11px] text-[#8A8A8A]">
+                          {formatDistanceToNow(new Date(scheduler.lastRunAt), { addSuffix: true })}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <Button
+                    size="sm"
+                    className="w-full bg-[#CFAF42] text-white hover:bg-[#bd9e36]"
+                    disabled={refreshNow.isPending}
+                    onClick={handleRefreshNow}
+                  >
+                    <RefreshCw
+                      className={`mr-2 h-4 w-4 ${refreshNow.isPending ? "animate-spin" : ""}`}
+                    />
+                    {refreshNow.isPending ? "Refreshing…" : "Refresh all open invoices now"}
+                  </Button>
+
+                  <div className="space-y-1.5 border-t border-[#EDE6CF] pt-2">
+                    <Label
+                      htmlFor="procast-interval"
+                      className="flex items-center gap-1.5 text-xs text-[#5F5F5F]"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                      Refresh interval (minutes)
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="procast-interval"
+                        type="number"
+                        min={1}
+                        max={1440}
+                        className="h-8 text-xs"
+                        value={intervalMinutes}
+                        onChange={(e) => setIntervalMinutes(e.target.value)}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-shrink-0"
+                        disabled={
+                          updateScheduler.isPending ||
+                          intervalMinutes === "" ||
+                          (schedulerMinutes != null && Number(intervalMinutes) === schedulerMinutes)
+                        }
+                        onClick={handleSaveInterval}
+                      >
+                        {updateScheduler.isPending ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
                 <Button
                   size="sm"
                   variant="outline"

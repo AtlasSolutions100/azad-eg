@@ -16,8 +16,15 @@ vi.mock("@clerk/express", () => ({
 
 const request = (await import("supertest")).default;
 const app = (await import("../app")).default;
-const { db, procastConnectionTable, invoicesTable, workPlansTable, employeesTable, lineItemsTable } =
-  await import("@workspace/db");
+const {
+  db,
+  procastConnectionTable,
+  procastSchedulerTable,
+  invoicesTable,
+  workPlansTable,
+  employeesTable,
+  lineItemsTable,
+} = await import("@workspace/db");
 
 const createdInvoiceIds: number[] = [];
 const createdWorkPlanIds: number[] = [];
@@ -25,6 +32,7 @@ const createdEmployeeIds: number[] = [];
 
 async function resetConnection(): Promise<void> {
   await db.delete(procastConnectionTable);
+  await db.delete(procastSchedulerTable);
 }
 
 beforeEach(async () => {
@@ -267,6 +275,113 @@ describe("procast integration", () => {
     // Last-synced reflects the scheduled pull.
     const status = await request(app).get("/api/procast/status");
     expect(status.body.lastSyncAt).toBeTruthy();
+  });
+
+  it("reports scheduler status with the default interval before any cycle runs", async () => {
+    const res = await request(app).get("/api/procast/scheduler");
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(false);
+    expect(res.body.intervalMs).toBeGreaterThan(0);
+    expect(res.body.lastRunAt).toBeNull();
+    expect(res.body.lastSynced).toBe(0);
+  });
+
+  it("updates the refresh interval and rejects out-of-range values", async () => {
+    const ok = await request(app)
+      .put("/api/procast/scheduler")
+      .send({ intervalMs: 5 * 60 * 1000 });
+    expect(ok.status).toBe(200);
+    expect(ok.body.intervalMs).toBe(5 * 60 * 1000);
+
+    const persisted = await request(app).get("/api/procast/scheduler");
+    expect(persisted.body.intervalMs).toBe(5 * 60 * 1000);
+
+    // Too small (< 1 minute) is rejected.
+    const tooSmall = await request(app)
+      .put("/api/procast/scheduler")
+      .send({ intervalMs: 1000 });
+    expect(tooSmall.status).toBe(400);
+
+    // Too large (> 24 hours) is rejected.
+    const tooLarge = await request(app)
+      .put("/api/procast/scheduler")
+      .send({ intervalMs: 48 * 60 * 60 * 1000 });
+    expect(tooLarge.status).toBe(400);
+  });
+
+  it("on-demand refresh skips when not connected", async () => {
+    const res = await request(app).post("/api/procast/refresh");
+    expect(res.status).toBe(200);
+    expect(res.body.lastSkipped).toBe(true);
+    expect(res.body.lastRunAt).toBeTruthy();
+    expect(res.body.lastSynced).toBe(0);
+  });
+
+  it("on-demand refresh pulls open invoices and records the result", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `Refresh Emp ${suffix}`, classification: "Engineer", homeRate: 120, fieldRate: 140 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({
+        code: `REFRESH-WP-${suffix}`,
+        title: "Refresh WP",
+        client: "Client",
+        jobNumber: "JOB",
+        poNumber: "PO",
+        totalBudget: 100000,
+      })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+
+    const periodStart = "2098-01-01";
+    const periodEnd = "2098-01-15";
+    const [draftInv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `REFRESH-DRAFT-${suffix}`,
+        invoiceDate: "2098-02-01",
+        periodStart,
+        periodEnd,
+        status: "draft",
+      })
+      .returning();
+    createdInvoiceIds.push(draftInv.id);
+
+    mockFetch((url) => {
+      if (url.includes("/health")) return new Response(null, { status: 200 });
+      if (url.includes("/timesheets")) {
+        const rows = url.includes(`start=${periodStart}`)
+          ? [{ Employee: emp.name, Hours: "8", Rate: "120", Category: "Regular", Location: "Home" }]
+          : [];
+        return new Response(JSON.stringify({ timesheets: rows }), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    await request(app)
+      .post("/api/procast/connect")
+      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .expect(200);
+
+    const res = await request(app).post("/api/procast/refresh");
+    expect(res.status).toBe(200);
+    expect(res.body.lastSkipped).toBe(false);
+    expect(res.body.lastSynced).toBeGreaterThanOrEqual(1);
+    expect(res.body.lastRunAt).toBeTruthy();
+    expect(res.body.connected).toBe(true);
+
+    const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, draftInv.id));
+    expect(items).toHaveLength(1);
+
+    // The scheduler status endpoint reflects the recorded cycle.
+    const status = await request(app).get("/api/procast/scheduler");
+    expect(status.body.lastSynced).toBeGreaterThanOrEqual(1);
+    expect(status.body.lastRunAt).toBeTruthy();
   });
 
   it("refuses to sync when Procast is not connected", async () => {

@@ -733,6 +733,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcastStatus"
 
+  /procast/scheduler:
+    get:
+      operationId: getProcastScheduler
+      tags: [reference]
+      summary: Get the background Procast refresh schedule and last cycle result
+      responses:
+        "200":
+          description: Procast scheduler status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcastSchedulerStatus"
+    put:
+      operationId: updateProcastScheduler
+      tags: [reference]
+      summary: Update the background Procast refresh interval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcastSchedulerInput"
+      responses:
+        "200":
+          description: Updated Procast scheduler status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcastSchedulerStatus"
+
+  /procast/refresh:
+    post:
+      operationId: refreshProcastNow
+      tags: [reference]
+      summary: Run a full Procast refresh cycle for all open invoices immediately
+      responses:
+        "200":
+          description: Scheduler status reflecting the on-demand cycle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcastSchedulerStatus"
+
   /packages:
     get:
       operationId: listPackages
@@ -1713,6 +1756,31 @@ components:
       properties:
         baseUrl: { type: string }
         apiKey: { type: string }
+
+    ProcastSchedulerStatus:
+      type: object
+      required:
+        - connected
+        - intervalMs
+        - running
+        - lastSynced
+        - lastFailed
+        - lastSkipped
+      properties:
+        connected: { type: boolean }
+        intervalMs: { type: integer }
+        running: { type: boolean }
+        lastRunAt: { type: ["string", "null"] }
+        lastSynced: { type: integer }
+        lastFailed: { type: integer }
+        lastSkipped: { type: boolean }
+        lastError: { type: ["string", "null"] }
+
+    ProcastSchedulerInput:
+      type: object
+      required: [intervalMs]
+      properties:
+        intervalMs: { type: integer }
 
     DashboardSummary:
       type: object

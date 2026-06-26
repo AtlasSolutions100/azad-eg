@@ -60,6 +60,8 @@ import type {
   PackageWeekInput,
   PackageWeekUpdate,
   ProcastConnectInput,
+  ProcastSchedulerInput,
+  ProcastSchedulerStatus,
   ProcastStatus,
   ProgressReport,
   ProgressReportFileUpload,
@@ -3359,6 +3361,223 @@ export const useDisconnectProcast = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDisconnectProcastMutationOptions(options));
+    }
+
+export const getGetProcastSchedulerUrl = () => {
+
+
+
+
+  return `/api/procast/scheduler`
+}
+
+/**
+ * @summary Get the background Procast refresh schedule and last cycle result
+ */
+export const getProcastScheduler = async ( options?: RequestInit): Promise<ProcastSchedulerStatus> => {
+
+  return customFetch<ProcastSchedulerStatus>(getGetProcastSchedulerUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProcastSchedulerQueryKey = () => {
+    return [
+    `/api/procast/scheduler`
+    ] as const;
+    }
+
+
+export const getGetProcastSchedulerQueryOptions = <TData = Awaited<ReturnType<typeof getProcastScheduler>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcastScheduler>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProcastSchedulerQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcastScheduler>>> = ({ signal }) => getProcastScheduler({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcastScheduler>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProcastSchedulerQueryResult = NonNullable<Awaited<ReturnType<typeof getProcastScheduler>>>
+export type GetProcastSchedulerQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the background Procast refresh schedule and last cycle result
+ */
+
+export function useGetProcastScheduler<TData = Awaited<ReturnType<typeof getProcastScheduler>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcastScheduler>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProcastSchedulerQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateProcastSchedulerUrl = () => {
+
+
+
+
+  return `/api/procast/scheduler`
+}
+
+/**
+ * @summary Update the background Procast refresh interval
+ */
+export const updateProcastScheduler = async (procastSchedulerInput: ProcastSchedulerInput, options?: RequestInit): Promise<ProcastSchedulerStatus> => {
+
+  return customFetch<ProcastSchedulerStatus>(getUpdateProcastSchedulerUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(procastSchedulerInput)
+  }
+);}
+
+
+
+
+export const getUpdateProcastSchedulerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProcastScheduler>>, TError,{data: BodyType<ProcastSchedulerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateProcastScheduler>>, TError,{data: BodyType<ProcastSchedulerInput>}, TContext> => {
+
+const mutationKey = ['updateProcastScheduler'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProcastScheduler>>, {data: BodyType<ProcastSchedulerInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateProcastScheduler(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateProcastSchedulerMutationResult = NonNullable<Awaited<ReturnType<typeof updateProcastScheduler>>>
+    export type UpdateProcastSchedulerMutationBody = BodyType<ProcastSchedulerInput>
+    export type UpdateProcastSchedulerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update the background Procast refresh interval
+ */
+export const useUpdateProcastScheduler = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProcastScheduler>>, TError,{data: BodyType<ProcastSchedulerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateProcastScheduler>>,
+        TError,
+        {data: BodyType<ProcastSchedulerInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateProcastSchedulerMutationOptions(options));
+    }
+
+export const getRefreshProcastNowUrl = () => {
+
+
+
+
+  return `/api/procast/refresh`
+}
+
+/**
+ * @summary Run a full Procast refresh cycle for all open invoices immediately
+ */
+export const refreshProcastNow = async ( options?: RequestInit): Promise<ProcastSchedulerStatus> => {
+
+  return customFetch<ProcastSchedulerStatus>(getRefreshProcastNowUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRefreshProcastNowMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshProcastNow>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshProcastNow>>, TError,void, TContext> => {
+
+const mutationKey = ['refreshProcastNow'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshProcastNow>>, void> = () => {
+
+
+          return  refreshProcastNow(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshProcastNowMutationResult = NonNullable<Awaited<ReturnType<typeof refreshProcastNow>>>
+
+    export type RefreshProcastNowMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Run a full Procast refresh cycle for all open invoices immediately
+ */
+export const useRefreshProcastNow = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshProcastNow>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshProcastNow>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRefreshProcastNowMutationOptions(options));
     }
 
 export const getListPackagesUrl = (params?: ListPackagesParams,) => {

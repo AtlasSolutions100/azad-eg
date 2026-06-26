@@ -14,3 +14,4 @@ export * from "./reference-entries";
 export * from "./column-definitions";
 export * from "./audit-logs";
 export * from "./procast-connection";
+export * from "./procast-scheduler";

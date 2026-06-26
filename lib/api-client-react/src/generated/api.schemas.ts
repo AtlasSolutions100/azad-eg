@@ -637,6 +637,23 @@ export interface ProcastConnectInput {
   apiKey: string;
 }
 
+export interface ProcastSchedulerStatus {
+  connected: boolean;
+  intervalMs: number;
+  running: boolean;
+  /** @nullable */
+  lastRunAt?: string | null;
+  lastSynced: number;
+  lastFailed: number;
+  lastSkipped: boolean;
+  /** @nullable */
+  lastError?: string | null;
+}
+
+export interface ProcastSchedulerInput {
+  intervalMs: number;
+}
+
 export interface StatusCount {
   status: string;
   count: number;
