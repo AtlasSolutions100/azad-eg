@@ -947,6 +947,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PackageProgressReport"
+  /packages/{id}/progress-report/upload:
+    post:
+      operationId: uploadProgressReportFile
+      tags: [packages]
+      summary: Upload a progress report document (Excel/Word/PDF) and get a stored URL
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ProgressReportFileUpload"
+      responses:
+        "200":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressReportFileUploadResult"
+        "400":
+          description: Invalid or unsupported file
+        "404":
+          $ref: "#/components/responses/NotFound"
   /packages/{id}/overrides:
     get:
       operationId: listLaborOverrides
@@ -1453,6 +1477,20 @@ components:
         file:
           type: string
           format: binary
+
+    ProgressReportFileUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+    ProgressReportFileUploadResult:
+      type: object
+      required: [uploadedFileUrl, uploadedFileName]
+      properties:
+        uploadedFileUrl: { type: string }
+        uploadedFileName: { type: string }
 
     TimeImportUpload:
       type: object

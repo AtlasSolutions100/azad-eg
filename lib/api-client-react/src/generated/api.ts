@@ -61,6 +61,8 @@ import type {
   PackageWeekUpdate,
   ProcastStatus,
   ProgressReport,
+  ProgressReportFileUpload,
+  ProgressReportFileUploadResult,
   ProgressReportInput,
   ReferenceEntry,
   ReferenceEntryUpdate,
@@ -4175,6 +4177,79 @@ export const useSavePackageProgressReport = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSavePackageProgressReportMutationOptions(options));
+    }
+
+export const getUploadProgressReportFileUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/progress-report/upload`
+}
+
+/**
+ * @summary Upload a progress report document (Excel/Word/PDF) and get a stored URL
+ */
+export const uploadProgressReportFile = async (id: number,
+    progressReportFileUpload: ProgressReportFileUpload, options?: RequestInit): Promise<ProgressReportFileUploadResult> => {
+    const formData = new FormData();
+formData.append(`file`, progressReportFileUpload.file);
+
+  return customFetch<ProgressReportFileUploadResult>(getUploadProgressReportFileUrl(id),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+export const getUploadProgressReportFileMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadProgressReportFile>>, TError,{id: number;data: BodyType<ProgressReportFileUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadProgressReportFile>>, TError,{id: number;data: BodyType<ProgressReportFileUpload>}, TContext> => {
+
+const mutationKey = ['uploadProgressReportFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadProgressReportFile>>, {id: number;data: BodyType<ProgressReportFileUpload>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  uploadProgressReportFile(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadProgressReportFileMutationResult = NonNullable<Awaited<ReturnType<typeof uploadProgressReportFile>>>
+    export type UploadProgressReportFileMutationBody = BodyType<ProgressReportFileUpload>
+    export type UploadProgressReportFileMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Upload a progress report document (Excel/Word/PDF) and get a stored URL
+ */
+export const useUploadProgressReportFile = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadProgressReportFile>>, TError,{id: number;data: BodyType<ProgressReportFileUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadProgressReportFile>>,
+        TError,
+        {id: number;data: BodyType<ProgressReportFileUpload>},
+        TContext
+      > => {
+      return useMutation(getUploadProgressReportFileMutationOptions(options));
     }
 
 export const getListLaborOverridesUrl = (id: number,) => {

@@ -452,6 +452,15 @@ export interface SignatureUpload {
   file: Blob;
 }
 
+export interface ProgressReportFileUpload {
+  file: Blob;
+}
+
+export interface ProgressReportFileUploadResult {
+  uploadedFileUrl: string;
+  uploadedFileName: string;
+}
+
 export type TimeImportUploadSource = typeof TimeImportUploadSource[keyof typeof TimeImportUploadSource];
 
 

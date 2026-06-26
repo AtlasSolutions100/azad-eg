@@ -69,6 +69,8 @@ export * from './packageWeekUpdate';
 export * from './procastStatus';
 export * from './procastStatusMode';
 export * from './progressReport';
+export * from './progressReportFileUpload';
+export * from './progressReportFileUploadResult';
 export * from './progressReportInput';
 export * from './referenceEntry';
 export * from './referenceEntryUpdate';

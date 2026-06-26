@@ -41,6 +41,7 @@ import {
   GeneratePackageDocumentBody,
   GeneratePackageDocumentResponse,
   ExportPackageResponse,
+  UploadProgressReportFileResponse,
 } from "@workspace/api-zod";
 import {
   toApiPackageSummary,
@@ -59,6 +60,9 @@ import {
 } from "../lib/packageDocs";
 import { resolveSignaturePath } from "../lib/excel";
 import { recordAudit } from "../lib/audit";
+import fs from "node:fs";
+import { upload } from "../lib/upload";
+import { uploadsDir, ensureDirs } from "../lib/paths";
 
 const DOC_KINDS: PackageDocKind[] = ["invoice", "subcalc", "progress", "labor", "timesheets"];
 
@@ -547,6 +551,45 @@ router.put("/packages/:id/progress-report", async (req, res): Promise<void> => {
   }
   res.json(SavePackageProgressReportResponse.parse(toApiProgressReport(row)));
 });
+
+// Documents that may be attached as a progress-report narrative. Anything else
+// is rejected so untrusted uploads can't smuggle an executable type past the
+// /api/files serving route.
+const PROGRESS_REPORT_EXTENSIONS = new Set([".xlsx", ".xls", ".doc", ".docx", ".pdf"]);
+
+router.post(
+  "/packages/:id/progress-report/upload",
+  upload.single("file"),
+  async (req, res): Promise<void> => {
+    const id = parseId(req.params.id);
+    const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+    if (!pkg) {
+      res.status(404).json({ error: "Package not found" });
+      return;
+    }
+    const file = (req as unknown as { file?: { buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: "No file uploaded (expected an Excel, Word, or PDF in field 'file')." });
+      return;
+    }
+    const originalName = path.basename(file.originalname);
+    const ext = path.extname(originalName).toLowerCase();
+    if (!PROGRESS_REPORT_EXTENSIONS.has(ext)) {
+      res.status(400).json({ error: "Unsupported file type. Upload an Excel, Word, or PDF document." });
+      return;
+    }
+    ensureDirs();
+    const filename = `progress_${id}_${Date.now()}${ext}`;
+    fs.writeFileSync(path.resolve(uploadsDir, filename), file.buffer);
+
+    res.json(
+      UploadProgressReportFileResponse.parse({
+        uploadedFileUrl: `/api/files/${encodeURIComponent(filename)}`,
+        uploadedFileName: originalName,
+      }),
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Labor attachment overrides

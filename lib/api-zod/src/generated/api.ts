@@ -1636,6 +1636,23 @@ export const SavePackageProgressReportResponse = zod.object({
 
 
 /**
+ * @summary Upload a progress report document (Excel/Word/PDF) and get a stored URL
+ */
+export const UploadProgressReportFileParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UploadProgressReportFileBody = zod.object({
+  "file": zod.instanceof(File)
+})
+
+export const UploadProgressReportFileResponse = zod.object({
+  "uploadedFileUrl": zod.string(),
+  "uploadedFileName": zod.string()
+})
+
+
+/**
  * @summary List labor attachment overrides
  */
 export const ListLaborOverridesParams = zod.object({

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   useSavePackageProgressReport,
+  useUploadProgressReportFile,
   type PackageDetail,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileUp, FileCheck2, X } from "lucide-react";
+import { FileUp, FileCheck2, X, Download, Loader2 } from "lucide-react";
 import DocDownload from "./doc-download";
 
 type FormState = {
@@ -24,6 +25,7 @@ type FormState = {
   preparedBy: string;
   reportDate: string;
   uploadedFileName: string;
+  uploadedFileUrl: string;
 };
 
 const NARRATIVE_FIELDS: { key: keyof FormState; label: string; placeholder: string }[] = [
@@ -40,6 +42,7 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const save = useSavePackageProgressReport();
+  const upload = useUploadProgressReportFile();
 
   const [form, setForm] = useState<FormState>({
     percentComplete: 0,
@@ -52,6 +55,7 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
     preparedBy: "",
     reportDate: "",
     uploadedFileName: "",
+    uploadedFileUrl: "",
   });
 
   useEffect(() => {
@@ -66,15 +70,31 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
       preparedBy: progressReport?.preparedBy ?? "",
       reportDate: progressReport?.reportDate ?? "",
       uploadedFileName: progressReport?.uploadedFileName ?? "",
+      uploadedFileUrl: progressReport?.uploadedFileUrl ?? "",
     });
   }, [progressReport]);
 
-  const handleFile = (file: File | null) => {
-    setForm((f) => ({ ...f, uploadedFileName: file?.name ?? "" }));
-    if (file) {
+  const handleFile = async (file: File | null) => {
+    if (!file) {
+      setForm((f) => ({ ...f, uploadedFileName: "", uploadedFileUrl: "" }));
+      return;
+    }
+    try {
+      const res = await upload.mutateAsync({ id: pkg.id, data: { file } });
+      setForm((f) => ({
+        ...f,
+        uploadedFileName: res.uploadedFileName,
+        uploadedFileUrl: res.uploadedFileUrl,
+      }));
       toast({
-        title: "File recorded",
-        description: `${file.name} is noted on the report. Save to keep it. File storage is not yet available, so only the name is recorded for now.`,
+        title: "File uploaded",
+        description: `${res.uploadedFileName} is attached. Save the report to keep it.`,
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: "Could not upload the file. Use an Excel, Word, or PDF document.",
       });
     }
   };
@@ -94,6 +114,7 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
           preparedBy: form.preparedBy || undefined,
           reportDate: form.reportDate || undefined,
           uploadedFileName: form.uploadedFileName || undefined,
+          uploadedFileUrl: form.uploadedFileUrl || undefined,
         },
       });
       queryClient.invalidateQueries();
@@ -118,31 +139,55 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
         <CardHeader>
           <CardTitle className="text-base">Upload a Report</CardTitle>
           <CardDescription>
-            Reference an existing Excel, Word, or PDF report. Only the file name
-            is recorded for now — document storage is coming soon.
+            Attach an existing Excel, Word, or PDF report. The file is stored and
+            can be downloaded later.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {form.uploadedFileName ? (
             <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <div className="flex items-center gap-2 text-sm text-emerald-700">
-                <FileCheck2 className="h-4 w-4" />
-                <span className="font-medium">{form.uploadedFileName}</span>
+              <div className="flex min-w-0 items-center gap-2 text-sm text-emerald-700">
+                <FileCheck2 className="h-4 w-4 flex-shrink-0" />
+                {form.uploadedFileUrl ? (
+                  <a
+                    href={form.uploadedFileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate font-medium underline-offset-2 hover:underline"
+                  >
+                    {form.uploadedFileName}
+                  </a>
+                ) : (
+                  <span className="truncate font-medium">{form.uploadedFileName}</span>
+                )}
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => handleFile(null)}
-                aria-label="Remove attached file"
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex flex-shrink-0 items-center gap-1">
+                {form.uploadedFileUrl && (
+                  <Button variant="ghost" size="icon" asChild aria-label="Download attached file">
+                    <a href={form.uploadedFileUrl} target="_blank" rel="noreferrer">
+                      <Download className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleFile(null)}
+                  aria-label="Remove attached file"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ) : (
             <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-gray-50/60 px-4 py-8 text-center transition-colors hover:border-[#CFAF42]/50">
-              <FileUp className="h-6 w-6 text-[#CFAF42]" />
+              {upload.isPending ? (
+                <Loader2 className="h-6 w-6 animate-spin text-[#CFAF42]" />
+              ) : (
+                <FileUp className="h-6 w-6 text-[#CFAF42]" />
+              )}
               <span className="text-sm font-medium text-[#333333]">
-                Click to upload a report
+                {upload.isPending ? "Uploading…" : "Click to upload a report"}
               </span>
               <span className="text-xs text-[#5F5F5F]">
                 Excel, Word, or PDF
@@ -151,6 +196,7 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
                 type="file"
                 className="hidden"
                 accept=".xlsx,.xls,.doc,.docx,.pdf"
+                disabled={upload.isPending}
                 onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               />
             </label>
