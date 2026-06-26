@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { parseTimeFile } from "../../lib/timeimport";
 
 // Mutable auth state shared with the mocked Clerk module. Hoisted so the
@@ -81,6 +82,14 @@ async function createEmployee(
 
 function csvBuffer(rows: string[][]): Buffer {
   return Buffer.from(rows.map((r) => r.join(",")).join("\n"), "utf8");
+}
+
+async function xlsxBuffer(rows: unknown[][]): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Sheet1");
+  for (const r of rows) ws.addRow(r);
+  const ab = await wb.xlsx.writeBuffer();
+  return Buffer.from(ab as ArrayBuffer);
 }
 
 beforeAll(() => {
@@ -204,6 +213,67 @@ describe("parseTimeFile", () => {
 
     expect(result.lines).toHaveLength(0);
     expect(result.warnings.some((w) => w.includes("Could not locate a header row"))).toBe(true);
+  });
+
+  it("parses a real .xlsx workbook the same way as the CSV path", async () => {
+    const rows = [
+      ["Employee", "Classification", "Category", "Location", "Hours", "Rate"],
+      ["Jane Doe", "Senior Engineer", "Overtime", "Field", 8, 150],
+      ["John Roe", "Engineer", "Regular", "Home", 40, 100],
+    ];
+    const xlsx = await parseTimeFile(await xlsxBuffer(rows), "timesheet.xlsx");
+    const csv = await parseTimeFile(
+      csvBuffer(rows.map((r) => r.map((c) => String(c)))),
+      "timesheet.csv",
+    );
+
+    expect(xlsx.lines).toEqual(csv.lines);
+    expect(xlsx.warnings).toEqual(csv.warnings);
+    expect(xlsx.lines).toHaveLength(2);
+    expect(xlsx.lines[0]).toMatchObject({
+      employeeName: "Jane Doe",
+      classification: "Senior Engineer",
+      category: "ot",
+      location: "field",
+      hours: 8,
+      rate: 150,
+    });
+    expect(xlsx.lines[1]).toMatchObject({
+      employeeName: "John Roe",
+      category: "regular",
+      location: "home",
+      hours: 40,
+      rate: 100,
+    });
+  });
+
+  it("reads a formula-result cell as its computed value from an .xlsx workbook", async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Sheet1");
+    ws.addRow(["Name", "Hours", "Rate"]);
+    const row = ws.addRow(["Formula Worker", 0, 100]);
+    // Hours cell holds a formula whose computed result is 12.
+    row.getCell(2).value = { formula: "6*2", result: 12 };
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "timesheet.xlsx");
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.lines[0]).toMatchObject({
+      employeeName: "Formula Worker",
+      hours: 12,
+      rate: 100,
+    });
+  });
+
+  it("warns when an .xlsx workbook has no sheets", async () => {
+    const wb = new ExcelJS.Workbook();
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "empty.xlsx");
+
+    expect(result.lines).toHaveLength(0);
+    expect(result.warnings).toContain("The workbook has no sheets.");
   });
 });
 
