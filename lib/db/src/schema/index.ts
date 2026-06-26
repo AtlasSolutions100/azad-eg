@@ -13,5 +13,5 @@ export * from "./signatures";
 export * from "./reference-entries";
 export * from "./column-definitions";
 export * from "./audit-logs";
-export * from "./procast-connection";
-export * from "./procast-scheduler";
+export * from "./procas-connection";
+export * from "./procas-scheduler";

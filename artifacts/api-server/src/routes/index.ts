@@ -9,7 +9,7 @@ import lineItemsRouter from "./line-items";
 import signaturesRouter from "./signatures";
 import referenceRouter from "./reference";
 import auditLogsRouter from "./audit-logs";
-import procastRouter from "./procast";
+import procasRouter from "./procas";
 import dashboardRouter from "./dashboard";
 import searchRouter from "./search";
 import filesRouter from "./files";
@@ -32,7 +32,7 @@ router.use(lineItemsRouter);
 router.use(signaturesRouter);
 router.use(referenceRouter);
 router.use(auditLogsRouter);
-router.use(procastRouter);
+router.use(procasRouter);
 router.use(filesRouter);
 
 export default router;

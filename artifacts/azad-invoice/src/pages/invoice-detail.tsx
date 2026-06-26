@@ -8,8 +8,8 @@ import {
   useGetProgressReport, 
   useListSignatures,
   useImportTimeData,
-  useSyncProcastTimesheets,
-  useGetProcastStatus,
+  useSyncTimesheetsFromProcas,
+  useGetProcasStatus,
   useSaveProgressReport,
   useApproveInvoice,
   useGenerateInvoiceFile,
@@ -65,8 +65,8 @@ export default function InvoiceDetail() {
   );
 
   const importTime = useImportTimeData();
-  const syncProcast = useSyncProcastTimesheets();
-  const { data: procastStatus } = useGetProcastStatus();
+  const syncProcas = useSyncTimesheetsFromProcas();
+  const { data: procasStatus } = useGetProcasStatus();
   const saveProgress = useSaveProgressReport();
   const approveInvoice = useApproveInvoice();
   const generateFile = useGenerateInvoiceFile();
@@ -74,7 +74,7 @@ export default function InvoiceDetail() {
   const updateLineItem = useUpdateLineItem();
   const deleteLineItem = useDeleteLineItem();
 
-  const [importSource, setImportSource] = useState<TimeImportUploadSource>('procast');
+  const [importSource, setImportSource] = useState<TimeImportUploadSource>('procas');
   const [importFile, setImportFile] = useState<File | null>(null);
 
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
@@ -131,21 +131,21 @@ export default function InvoiceDetail() {
     }
   };
 
-  const handleProcastSync = async () => {
+  const handleProcasSync = async () => {
     try {
-      const result = await syncProcast.mutateAsync({ id: invoiceId });
+      const result = await syncProcas.mutateAsync({ id: invoiceId });
       queryClient.invalidateQueries();
       const replaced = result.replacedCount ?? 0;
       toast({
-        title: "Synced from Procast",
+        title: "Synced from Procas",
         description:
           `${result.importedCount} line item(s) pulled for this period.` +
           (replaced > 0 ? ` Replaced ${replaced} previously imported row(s).` : ""),
       });
     } catch (e) {
       toast({
-        title: "Procast sync failed",
-        description: e instanceof Error ? e.message : "Could not pull timesheets from Procast.",
+        title: "Procas sync failed",
+        description: e instanceof Error ? e.message : "Could not pull timesheets from Procas.",
         variant: "destructive",
       });
     }
@@ -599,22 +599,22 @@ export default function InvoiceDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Import Time Data</CardTitle>
-              <CardDescription>Pull live from Procast, or upload Procast/Timesheet files to generate line items.</CardDescription>
+              <CardDescription>Pull live from Procas, or upload Procas/Timesheet files to generate line items.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {procastStatus?.connected && (
+              {procasStatus?.connected && (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
-                  <p className="text-sm font-semibold text-emerald-800">Live Procast Connection</p>
+                  <p className="text-sm font-semibold text-emerald-800">Live Procas Connection</p>
                   <p className="mt-1 text-xs text-emerald-700">
-                    Pull timesheets directly from Procast for this invoice's billing period
+                    Pull timesheets directly from Procas for this invoice's billing period
                     {invoice ? ` (${invoice.periodStart} → ${invoice.periodEnd})` : ""}.
                   </p>
                   <Button
-                    onClick={handleProcastSync}
-                    disabled={syncProcast.isPending}
+                    onClick={handleProcasSync}
+                    disabled={syncProcas.isPending}
                     className="mt-3 bg-emerald-600 text-white hover:bg-emerald-700"
                   >
-                    {syncProcast.isPending ? "Syncing..." : "Sync from Procast"}
+                    {syncProcas.isPending ? "Syncing..." : "Sync from Procas"}
                   </Button>
                 </div>
               )}
@@ -625,7 +625,7 @@ export default function InvoiceDetail() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="procast">Procast</SelectItem>
+                    <SelectItem value="procas">Procas</SelectItem>
                     <SelectItem value="timesheet">Timesheet</SelectItem>
                   </SelectContent>
                 </Select>

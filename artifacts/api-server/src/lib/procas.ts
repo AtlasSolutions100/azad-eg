@@ -1,11 +1,11 @@
-import { db, procastConnectionTable, type ProcastConnectionRow } from "@workspace/db";
+import { db, procasConnectionTable, type ProcasConnectionRow } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { encryptSecret, decryptSecret } from "./crypto";
 
 const CONNECTION_ID = 1;
 const REQUEST_TIMEOUT_MS = 10_000;
 
-export interface ProcastCreds {
+export interface ProcasCreds {
   baseUrl: string;
   apiKey: string;
 }
@@ -31,16 +31,16 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   }
 }
 
-export interface ProcastPingResult {
+export interface ProcasPingResult {
   ok: boolean;
   status?: number;
   error?: string;
 }
 
-// Performs a real authenticated request against the Procast API to confirm the
+// Performs a real authenticated request against the Procas API to confirm the
 // base URL is reachable and the API key is accepted. The `/health` endpoint is
 // used as a lightweight probe; a 401/403 means the key was rejected.
-export async function pingProcast(creds: ProcastCreds): Promise<ProcastPingResult> {
+export async function pingProcas(creds: ProcasCreds): Promise<ProcasPingResult> {
   const base = normalizeBase(creds.baseUrl);
   if (!/^https?:\/\//i.test(base)) {
     return { ok: false, error: "Base URL must start with http:// or https://" };
@@ -51,29 +51,29 @@ export async function pingProcast(creds: ProcastCreds): Promise<ProcastPingResul
       headers: authHeaders(creds.apiKey),
     });
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, status: res.status, error: "Procast rejected the API key (unauthorized)." };
+      return { ok: false, status: res.status, error: "Procas rejected the API key (unauthorized)." };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, error: `Procast responded with HTTP ${res.status}.` };
+      return { ok: false, status: res.status, error: `Procas responded with HTTP ${res.status}.` };
     }
     return { ok: true, status: res.status };
   } catch (e) {
     const reason = e instanceof Error && e.name === "AbortError" ? "timed out" : "could not be reached";
-    return { ok: false, error: `Procast API ${reason}. Check the base URL and your network.` };
+    return { ok: false, error: `Procas API ${reason}. Check the base URL and your network.` };
   }
 }
 
-export interface ProcastTimesheetQuery {
+export interface TimesheetQuery {
   start?: string;
   end?: string;
 }
 
-// Pulls raw timesheet records for a date range from the live Procast API.
-// Procast deployments vary in their envelope shape, so we accept a bare array
+// Pulls raw timesheet records for a date range from the live Procas API.
+// Procas deployments vary in their envelope shape, so we accept a bare array
 // or a common wrapper key and let the importer fuzzy-map the columns.
-export async function fetchProcastTimesheets(
-  creds: ProcastCreds,
-  query: ProcastTimesheetQuery,
+export async function fetchTimesheetsFromProcas(
+  creds: ProcasCreds,
+  query: TimesheetQuery,
 ): Promise<Array<Record<string, unknown>>> {
   const base = normalizeBase(creds.baseUrl);
   const params = new URLSearchParams();
@@ -87,19 +87,19 @@ export async function fetchProcastTimesheets(
     res = await fetchWithTimeout(url, { method: "GET", headers: authHeaders(creds.apiKey) });
   } catch (e) {
     const reason = e instanceof Error && e.name === "AbortError" ? "timed out" : "could not be reached";
-    throw new Error(`Procast API ${reason} while fetching timesheets.`);
+    throw new Error(`Procas API ${reason} while fetching timesheets.`);
   }
   if (res.status === 401 || res.status === 403) {
-    throw new Error("Procast rejected the API key (unauthorized). Reconnect with a valid key.");
+    throw new Error("Procas rejected the API key (unauthorized). Reconnect with a valid key.");
   }
   if (!res.ok) {
-    throw new Error(`Procast API returned HTTP ${res.status} while fetching timesheets.`);
+    throw new Error(`Procas API returned HTTP ${res.status} while fetching timesheets.`);
   }
 
   const body: unknown = await res.json();
   const records = extractRecords(body);
   if (!records) {
-    throw new Error("Procast API returned an unexpected response shape (no timesheet records found).");
+    throw new Error("Procas API returned an unexpected response shape (no timesheet records found).");
   }
   return records;
 }
@@ -120,31 +120,31 @@ function extractRecords(body: unknown): Array<Record<string, unknown>> | null {
 // The api_key column holds AES-256-GCM ciphertext, never plaintext. We decrypt
 // on read and encrypt on write so callers continue to work with the bare key
 // while it stays protected at rest in the database.
-export async function getProcastConnection(): Promise<ProcastConnectionRow | null> {
+export async function getProcasConnection(): Promise<ProcasConnectionRow | null> {
   const [row] = await db
     .select()
-    .from(procastConnectionTable)
-    .where(eq(procastConnectionTable.id, CONNECTION_ID));
+    .from(procasConnectionTable)
+    .where(eq(procasConnectionTable.id, CONNECTION_ID));
   if (!row) return null;
   return { ...row, apiKey: row.apiKey ? decryptSecret(row.apiKey) : row.apiKey };
 }
 
-export async function saveProcastConnection(
+export async function saveProcasConnection(
   values: { connected: boolean; baseUrl: string | null; apiKey: string | null; lastSyncAt?: Date | null },
-): Promise<ProcastConnectionRow> {
+): Promise<ProcasConnectionRow> {
   const stored = { ...values, apiKey: values.apiKey ? encryptSecret(values.apiKey) : values.apiKey };
   const [row] = await db
-    .insert(procastConnectionTable)
+    .insert(procasConnectionTable)
     .values({ id: CONNECTION_ID, ...stored })
-    .onConflictDoUpdate({ target: procastConnectionTable.id, set: stored })
+    .onConflictDoUpdate({ target: procasConnectionTable.id, set: stored })
     .returning();
   // Return the plaintext key to the caller; only the persisted copy is encrypted.
   return { ...row, apiKey: values.apiKey };
 }
 
-export async function markProcastSynced(at: Date): Promise<void> {
+export async function markProcasSynced(at: Date): Promise<void> {
   await db
-    .update(procastConnectionTable)
+    .update(procasConnectionTable)
     .set({ lastSyncAt: at })
-    .where(eq(procastConnectionTable.id, CONNECTION_ID));
+    .where(eq(procasConnectionTable.id, CONNECTION_ID));
 }

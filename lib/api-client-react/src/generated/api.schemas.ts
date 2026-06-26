@@ -470,7 +470,7 @@ export type TimeImportUploadSource = typeof TimeImportUploadSource[keyof typeof 
 
 
 export const TimeImportUploadSource = {
-  procast: 'procast',
+  procas: 'procas',
   timesheet: 'timesheet',
 } as const;
 
@@ -618,17 +618,17 @@ export interface AuditLog {
   createdAt: string;
 }
 
-export type ProcastStatusMode = typeof ProcastStatusMode[keyof typeof ProcastStatusMode];
+export type ProcasStatusMode = typeof ProcasStatusMode[keyof typeof ProcasStatusMode];
 
 
-export const ProcastStatusMode = {
+export const ProcasStatusMode = {
   live: 'live',
   upload: 'upload',
 } as const;
 
-export interface ProcastStatus {
+export interface ProcasStatus {
   connected: boolean;
-  mode: ProcastStatusMode;
+  mode: ProcasStatusMode;
   /** @nullable */
   baseUrl?: string | null;
   /** @nullable */
@@ -636,12 +636,12 @@ export interface ProcastStatus {
   message: string;
 }
 
-export interface ProcastConnectInput {
+export interface ProcasConnectInput {
   baseUrl: string;
   apiKey: string;
 }
 
-export interface ProcastSchedulerStatus {
+export interface ProcasSchedulerStatus {
   connected: boolean;
   intervalMs: number;
   running: boolean;
@@ -654,7 +654,7 @@ export interface ProcastSchedulerStatus {
   lastError?: string | null;
 }
 
-export interface ProcastSchedulerInput {
+export interface ProcasSchedulerInput {
   intervalMs: number;
 }
 

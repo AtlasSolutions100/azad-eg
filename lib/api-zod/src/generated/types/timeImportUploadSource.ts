@@ -10,6 +10,6 @@ export type TimeImportUploadSource = typeof TimeImportUploadSource[keyof typeof 
 
 
 export const TimeImportUploadSource = {
-  procast: 'procast',
+  procas: 'procas',
   timesheet: 'timesheet',
 } as const;

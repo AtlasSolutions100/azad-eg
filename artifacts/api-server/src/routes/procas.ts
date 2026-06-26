@@ -1,18 +1,18 @@
 import { Router, type IRouter } from "express";
 import {
-  GetProcastStatusResponse,
-  ConnectProcastBody,
-  ConnectProcastResponse,
-  DisconnectProcastResponse,
-  GetProcastSchedulerResponse,
-  UpdateProcastSchedulerBody,
-  UpdateProcastSchedulerResponse,
+  GetProcasStatusResponse,
+  ConnectProcasBody,
+  ConnectProcasResponse,
+  DisconnectProcasResponse,
+  GetProcasSchedulerResponse,
+  UpdateProcasSchedulerBody,
+  UpdateProcasSchedulerResponse,
 } from "@workspace/api-zod";
 import {
-  getProcastConnection,
-  saveProcastConnection,
-  pingProcast,
-} from "../lib/procast";
+  getProcasConnection,
+  saveProcasConnection,
+  pingProcas,
+} from "../lib/procas";
 import {
   getSchedulerState,
   setSchedulerInterval,
@@ -20,14 +20,14 @@ import {
   clampInterval,
   MIN_INTERVAL_MS,
   MAX_INTERVAL_MS,
-  type ProcastSchedulerState,
-} from "../lib/procastScheduler";
+  type ProcasSchedulerState,
+} from "../lib/procasScheduler";
 import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
 
-async function schedulerPayload(state: ProcastSchedulerState) {
-  const conn = await getProcastConnection();
+async function schedulerPayload(state: ProcasSchedulerState) {
+  const conn = await getProcasConnection();
   return {
     connected: !!conn?.connected,
     intervalMs: state.intervalMs,
@@ -40,7 +40,7 @@ async function schedulerPayload(state: ProcastSchedulerState) {
   };
 }
 
-function statusPayload(conn: Awaited<ReturnType<typeof getProcastConnection>>) {
+function statusPayload(conn: Awaited<ReturnType<typeof getProcasConnection>>) {
   const connected = !!conn?.connected;
   return {
     connected,
@@ -48,76 +48,76 @@ function statusPayload(conn: Awaited<ReturnType<typeof getProcastConnection>>) {
     baseUrl: conn?.baseUrl ?? null,
     lastSyncAt: conn?.lastSyncAt ? conn.lastSyncAt.toISOString() : null,
     message: connected
-      ? "Timesheet data is pulled live from the Procast API."
-      : "Procast is not connected. Import timesheet data via CSV/Excel upload.",
+      ? "Timesheet data is pulled live from the Procas API."
+      : "Procas is not connected. Import timesheet data via CSV/Excel upload.",
   };
 }
 
-// Returns the real, persisted Procast connection state. Falls back to upload
+// Returns the real, persisted Procas connection state. Falls back to upload
 // mode whenever no live connection has been established.
-router.get("/procast/status", async (_req, res): Promise<void> => {
-  const conn = await getProcastConnection();
-  res.json(GetProcastStatusResponse.parse(statusPayload(conn)));
+router.get("/procas/status", async (_req, res): Promise<void> => {
+  const conn = await getProcasConnection();
+  res.json(GetProcasStatusResponse.parse(statusPayload(conn)));
 });
 
-// Starts the real Procast connection flow: validates the supplied credentials by
+// Starts the real Procas connection flow: validates the supplied credentials by
 // making an authenticated probe request, and persists them only on success.
-router.post("/procast/connect", async (req, res): Promise<void> => {
-  const parsed = ConnectProcastBody.safeParse(req.body);
+router.post("/procas/connect", async (req, res): Promise<void> => {
+  const parsed = ConnectProcasBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
   const { baseUrl, apiKey } = parsed.data;
 
-  const ping = await pingProcast({ baseUrl, apiKey });
+  const ping = await pingProcas({ baseUrl, apiKey });
   if (!ping.ok) {
-    res.status(502).json({ error: ping.error ?? "Could not connect to Procast." });
+    res.status(502).json({ error: ping.error ?? "Could not connect to Procas." });
     return;
   }
 
-  const conn = await saveProcastConnection({
+  const conn = await saveProcasConnection({
     connected: true,
     baseUrl: baseUrl.trim().replace(/\/+$/, ""),
     apiKey,
     lastSyncAt: null,
   });
   await recordAudit({
-    action: "connected Procast",
+    action: "connected Procas",
     entityType: "integration",
-    description: `Live Procast connection established (${conn.baseUrl})`,
+    description: `Live Procas connection established (${conn.baseUrl})`,
   });
-  res.json(ConnectProcastResponse.parse(statusPayload(conn)));
+  res.json(ConnectProcasResponse.parse(statusPayload(conn)));
 });
 
 // Tears down the live connection and returns to upload mode.
-router.post("/procast/disconnect", async (_req, res): Promise<void> => {
-  const conn = await saveProcastConnection({
+router.post("/procas/disconnect", async (_req, res): Promise<void> => {
+  const conn = await saveProcasConnection({
     connected: false,
     baseUrl: null,
     apiKey: null,
     lastSyncAt: null,
   });
   await recordAudit({
-    action: "disconnected Procast",
+    action: "disconnected Procas",
     entityType: "integration",
-    description: "Live Procast connection removed; reverted to upload mode",
+    description: "Live Procas connection removed; reverted to upload mode",
   });
-  res.json(DisconnectProcastResponse.parse(statusPayload(conn)));
+  res.json(DisconnectProcasResponse.parse(statusPayload(conn)));
 });
 
 // Reports the background refresh schedule (effective interval) and the outcome
 // of the most recent automatic or on-demand cycle, so billers can see whether
 // the live feed is working without digging through logs.
-router.get("/procast/scheduler", async (_req, res): Promise<void> => {
+router.get("/procas/scheduler", async (_req, res): Promise<void> => {
   const state = await getSchedulerState();
-  res.json(GetProcastSchedulerResponse.parse(await schedulerPayload(state)));
+  res.json(GetProcasSchedulerResponse.parse(await schedulerPayload(state)));
 });
 
 // Updates the configurable refresh interval. The value is clamped to a safe
 // range server-side; out-of-range requests are rejected so the UI can warn.
-router.put("/procast/scheduler", async (req, res): Promise<void> => {
-  const parsed = UpdateProcastSchedulerBody.safeParse(req.body);
+router.put("/procas/scheduler", async (req, res): Promise<void> => {
+  const parsed = UpdateProcasSchedulerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -135,26 +135,26 @@ router.put("/procast/scheduler", async (req, res): Promise<void> => {
   await setSchedulerInterval(intervalMs);
   const state = await getSchedulerState();
   await recordAudit({
-    action: "updated Procast refresh interval",
+    action: "updated Procas refresh interval",
     entityType: "integration",
-    description: `Automatic Procast refresh interval set to ${Math.round(
+    description: `Automatic Procas refresh interval set to ${Math.round(
       state.intervalMs / 60000,
     )} minute(s)`,
   });
-  res.json(UpdateProcastSchedulerResponse.parse(await schedulerPayload(state)));
+  res.json(UpdateProcasSchedulerResponse.parse(await schedulerPayload(state)));
 });
 
 // Runs a full refresh cycle across every open invoice immediately, on demand.
-router.post("/procast/refresh", async (_req, res): Promise<void> => {
+router.post("/procas/refresh", async (_req, res): Promise<void> => {
   const state = await runAndRecordCycle();
   await recordAudit({
-    action: "triggered Procast refresh",
+    action: "triggered Procas refresh",
     entityType: "integration",
     description: state.lastSkipped
-      ? "On-demand Procast refresh skipped (not connected)"
-      : `On-demand Procast refresh: ${state.lastSynced} synced, ${state.lastFailed} failed`,
+      ? "On-demand Procas refresh skipped (not connected)"
+      : `On-demand Procas refresh: ${state.lastSynced} synced, ${state.lastFailed} failed`,
   });
-  res.json(GetProcastSchedulerResponse.parse(await schedulerPayload(state)));
+  res.json(GetProcasSchedulerResponse.parse(await schedulerPayload(state)));
 });
 
 export default router;

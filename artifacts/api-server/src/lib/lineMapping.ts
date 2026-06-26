@@ -4,7 +4,7 @@ import type { ParsedLine } from "./timeimport";
 
 export type EmployeeRow = typeof employeesTable.$inferSelect;
 
-// Shared mapping of parsed timesheet lines (from file upload OR live Procast pull)
+// Shared mapping of parsed timesheet lines (from file upload OR live Procas pull)
 // into invoice line-item rows: matches employees to apply billable rates and
 // classifications, and accumulates warnings for rows that need manual attention.
 export function linesToLineItems(

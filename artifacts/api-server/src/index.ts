@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { ensureDirs } from "./lib/paths";
 import { seedDatabase } from "./lib/seed";
-import { startProcastScheduler } from "./lib/procastScheduler";
+import { startProcasScheduler } from "./lib/procasScheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -32,9 +32,9 @@ app.listen(port, async (err) => {
   }
 
   try {
-    await startProcastScheduler();
+    await startProcasScheduler();
   } catch (schedErr) {
-    logger.error({ err: schedErr }, "Failed to start Procast scheduler");
+    logger.error({ err: schedErr }, "Failed to start Procas scheduler");
   }
 
   logger.info({ port }, "Server listening");

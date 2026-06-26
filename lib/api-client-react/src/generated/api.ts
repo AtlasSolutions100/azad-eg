@@ -59,10 +59,10 @@ import type {
   PackageWeek,
   PackageWeekInput,
   PackageWeekUpdate,
-  ProcastConnectInput,
-  ProcastSchedulerInput,
-  ProcastSchedulerStatus,
-  ProcastStatus,
+  ProcasConnectInput,
+  ProcasSchedulerInput,
+  ProcasSchedulerStatus,
+  ProcasStatus,
   ProgressReport,
   ProgressReportFileUpload,
   ProgressReportFileUploadResult,
@@ -1973,7 +1973,7 @@ export const getImportTimeDataUrl = (id: number,) => {
 }
 
 /**
- * @summary Upload a Procast CSV/Excel export or weekly timesheet to parse labor hours
+ * @summary Upload a Procas CSV/Excel export or weekly timesheet to parse labor hours
  */
 export const importTimeData = async (id: number,
     timeImportUpload: TimeImportUpload, options?: RequestInit): Promise<ImportResult> => {
@@ -2027,7 +2027,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ImportTimeDataMutationError = ErrorType<unknown>
 
     /**
- * @summary Upload a Procast CSV/Excel export or weekly timesheet to parse labor hours
+ * @summary Upload a Procas CSV/Excel export or weekly timesheet to parse labor hours
  */
 export const useImportTimeData = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importTimeData>>, TError,{id: number;data: BodyType<TimeImportUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -2040,20 +2040,20 @@ export const useImportTimeData = <TError = ErrorType<unknown>,
       return useMutation(getImportTimeDataMutationOptions(options));
     }
 
-export const getSyncProcastTimesheetsUrl = (id: number,) => {
+export const getSyncTimesheetsFromProcasUrl = (id: number,) => {
 
 
 
 
-  return `/api/invoices/${id}/procast-sync`
+  return `/api/invoices/${id}/procas-sync`
 }
 
 /**
- * @summary Pull timesheets for this invoice's period live from the connected Procast API
+ * @summary Pull timesheets for this invoice's period live from the connected Procas API
  */
-export const syncProcastTimesheets = async (id: number, options?: RequestInit): Promise<ImportResult> => {
+export const syncTimesheetsFromProcas = async (id: number, options?: RequestInit): Promise<ImportResult> => {
 
-  return customFetch<ImportResult>(getSyncProcastTimesheetsUrl(id),
+  return customFetch<ImportResult>(getSyncTimesheetsFromProcasUrl(id),
   {
     ...options,
     method: 'POST'
@@ -2065,11 +2065,11 @@ export const syncProcastTimesheets = async (id: number, options?: RequestInit): 
 
 
 
-export const getSyncProcastTimesheetsMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncProcastTimesheets>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof syncProcastTimesheets>>, TError,{id: number}, TContext> => {
+export const getSyncTimesheetsFromProcasMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncTimesheetsFromProcas>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncTimesheetsFromProcas>>, TError,{id: number}, TContext> => {
 
-const mutationKey = ['syncProcastTimesheets'];
+const mutationKey = ['syncTimesheetsFromProcas'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -2079,10 +2079,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncProcastTimesheets>>, {id: number}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncTimesheetsFromProcas>>, {id: number}> = (props) => {
           const {id} = props ?? {};
 
-          return  syncProcastTimesheets(id,requestOptions)
+          return  syncTimesheetsFromProcas(id,requestOptions)
         }
 
 
@@ -2092,22 +2092,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type SyncProcastTimesheetsMutationResult = NonNullable<Awaited<ReturnType<typeof syncProcastTimesheets>>>
+    export type SyncTimesheetsFromProcasMutationResult = NonNullable<Awaited<ReturnType<typeof syncTimesheetsFromProcas>>>
 
-    export type SyncProcastTimesheetsMutationError = ErrorType<unknown>
+    export type SyncTimesheetsFromProcasMutationError = ErrorType<unknown>
 
     /**
- * @summary Pull timesheets for this invoice's period live from the connected Procast API
+ * @summary Pull timesheets for this invoice's period live from the connected Procas API
  */
-export const useSyncProcastTimesheets = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncProcastTimesheets>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useSyncTimesheetsFromProcas = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncTimesheetsFromProcas>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof syncProcastTimesheets>>,
+        Awaited<ReturnType<typeof syncTimesheetsFromProcas>>,
         TError,
         {id: number},
         TContext
       > => {
-      return useMutation(getSyncProcastTimesheetsMutationOptions(options));
+      return useMutation(getSyncTimesheetsFromProcasMutationOptions(options));
     }
 
 export const getGenerateInvoiceFileUrl = (id: number,) => {
@@ -3146,20 +3146,20 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
 
 
 
-export const getGetProcastStatusUrl = () => {
+export const getGetProcasStatusUrl = () => {
 
 
 
 
-  return `/api/procast/status`
+  return `/api/procas/status`
 }
 
 /**
- * @summary Get Procast integration status
+ * @summary Get Procas integration status
  */
-export const getProcastStatus = async ( options?: RequestInit): Promise<ProcastStatus> => {
+export const getProcasStatus = async ( options?: RequestInit): Promise<ProcasStatus> => {
 
-  return customFetch<ProcastStatus>(getGetProcastStatusUrl(),
+  return customFetch<ProcasStatus>(getGetProcasStatusUrl(),
   {
     ...options,
     method: 'GET'
@@ -3172,45 +3172,45 @@ export const getProcastStatus = async ( options?: RequestInit): Promise<ProcastS
 
 
 
-export const getGetProcastStatusQueryKey = () => {
+export const getGetProcasStatusQueryKey = () => {
     return [
-    `/api/procast/status`
+    `/api/procas/status`
     ] as const;
     }
 
 
-export const getGetProcastStatusQueryOptions = <TData = Awaited<ReturnType<typeof getProcastStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcastStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetProcasStatusQueryOptions = <TData = Awaited<ReturnType<typeof getProcasStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetProcastStatusQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetProcasStatusQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcastStatus>>> = ({ signal }) => getProcastStatus({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcasStatus>>> = ({ signal }) => getProcasStatus({ signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcastStatus>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcasStatus>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetProcastStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getProcastStatus>>>
-export type GetProcastStatusQueryError = ErrorType<unknown>
+export type GetProcasStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getProcasStatus>>>
+export type GetProcasStatusQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get Procast integration status
+ * @summary Get Procas integration status
  */
 
-export function useGetProcastStatus<TData = Awaited<ReturnType<typeof getProcastStatus>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcastStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useGetProcasStatus<TData = Awaited<ReturnType<typeof getProcasStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetProcastStatusQueryOptions(options)
+  const queryOptions = getGetProcasStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -3223,36 +3223,36 @@ export function useGetProcastStatus<TData = Awaited<ReturnType<typeof getProcast
 
 
 
-export const getConnectProcastUrl = () => {
+export const getConnectProcasUrl = () => {
 
 
 
 
-  return `/api/procast/connect`
+  return `/api/procas/connect`
 }
 
 /**
- * @summary Connect the live Procast API (validates and stores credentials)
+ * @summary Connect the live Procas API (validates and stores credentials)
  */
-export const connectProcast = async (procastConnectInput: ProcastConnectInput, options?: RequestInit): Promise<ProcastStatus> => {
+export const connectProcas = async (procasConnectInput: ProcasConnectInput, options?: RequestInit): Promise<ProcasStatus> => {
 
-  return customFetch<ProcastStatus>(getConnectProcastUrl(),
+  return customFetch<ProcasStatus>(getConnectProcasUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(procastConnectInput)
+    body: JSON.stringify(procasConnectInput)
   }
 );}
 
 
 
 
-export const getConnectProcastMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectProcast>>, TError,{data: BodyType<ProcastConnectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof connectProcast>>, TError,{data: BodyType<ProcastConnectInput>}, TContext> => {
+export const getConnectProcasMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectProcas>>, TError,{data: BodyType<ProcasConnectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof connectProcas>>, TError,{data: BodyType<ProcasConnectInput>}, TContext> => {
 
-const mutationKey = ['connectProcast'];
+const mutationKey = ['connectProcas'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -3262,10 +3262,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof connectProcast>>, {data: BodyType<ProcastConnectInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof connectProcas>>, {data: BodyType<ProcasConnectInput>}> = (props) => {
           const {data} = props ?? {};
 
-          return  connectProcast(data,requestOptions)
+          return  connectProcas(data,requestOptions)
         }
 
 
@@ -3275,38 +3275,38 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type ConnectProcastMutationResult = NonNullable<Awaited<ReturnType<typeof connectProcast>>>
-    export type ConnectProcastMutationBody = BodyType<ProcastConnectInput>
-    export type ConnectProcastMutationError = ErrorType<unknown>
+    export type ConnectProcasMutationResult = NonNullable<Awaited<ReturnType<typeof connectProcas>>>
+    export type ConnectProcasMutationBody = BodyType<ProcasConnectInput>
+    export type ConnectProcasMutationError = ErrorType<unknown>
 
     /**
- * @summary Connect the live Procast API (validates and stores credentials)
+ * @summary Connect the live Procas API (validates and stores credentials)
  */
-export const useConnectProcast = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectProcast>>, TError,{data: BodyType<ProcastConnectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useConnectProcas = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectProcas>>, TError,{data: BodyType<ProcasConnectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof connectProcast>>,
+        Awaited<ReturnType<typeof connectProcas>>,
         TError,
-        {data: BodyType<ProcastConnectInput>},
+        {data: BodyType<ProcasConnectInput>},
         TContext
       > => {
-      return useMutation(getConnectProcastMutationOptions(options));
+      return useMutation(getConnectProcasMutationOptions(options));
     }
 
-export const getDisconnectProcastUrl = () => {
+export const getDisconnectProcasUrl = () => {
 
 
 
 
-  return `/api/procast/disconnect`
+  return `/api/procas/disconnect`
 }
 
 /**
- * @summary Disconnect the live Procast API and revert to upload mode
+ * @summary Disconnect the live Procas API and revert to upload mode
  */
-export const disconnectProcast = async ( options?: RequestInit): Promise<ProcastStatus> => {
+export const disconnectProcas = async ( options?: RequestInit): Promise<ProcasStatus> => {
 
-  return customFetch<ProcastStatus>(getDisconnectProcastUrl(),
+  return customFetch<ProcasStatus>(getDisconnectProcasUrl(),
   {
     ...options,
     method: 'POST'
@@ -3318,11 +3318,11 @@ export const disconnectProcast = async ( options?: RequestInit): Promise<Procast
 
 
 
-export const getDisconnectProcastMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectProcast>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof disconnectProcast>>, TError,void, TContext> => {
+export const getDisconnectProcasMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectProcas>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectProcas>>, TError,void, TContext> => {
 
-const mutationKey = ['disconnectProcast'];
+const mutationKey = ['disconnectProcas'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -3332,10 +3332,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectProcast>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectProcas>>, void> = () => {
 
 
-          return  disconnectProcast(requestOptions)
+          return  disconnectProcas(requestOptions)
         }
 
 
@@ -3345,38 +3345,38 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type DisconnectProcastMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectProcast>>>
+    export type DisconnectProcasMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectProcas>>>
 
-    export type DisconnectProcastMutationError = ErrorType<unknown>
+    export type DisconnectProcasMutationError = ErrorType<unknown>
 
     /**
- * @summary Disconnect the live Procast API and revert to upload mode
+ * @summary Disconnect the live Procas API and revert to upload mode
  */
-export const useDisconnectProcast = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectProcast>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useDisconnectProcas = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectProcas>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof disconnectProcast>>,
+        Awaited<ReturnType<typeof disconnectProcas>>,
         TError,
         void,
         TContext
       > => {
-      return useMutation(getDisconnectProcastMutationOptions(options));
+      return useMutation(getDisconnectProcasMutationOptions(options));
     }
 
-export const getGetProcastSchedulerUrl = () => {
+export const getGetProcasSchedulerUrl = () => {
 
 
 
 
-  return `/api/procast/scheduler`
+  return `/api/procas/scheduler`
 }
 
 /**
- * @summary Get the background Procast refresh schedule and last cycle result
+ * @summary Get the background Procas refresh schedule and last cycle result
  */
-export const getProcastScheduler = async ( options?: RequestInit): Promise<ProcastSchedulerStatus> => {
+export const getProcasScheduler = async ( options?: RequestInit): Promise<ProcasSchedulerStatus> => {
 
-  return customFetch<ProcastSchedulerStatus>(getGetProcastSchedulerUrl(),
+  return customFetch<ProcasSchedulerStatus>(getGetProcasSchedulerUrl(),
   {
     ...options,
     method: 'GET'
@@ -3389,45 +3389,45 @@ export const getProcastScheduler = async ( options?: RequestInit): Promise<Proca
 
 
 
-export const getGetProcastSchedulerQueryKey = () => {
+export const getGetProcasSchedulerQueryKey = () => {
     return [
-    `/api/procast/scheduler`
+    `/api/procas/scheduler`
     ] as const;
     }
 
 
-export const getGetProcastSchedulerQueryOptions = <TData = Awaited<ReturnType<typeof getProcastScheduler>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcastScheduler>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetProcasSchedulerQueryOptions = <TData = Awaited<ReturnType<typeof getProcasScheduler>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasScheduler>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetProcastSchedulerQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetProcasSchedulerQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcastScheduler>>> = ({ signal }) => getProcastScheduler({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcasScheduler>>> = ({ signal }) => getProcasScheduler({ signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcastScheduler>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcasScheduler>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetProcastSchedulerQueryResult = NonNullable<Awaited<ReturnType<typeof getProcastScheduler>>>
-export type GetProcastSchedulerQueryError = ErrorType<unknown>
+export type GetProcasSchedulerQueryResult = NonNullable<Awaited<ReturnType<typeof getProcasScheduler>>>
+export type GetProcasSchedulerQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get the background Procast refresh schedule and last cycle result
+ * @summary Get the background Procas refresh schedule and last cycle result
  */
 
-export function useGetProcastScheduler<TData = Awaited<ReturnType<typeof getProcastScheduler>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcastScheduler>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useGetProcasScheduler<TData = Awaited<ReturnType<typeof getProcasScheduler>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasScheduler>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetProcastSchedulerQueryOptions(options)
+  const queryOptions = getGetProcasSchedulerQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -3440,36 +3440,36 @@ export function useGetProcastScheduler<TData = Awaited<ReturnType<typeof getProc
 
 
 
-export const getUpdateProcastSchedulerUrl = () => {
+export const getUpdateProcasSchedulerUrl = () => {
 
 
 
 
-  return `/api/procast/scheduler`
+  return `/api/procas/scheduler`
 }
 
 /**
- * @summary Update the background Procast refresh interval
+ * @summary Update the background Procas refresh interval
  */
-export const updateProcastScheduler = async (procastSchedulerInput: ProcastSchedulerInput, options?: RequestInit): Promise<ProcastSchedulerStatus> => {
+export const updateProcasScheduler = async (procasSchedulerInput: ProcasSchedulerInput, options?: RequestInit): Promise<ProcasSchedulerStatus> => {
 
-  return customFetch<ProcastSchedulerStatus>(getUpdateProcastSchedulerUrl(),
+  return customFetch<ProcasSchedulerStatus>(getUpdateProcasSchedulerUrl(),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(procastSchedulerInput)
+    body: JSON.stringify(procasSchedulerInput)
   }
 );}
 
 
 
 
-export const getUpdateProcastSchedulerMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProcastScheduler>>, TError,{data: BodyType<ProcastSchedulerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof updateProcastScheduler>>, TError,{data: BodyType<ProcastSchedulerInput>}, TContext> => {
+export const getUpdateProcasSchedulerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProcasScheduler>>, TError,{data: BodyType<ProcasSchedulerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateProcasScheduler>>, TError,{data: BodyType<ProcasSchedulerInput>}, TContext> => {
 
-const mutationKey = ['updateProcastScheduler'];
+const mutationKey = ['updateProcasScheduler'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -3479,10 +3479,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProcastScheduler>>, {data: BodyType<ProcastSchedulerInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProcasScheduler>>, {data: BodyType<ProcasSchedulerInput>}> = (props) => {
           const {data} = props ?? {};
 
-          return  updateProcastScheduler(data,requestOptions)
+          return  updateProcasScheduler(data,requestOptions)
         }
 
 
@@ -3492,38 +3492,38 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type UpdateProcastSchedulerMutationResult = NonNullable<Awaited<ReturnType<typeof updateProcastScheduler>>>
-    export type UpdateProcastSchedulerMutationBody = BodyType<ProcastSchedulerInput>
-    export type UpdateProcastSchedulerMutationError = ErrorType<unknown>
+    export type UpdateProcasSchedulerMutationResult = NonNullable<Awaited<ReturnType<typeof updateProcasScheduler>>>
+    export type UpdateProcasSchedulerMutationBody = BodyType<ProcasSchedulerInput>
+    export type UpdateProcasSchedulerMutationError = ErrorType<unknown>
 
     /**
- * @summary Update the background Procast refresh interval
+ * @summary Update the background Procas refresh interval
  */
-export const useUpdateProcastScheduler = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProcastScheduler>>, TError,{data: BodyType<ProcastSchedulerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useUpdateProcasScheduler = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProcasScheduler>>, TError,{data: BodyType<ProcasSchedulerInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof updateProcastScheduler>>,
+        Awaited<ReturnType<typeof updateProcasScheduler>>,
         TError,
-        {data: BodyType<ProcastSchedulerInput>},
+        {data: BodyType<ProcasSchedulerInput>},
         TContext
       > => {
-      return useMutation(getUpdateProcastSchedulerMutationOptions(options));
+      return useMutation(getUpdateProcasSchedulerMutationOptions(options));
     }
 
-export const getRefreshProcastNowUrl = () => {
+export const getRefreshProcasNowUrl = () => {
 
 
 
 
-  return `/api/procast/refresh`
+  return `/api/procas/refresh`
 }
 
 /**
- * @summary Run a full Procast refresh cycle for all open invoices immediately
+ * @summary Run a full Procas refresh cycle for all open invoices immediately
  */
-export const refreshProcastNow = async ( options?: RequestInit): Promise<ProcastSchedulerStatus> => {
+export const refreshProcasNow = async ( options?: RequestInit): Promise<ProcasSchedulerStatus> => {
 
-  return customFetch<ProcastSchedulerStatus>(getRefreshProcastNowUrl(),
+  return customFetch<ProcasSchedulerStatus>(getRefreshProcasNowUrl(),
   {
     ...options,
     method: 'POST'
@@ -3535,11 +3535,11 @@ export const refreshProcastNow = async ( options?: RequestInit): Promise<Procast
 
 
 
-export const getRefreshProcastNowMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshProcastNow>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof refreshProcastNow>>, TError,void, TContext> => {
+export const getRefreshProcasNowMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshProcasNow>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshProcasNow>>, TError,void, TContext> => {
 
-const mutationKey = ['refreshProcastNow'];
+const mutationKey = ['refreshProcasNow'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -3549,10 +3549,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshProcastNow>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshProcasNow>>, void> = () => {
 
 
-          return  refreshProcastNow(requestOptions)
+          return  refreshProcasNow(requestOptions)
         }
 
 
@@ -3562,22 +3562,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type RefreshProcastNowMutationResult = NonNullable<Awaited<ReturnType<typeof refreshProcastNow>>>
+    export type RefreshProcasNowMutationResult = NonNullable<Awaited<ReturnType<typeof refreshProcasNow>>>
 
-    export type RefreshProcastNowMutationError = ErrorType<unknown>
+    export type RefreshProcasNowMutationError = ErrorType<unknown>
 
     /**
- * @summary Run a full Procast refresh cycle for all open invoices immediately
+ * @summary Run a full Procas refresh cycle for all open invoices immediately
  */
-export const useRefreshProcastNow = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshProcastNow>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useRefreshProcasNow = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshProcasNow>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof refreshProcastNow>>,
+        Awaited<ReturnType<typeof refreshProcasNow>>,
         TError,
         void,
         TContext
       > => {
-      return useMutation(getRefreshProcastNowMutationOptions(options));
+      return useMutation(getRefreshProcasNowMutationOptions(options));
     }
 
 export const getListPackagesUrl = (params?: ListPackagesParams,) => {

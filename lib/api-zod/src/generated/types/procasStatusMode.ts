@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ProcastStatusMode = typeof ProcastStatusMode[keyof typeof ProcastStatusMode];
+export type ProcasStatusMode = typeof ProcasStatusMode[keyof typeof ProcasStatusMode];
 
 
-export const ProcastStatusMode = {
+export const ProcasStatusMode = {
   live: 'live',
   upload: 'upload',
 } as const;

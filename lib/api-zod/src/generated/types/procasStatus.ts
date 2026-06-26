@@ -5,11 +5,11 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
-import type { ProcastStatusMode } from './procastStatusMode';
+import type { ProcasStatusMode } from './procasStatusMode';
 
-export interface ProcastStatus {
+export interface ProcasStatus {
   connected: boolean;
-  mode: ProcastStatusMode;
+  mode: ProcasStatusMode;
   /** @nullable */
   baseUrl?: string | null;
   /** @nullable */

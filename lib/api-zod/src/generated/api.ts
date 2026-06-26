@@ -728,14 +728,14 @@ export const GetInvoiceValidationsResponse = zod.object({
 
 
 /**
- * @summary Upload a Procast CSV/Excel export or weekly timesheet to parse labor hours
+ * @summary Upload a Procas CSV/Excel export or weekly timesheet to parse labor hours
  */
 export const ImportTimeDataParams = zod.object({
   "id": zod.coerce.number()
 })
 
 export const ImportTimeDataBody = zod.object({
-  "source": zod.enum(['procast', 'timesheet']).optional(),
+  "source": zod.enum(['procas', 'timesheet']).optional(),
   "file": zod.instanceof(File)
 })
 
@@ -763,13 +763,13 @@ export const ImportTimeDataResponse = zod.object({
 
 
 /**
- * @summary Pull timesheets for this invoice's period live from the connected Procast API
+ * @summary Pull timesheets for this invoice's period live from the connected Procas API
  */
-export const SyncProcastTimesheetsParams = zod.object({
+export const SyncTimesheetsFromProcasParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const SyncProcastTimesheetsResponse = zod.object({
+export const SyncTimesheetsFromProcasResponse = zod.object({
   "importedCount": zod.number(),
   "replacedCount": zod.number().optional(),
   "source": zod.string().optional(),
@@ -1098,9 +1098,9 @@ export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
 
 
 /**
- * @summary Get Procast integration status
+ * @summary Get Procas integration status
  */
-export const GetProcastStatusResponse = zod.object({
+export const GetProcasStatusResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
   "baseUrl": zod.string().nullish(),
@@ -1110,14 +1110,14 @@ export const GetProcastStatusResponse = zod.object({
 
 
 /**
- * @summary Connect the live Procast API (validates and stores credentials)
+ * @summary Connect the live Procas API (validates and stores credentials)
  */
-export const ConnectProcastBody = zod.object({
+export const ConnectProcasBody = zod.object({
   "baseUrl": zod.string(),
   "apiKey": zod.string()
 })
 
-export const ConnectProcastResponse = zod.object({
+export const ConnectProcasResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
   "baseUrl": zod.string().nullish(),
@@ -1127,9 +1127,9 @@ export const ConnectProcastResponse = zod.object({
 
 
 /**
- * @summary Disconnect the live Procast API and revert to upload mode
+ * @summary Disconnect the live Procas API and revert to upload mode
  */
-export const DisconnectProcastResponse = zod.object({
+export const DisconnectProcasResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
   "baseUrl": zod.string().nullish(),
@@ -1139,9 +1139,9 @@ export const DisconnectProcastResponse = zod.object({
 
 
 /**
- * @summary Get the background Procast refresh schedule and last cycle result
+ * @summary Get the background Procas refresh schedule and last cycle result
  */
-export const GetProcastSchedulerResponse = zod.object({
+export const GetProcasSchedulerResponse = zod.object({
   "connected": zod.boolean(),
   "intervalMs": zod.number(),
   "running": zod.boolean(),
@@ -1154,13 +1154,13 @@ export const GetProcastSchedulerResponse = zod.object({
 
 
 /**
- * @summary Update the background Procast refresh interval
+ * @summary Update the background Procas refresh interval
  */
-export const UpdateProcastSchedulerBody = zod.object({
+export const UpdateProcasSchedulerBody = zod.object({
   "intervalMs": zod.number()
 })
 
-export const UpdateProcastSchedulerResponse = zod.object({
+export const UpdateProcasSchedulerResponse = zod.object({
   "connected": zod.boolean(),
   "intervalMs": zod.number(),
   "running": zod.boolean(),
@@ -1173,9 +1173,9 @@ export const UpdateProcastSchedulerResponse = zod.object({
 
 
 /**
- * @summary Run a full Procast refresh cycle for all open invoices immediately
+ * @summary Run a full Procas refresh cycle for all open invoices immediately
  */
-export const RefreshProcastNowResponse = zod.object({
+export const RefreshProcasNowResponse = zod.object({
   "connected": zod.boolean(),
   "intervalMs": zod.number(),
   "running": zod.boolean(),

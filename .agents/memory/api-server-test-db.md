@@ -7,7 +7,7 @@ api-server vitest specs run against the **real shared dev Postgres**, not an iso
 
 Consequences:
 - Seed data is present. Any code path that queries *globally* (no invoice/workplan filter) — e.g. the
-  Procast scheduled-sync cycle that pulls every open (`draft`/`in_review`) invoice — will also touch seed
+  Procas scheduled-sync cycle that pulls every open (`draft`/`in_review`) invoice — will also touch seed
   rows. Scope assertions and test fixtures by unique keys (random suffixes) or unique periods so seed rows
   don't inflate counts or get mutated. Example: give a test invoice a far-future `periodStart` and have the
   mocked feed return rows only for that period.

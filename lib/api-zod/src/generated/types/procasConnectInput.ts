@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProcastSchedulerInput {
-  intervalMs: number;
+export interface ProcasConnectInput {
+  baseUrl: string;
+  apiKey: string;
 }

@@ -14,7 +14,7 @@ export const lineItemsTable = pgTable("line_items", {
   taskNo: text("task_no"),
   notes: text("notes"),
   // How this row entered the invoice: "manual" for hand-entered rows, or the
-  // import source ("timesheet"/"procast") for auto-imported rows. Re-importing
+  // import source ("timesheet"/"procas") for auto-imported rows. Re-importing
   // a period replaces prior auto-imported rows but leaves "manual" rows intact.
   source: text("source").notNull().default("manual"),
 });

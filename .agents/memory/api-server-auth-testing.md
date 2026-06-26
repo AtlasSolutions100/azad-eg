@@ -12,4 +12,4 @@ The api-server mounts every route (except /health) behind Clerk `requireAuth`.
 `{"error":"Unauthorized"}` — that's auth, not a broken route. To exercise routes
 end-to-end, write a vitest + supertest test that `vi.mock("@clerk/express")` to
 return a fixed `userId` (see existing `*.test.ts` in `routes/`). Mock `globalThis.fetch`
-when a route calls external APIs (e.g. the Procast client).
+when a route calls external APIs (e.g. the Procas client).

@@ -5,7 +5,7 @@ import logoUrl from "@assets/Azad_Logo_1782418426096.jpeg";
 import { useSearch } from "@workspace/api-client-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import ProcastIndicator from "@/components/procast-indicator";
+import ProcasIndicator from "@/components/procas-indicator";
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -63,7 +63,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             Azad Invoice Automation
           </div>
           <div className="flex items-center gap-4">
-            <ProcastIndicator />
+            <ProcasIndicator />
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
                 <div className="relative cursor-pointer">

@@ -1,28 +1,36 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 
-// Symmetric encryption for credentials stored at rest (e.g. the Procast API
+// Symmetric encryption for credentials stored at rest (e.g. the Procas API
 // key). The master key material comes only from a managed secret injected at
-// runtime (a dedicated PROCAST_ENC_KEY if provisioned, otherwise the existing
+// runtime (a dedicated PROCAS_ENC_KEY if provisioned, otherwise the existing
 // SESSION_SECRET) — never from the database and never from source-controlled
 // config — so a database leak does not expose the credential.
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12; // GCM standard nonce length
 const ENC_PREFIX = "enc:v1:";
 
-let cachedKey: Buffer | null = null;
+// Domain-separation salt for the derived key. The salt was renamed when the
+// integration was renamed Procast -> Procas. Any ciphertext written before the
+// rename was derived with LEGACY_KEY_SALT, so decryptSecret falls back to it so
+// existing stored credentials remain decryptable with no forced reconnect.
+const KEY_SALT = "procas-connection-v1";
+const LEGACY_KEY_SALT = "procast-connection-v1";
 
-// Resolve the secret that seeds the encryption key. A dedicated PROCAST_ENC_KEY
+let cachedKey: Buffer | null = null;
+let cachedLegacyKey: Buffer | null = null;
+
+// Resolve the secret that seeds the encryption key. A dedicated PROCAS_ENC_KEY
 // is preferred for isolation; we fall back to SESSION_SECRET so the feature
 // works without extra provisioning. Either way the value is a managed secret,
 // not a committed env var. NOTE: rotating whichever secret is in use will make
-// previously stored ciphertext undecryptable, so reconnect Procast afterwards.
+// previously stored ciphertext undecryptable, so reconnect Procas afterwards.
 function resolveSecret(): string {
-  const dedicated = process.env.PROCAST_ENC_KEY;
+  const dedicated = process.env.PROCAS_ENC_KEY;
   if (dedicated && dedicated.length > 0) return dedicated;
   const fallback = process.env.SESSION_SECRET;
   if (fallback && fallback.length > 0) return fallback;
   throw new Error(
-    "No encryption secret available. Set PROCAST_ENC_KEY (or SESSION_SECRET) to protect stored credentials.",
+    "No encryption secret available. Set PROCAS_ENC_KEY (or SESSION_SECRET) to protect stored credentials.",
   );
 }
 
@@ -30,8 +38,20 @@ function getKey(): Buffer {
   if (cachedKey) return cachedKey;
   // Derive a stable 32-byte key from the configured secret (domain-separated by
   // a fixed salt) so any sufficiently random value works regardless of length.
-  cachedKey = scryptSync(resolveSecret(), "procast-connection-v1", 32);
+  cachedKey = scryptSync(resolveSecret(), KEY_SALT, 32);
   return cachedKey;
+}
+
+function getLegacyKey(): Buffer {
+  if (cachedLegacyKey) return cachedLegacyKey;
+  cachedLegacyKey = scryptSync(resolveSecret(), LEGACY_KEY_SALT, 32);
+  return cachedLegacyKey;
+}
+
+function decryptWith(key: Buffer, iv: Buffer, tag: Buffer, data: Buffer): string {
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
 }
 
 // True when the value was produced by encryptSecret (vs. legacy plaintext).
@@ -58,7 +78,11 @@ export function decryptSecret(value: string): string {
   const iv = Buffer.from(ivB64, "base64");
   const tag = Buffer.from(tagB64, "base64");
   const data = Buffer.from(dataB64, "base64");
-  const decipher = createDecipheriv(ALGORITHM, getKey(), iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+  try {
+    return decryptWith(getKey(), iv, tag, data);
+  } catch {
+    // Ciphertext written before the Procast -> Procas salt rename was derived
+    // with the legacy salt; fall back so existing credentials stay readable.
+    return decryptWith(getLegacyKey(), iv, tag, data);
+  }
 }

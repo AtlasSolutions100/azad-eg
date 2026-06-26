@@ -18,8 +18,8 @@ const request = (await import("supertest")).default;
 const app = (await import("../app")).default;
 const {
   db,
-  procastConnectionTable,
-  procastSchedulerTable,
+  procasConnectionTable,
+  procasSchedulerTable,
   invoicesTable,
   workPlansTable,
   employeesTable,
@@ -31,8 +31,8 @@ const createdWorkPlanIds: number[] = [];
 const createdEmployeeIds: number[] = [];
 
 async function resetConnection(): Promise<void> {
-  await db.delete(procastConnectionTable);
-  await db.delete(procastSchedulerTable);
+  await db.delete(procasConnectionTable);
+  await db.delete(procasSchedulerTable);
 }
 
 beforeEach(async () => {
@@ -64,9 +64,9 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response): void
   );
 }
 
-describe("procast integration", () => {
+describe("procas integration", () => {
   it("defaults to upload mode when never connected", async () => {
-    const res = await request(app).get("/api/procast/status");
+    const res = await request(app).get("/api/procas/status");
     expect(res.status).toBe(200);
     expect(res.body.connected).toBe(false);
     expect(res.body.mode).toBe("upload");
@@ -78,36 +78,36 @@ describe("procast integration", () => {
       return new Response(null, { status: 401 });
     });
     const res = await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "bad" });
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "bad" });
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/unauthorized/i);
 
-    const status = await request(app).get("/api/procast/status");
+    const status = await request(app).get("/api/procas/status");
     expect(status.body.connected).toBe(false);
   });
 
   it("connects when credentials validate, then disconnects", async () => {
     mockFetch(() => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const connect = await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com/v1/", apiKey: "good" });
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com/v1/", apiKey: "good" });
     expect(connect.status).toBe(200);
     expect(connect.body.connected).toBe(true);
     expect(connect.body.mode).toBe("live");
-    expect(connect.body.baseUrl).toBe("https://procast.example.com/v1");
+    expect(connect.body.baseUrl).toBe("https://procas.example.com/v1");
 
     // The API key must be encrypted at rest, never readable plaintext in the DB.
     const [stored] = await db
       .select()
-      .from(procastConnectionTable)
-      .where(eq(procastConnectionTable.id, 1));
+      .from(procasConnectionTable)
+      .where(eq(procasConnectionTable.id, 1));
     expect(stored?.apiKey).toBeTruthy();
     expect(stored?.apiKey).not.toBe("good");
     expect(stored?.apiKey).not.toContain("good");
     expect(stored?.apiKey?.startsWith("enc:")).toBe(true);
 
-    const disconnect = await request(app).post("/api/procast/disconnect");
+    const disconnect = await request(app).post("/api/procas/disconnect");
     expect(disconnect.status).toBe(200);
     expect(disconnect.body.connected).toBe(false);
     expect(disconnect.body.mode).toBe("upload");
@@ -117,14 +117,14 @@ describe("procast integration", () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [emp] = await db
       .insert(employeesTable)
-      .values({ name: `Procast Emp ${suffix}`, classification: "Engineer", homeRate: 150, fieldRate: 175 })
+      .values({ name: `Procas Emp ${suffix}`, classification: "Engineer", homeRate: 150, fieldRate: 175 })
       .returning();
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
       .values({
         code: `PC-WP-${suffix}`,
-        title: "Procast WP",
+        title: "Procas WP",
         client: "Client",
         jobNumber: "JOB",
         poNumber: "PO",
@@ -163,13 +163,13 @@ describe("procast integration", () => {
     });
 
     await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
       .expect(200);
 
-    const sync = await request(app).post(`/api/invoices/${inv.id}/procast-sync`);
+    const sync = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
     expect(sync.status).toBe(200);
-    expect(sync.body.source).toBe("procast");
+    expect(sync.body.source).toBe("procas");
     expect(sync.body.importedCount).toBe(2);
 
     const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, inv.id));
@@ -179,21 +179,21 @@ describe("procast integration", () => {
     expect(otRow?.rate).toBe(175);
     expect(otRow?.location).toBe("field");
 
-    const status = await request(app).get("/api/procast/status");
+    const status = await request(app).get("/api/procas/status");
     expect(status.body.lastSyncAt).toBeTruthy();
   });
 
-  it("scheduled cycle skips entirely when Procast is in upload mode", async () => {
-    const { runProcastSyncCycle } = await import("../lib/procastScheduler");
+  it("scheduled cycle skips entirely when Procas is in upload mode", async () => {
+    const { runProcasSyncCycle } = await import("../lib/procasScheduler");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const result = await runProcastSyncCycle();
+    const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(true);
     expect(result.synced).toBe(0);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("scheduled cycle pulls open invoices and skips finalized ones", async () => {
-    const { runProcastSyncCycle } = await import("../lib/procastScheduler");
+    const { runProcasSyncCycle } = await import("../lib/procasScheduler");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [emp] = await db
       .insert(employeesTable)
@@ -258,11 +258,11 @@ describe("procast integration", () => {
     });
 
     await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
       .expect(200);
 
-    const result = await runProcastSyncCycle();
+    const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(false);
     expect(result.synced).toBe(1);
 
@@ -273,12 +273,12 @@ describe("procast integration", () => {
     expect(approvedItems).toHaveLength(0);
 
     // Last-synced reflects the scheduled pull.
-    const status = await request(app).get("/api/procast/status");
+    const status = await request(app).get("/api/procas/status");
     expect(status.body.lastSyncAt).toBeTruthy();
   });
 
   it("reports scheduler status with the default interval before any cycle runs", async () => {
-    const res = await request(app).get("/api/procast/scheduler");
+    const res = await request(app).get("/api/procas/scheduler");
     expect(res.status).toBe(200);
     expect(res.body.connected).toBe(false);
     expect(res.body.intervalMs).toBeGreaterThan(0);
@@ -288,29 +288,29 @@ describe("procast integration", () => {
 
   it("updates the refresh interval and rejects out-of-range values", async () => {
     const ok = await request(app)
-      .put("/api/procast/scheduler")
+      .put("/api/procas/scheduler")
       .send({ intervalMs: 5 * 60 * 1000 });
     expect(ok.status).toBe(200);
     expect(ok.body.intervalMs).toBe(5 * 60 * 1000);
 
-    const persisted = await request(app).get("/api/procast/scheduler");
+    const persisted = await request(app).get("/api/procas/scheduler");
     expect(persisted.body.intervalMs).toBe(5 * 60 * 1000);
 
     // Too small (< 1 minute) is rejected.
     const tooSmall = await request(app)
-      .put("/api/procast/scheduler")
+      .put("/api/procas/scheduler")
       .send({ intervalMs: 1000 });
     expect(tooSmall.status).toBe(400);
 
     // Too large (> 24 hours) is rejected.
     const tooLarge = await request(app)
-      .put("/api/procast/scheduler")
+      .put("/api/procas/scheduler")
       .send({ intervalMs: 48 * 60 * 60 * 1000 });
     expect(tooLarge.status).toBe(400);
   });
 
   it("on-demand refresh skips when not connected", async () => {
-    const res = await request(app).post("/api/procast/refresh");
+    const res = await request(app).post("/api/procas/refresh");
     expect(res.status).toBe(200);
     expect(res.body.lastSkipped).toBe(true);
     expect(res.body.lastRunAt).toBeTruthy();
@@ -364,11 +364,11 @@ describe("procast integration", () => {
     });
 
     await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
       .expect(200);
 
-    const res = await request(app).post("/api/procast/refresh");
+    const res = await request(app).post("/api/procas/refresh");
     expect(res.status).toBe(200);
     expect(res.body.lastSkipped).toBe(false);
     expect(res.body.lastSynced).toBeGreaterThanOrEqual(1);
@@ -379,13 +379,13 @@ describe("procast integration", () => {
     expect(items).toHaveLength(1);
 
     // The scheduler status endpoint reflects the recorded cycle.
-    const status = await request(app).get("/api/procast/scheduler");
+    const status = await request(app).get("/api/procas/scheduler");
     expect(status.body.lastSynced).toBeGreaterThanOrEqual(1);
     expect(status.body.lastRunAt).toBeTruthy();
   });
 
-  it("isolates a single invoice's Procast failure so the rest of the cycle still syncs", async () => {
-    const { runProcastSyncCycle } = await import("../lib/procastScheduler");
+  it("isolates a single invoice's Procas failure so the rest of the cycle still syncs", async () => {
+    const { runProcasSyncCycle } = await import("../lib/procasScheduler");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [emp] = await db
       .insert(employeesTable)
@@ -457,11 +457,11 @@ describe("procast integration", () => {
     });
 
     await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
       .expect(200);
 
-    const result = await runProcastSyncCycle();
+    const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(false);
     // Exactly one invoice errored, exactly one synced; empty feeds are no-ops.
     expect(result.failed).toBe(1);
@@ -474,8 +474,8 @@ describe("procast integration", () => {
     expect(goodItems).toHaveLength(1);
   });
 
-  it("treats an empty Procast feed as a no-op, not a failure", async () => {
-    const { runProcastSyncCycle } = await import("../lib/procastScheduler");
+  it("treats an empty Procas feed as a no-op, not a failure", async () => {
+    const { runProcasSyncCycle } = await import("../lib/procasScheduler");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
       .insert(workPlansTable)
@@ -512,11 +512,11 @@ describe("procast integration", () => {
     });
 
     await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
       .expect(200);
 
-    const result = await runProcastSyncCycle();
+    const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(false);
     // Empty feeds are not failures and produce no imports.
     expect(result.failed).toBe(0);
@@ -527,7 +527,7 @@ describe("procast integration", () => {
   });
 
   it("skips an overlapping cycle while a previous one is still running", async () => {
-    const { tick } = await import("../lib/procastScheduler");
+    const { tick } = await import("../lib/procasScheduler");
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
       .insert(workPlansTable)
@@ -576,8 +576,8 @@ describe("procast integration", () => {
     });
 
     await request(app)
-      .post("/api/procast/connect")
-      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
       .expect(200);
 
     // Start the first cycle (do not await) — it will park on the gate.
@@ -598,13 +598,13 @@ describe("procast integration", () => {
     await first;
   });
 
-  it("refuses to sync when Procast is not connected", async () => {
+  it("refuses to sync when Procas is not connected", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
       .insert(workPlansTable)
       .values({
         code: `PC-WP2-${suffix}`,
-        title: "Procast WP2",
+        title: "Procas WP2",
         client: "Client",
         jobNumber: "JOB",
         poNumber: "PO",
@@ -624,23 +624,23 @@ describe("procast integration", () => {
       .returning();
     createdInvoiceIds.push(inv.id);
 
-    const sync = await request(app).post(`/api/invoices/${inv.id}/procast-sync`);
+    const sync = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
     expect(sync.status).toBe(409);
     expect(sync.body.error).toMatch(/not connected/i);
   });
 
   it("tick logs and swallows an error when the cycle itself throws, then resets the running guard", async () => {
-    const scheduler = await import("../lib/procastScheduler");
-    const procastModule = await import("../lib/procast");
+    const scheduler = await import("../lib/procasScheduler");
+    const procasModule = await import("../lib/procas");
     const { logger } = await import("../lib/logger");
 
     const errorSpy = vi.spyOn(logger, "error").mockImplementation((() => logger) as never);
 
     // Force the whole cycle to blow up the way a database hiccup would: the
     // open-invoices read (reached right after the connection check) rejects.
-    // This is an unexpected, top-level error — not a per-invoice Procast error.
+    // This is an unexpected, top-level error — not a per-invoice Procas error.
     const connSpy = vi
-      .spyOn(procastModule, "getProcastConnection")
+      .spyOn(procasModule, "getProcasConnection")
       .mockRejectedValueOnce(new Error("database hiccup while loading open invoices"));
 
     // The top-level safety net must swallow the throw — tick resolves, it never
@@ -653,48 +653,48 @@ describe("procast integration", () => {
     const afterThrow = await scheduler.getSchedulerState();
     expect(afterThrow.running).toBe(false);
 
-    // A later tick runs normally (here it skips cleanly because Procast is not
+    // A later tick runs normally (here it skips cleanly because Procas is not
     // connected) instead of being permanently blocked by a stuck guard.
     connSpy.mockRestore();
     await expect(scheduler.tick()).resolves.toBeUndefined();
   });
 
-  it("startProcastScheduler is idempotent and honors PROCAST_SYNC_INTERVAL_MS with a default fallback", async () => {
-    const { startProcastScheduler, stopProcastScheduler } = await import("../lib/procastScheduler");
-    const prev = process.env["PROCAST_SYNC_INTERVAL_MS"];
+  it("startProcasScheduler is idempotent and honors PROCAS_SYNC_INTERVAL_MS with a default fallback", async () => {
+    const { startProcasScheduler, stopProcasScheduler } = await import("../lib/procasScheduler");
+    const prev = process.env["PROCAS_SYNC_INTERVAL_MS"];
     const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
     const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
 
     try {
       // A valid env interval is honored. No UI-configured row exists (beforeEach
       // clears the scheduler table), so the env value is what takes effect.
-      process.env["PROCAST_SYNC_INTERVAL_MS"] = String(5 * 60 * 1000);
-      await startProcastScheduler();
+      process.env["PROCAS_SYNC_INTERVAL_MS"] = String(5 * 60 * 1000);
+      await startProcasScheduler();
       // Calling it again is a no-op: a single timer stays active.
-      await startProcastScheduler();
+      await startProcasScheduler();
       expect(setIntervalSpy).toHaveBeenCalledTimes(1);
       expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(5 * 60 * 1000);
-      stopProcastScheduler();
+      stopProcasScheduler();
 
       // An invalid (non-numeric) env value falls back to the built-in default.
       setIntervalSpy.mockClear();
-      process.env["PROCAST_SYNC_INTERVAL_MS"] = "not-a-number";
-      await startProcastScheduler();
+      process.env["PROCAS_SYNC_INTERVAL_MS"] = "not-a-number";
+      await startProcasScheduler();
       expect(setIntervalSpy).toHaveBeenCalledTimes(1);
       expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(DEFAULT_INTERVAL_MS);
-      stopProcastScheduler();
+      stopProcasScheduler();
 
       // An unset env value also falls back to the default.
       setIntervalSpy.mockClear();
-      delete process.env["PROCAST_SYNC_INTERVAL_MS"];
-      await startProcastScheduler();
+      delete process.env["PROCAS_SYNC_INTERVAL_MS"];
+      await startProcasScheduler();
       expect(setIntervalSpy).toHaveBeenCalledTimes(1);
       expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(DEFAULT_INTERVAL_MS);
-      stopProcastScheduler();
+      stopProcasScheduler();
     } finally {
-      stopProcastScheduler();
-      if (prev === undefined) delete process.env["PROCAST_SYNC_INTERVAL_MS"];
-      else process.env["PROCAST_SYNC_INTERVAL_MS"] = prev;
+      stopProcasScheduler();
+      if (prev === undefined) delete process.env["PROCAS_SYNC_INTERVAL_MS"];
+      else process.env["PROCAS_SYNC_INTERVAL_MS"] = prev;
     }
   });
 });

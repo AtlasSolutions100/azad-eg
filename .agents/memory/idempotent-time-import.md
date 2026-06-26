@@ -1,12 +1,12 @@
 ---
-name: Idempotent time import / Procast sync
+name: Idempotent time import / Procas sync
 description: How line_items.source keeps re-imports from duplicating labor rows
 ---
 
 Line items carry a `source` column: `"manual"` for hand-entered rows, or the
-import origin (`"timesheet"` / `"procast"`) for auto-imported rows.
+import origin (`"timesheet"` / `"procas"`) for auto-imported rows.
 
-**Rule:** any time-import or Procast sync first deletes the invoice's prior
+**Rule:** any time-import or Procas sync first deletes the invoice's prior
 auto-imported rows (`source != "manual"`) before inserting the fresh pull, then
 reports `replacedCount` in the ImportResult and a warning. Manual rows survive.
 

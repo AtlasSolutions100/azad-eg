@@ -1,10 +1,10 @@
 import { pgTable, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
 
-// Single-row table (id is always 1) holding the background Procast refresh
+// Single-row table (id is always 1) holding the background Procas refresh
 // scheduler's configuration and the outcome of its most recent cycle. The
 // interval is configurable from the UI; when null the app falls back to the
-// PROCAST_SYNC_INTERVAL_MS env var (or a built-in default).
-export const procastSchedulerTable = pgTable("procast_scheduler", {
+// PROCAS_SYNC_INTERVAL_MS env var (or a built-in default).
+export const procasSchedulerTable = pgTable("procas_scheduler", {
   id: integer("id").primaryKey().default(1),
   intervalMs: integer("interval_ms"),
   lastRunAt: timestamp("last_run_at", { mode: "date" }),
@@ -14,5 +14,5 @@ export const procastSchedulerTable = pgTable("procast_scheduler", {
   lastError: text("last_error"),
 });
 
-export type ProcastSchedulerRow = typeof procastSchedulerTable.$inferSelect;
-export type InsertProcastScheduler = typeof procastSchedulerTable.$inferInsert;
+export type ProcasSchedulerRow = typeof procasSchedulerTable.$inferSelect;
+export type InsertProcasScheduler = typeof procasSchedulerTable.$inferInsert;

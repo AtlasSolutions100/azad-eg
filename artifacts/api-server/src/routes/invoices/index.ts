@@ -36,8 +36,8 @@ import { evaluateBudgetStatus } from "../../lib/financials";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
 import { parseTimeFile } from "../../lib/timeimport";
-import { getProcastConnection } from "../../lib/procast";
-import { syncInvoiceFromProcast } from "../../lib/procastSync";
+import { getProcasConnection } from "../../lib/procas";
+import { syncInvoiceFromProcas } from "../../lib/procasSync";
 import { linesToLineItems, clearAutoImportedLineItems } from "../../lib/lineMapping";
 import { buildInvoiceWorkbook, convertToPdf, resolveSignaturePath } from "../../lib/excel";
 import path from "node:path";
@@ -374,9 +374,9 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
   );
 });
 
-// Live Procast pull: fetch timesheet records for this invoice's billing period
-// directly from the connected Procast API and import them as line items.
-router.post("/invoices/:id/procast-sync", async (req, res): Promise<void> => {
+// Live Procas pull: fetch timesheet records for this invoice's billing period
+// directly from the connected Procas API and import them as line items.
+router.post("/invoices/:id/procas-sync", async (req, res): Promise<void> => {
   const id = pid(req);
   const ctx = await loadContext(id);
   if (!ctx) {
@@ -384,13 +384,13 @@ router.post("/invoices/:id/procast-sync", async (req, res): Promise<void> => {
     return;
   }
 
-  const conn = await getProcastConnection();
+  const conn = await getProcasConnection();
   if (!conn || !conn.connected || !conn.baseUrl || !conn.apiKey) {
-    res.status(409).json({ error: "Procast is not connected. Connect it first or use file upload." });
+    res.status(409).json({ error: "Procas is not connected. Connect it first or use file upload." });
     return;
   }
 
-  const result = await syncInvoiceFromProcast(ctx.invoice, conn, "procast");
+  const result = await syncInvoiceFromProcas(ctx.invoice, conn, "procas");
   if (!result.ok) {
     if (result.reason === "fetch_failed") {
       res.status(502).json({ error: result.message });
@@ -404,7 +404,7 @@ router.post("/invoices/:id/procast-sync", async (req, res): Promise<void> => {
     ImportTimeDataResponse.parse({
       importedCount: result.importedCount,
       replacedCount: result.replacedCount,
-      source: "procast",
+      source: "procas",
       warnings: result.warnings,
       lineItems: result.lineItems.map(toApiLineItem),
     }),

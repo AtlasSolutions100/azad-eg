@@ -432,7 +432,7 @@ paths:
     post:
       operationId: importTimeData
       tags: [invoices]
-      summary: Upload a Procast CSV/Excel export or weekly timesheet to parse labor hours
+      summary: Upload a Procas CSV/Excel export or weekly timesheet to parse labor hours
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
@@ -448,11 +448,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportResult"
-  /invoices/{id}/procast-sync:
+  /invoices/{id}/procas-sync:
     post:
-      operationId: syncProcastTimesheets
+      operationId: syncTimesheetsFromProcas
       tags: [invoices]
-      summary: Pull timesheets for this invoice's period live from the connected Procast API
+      summary: Pull timesheets for this invoice's period live from the connected Procas API
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
@@ -688,93 +688,93 @@ paths:
                 items:
                   $ref: "#/components/schemas/AuditLog"
 
-  /procast/status:
+  /procas/status:
     get:
-      operationId: getProcastStatus
+      operationId: getProcasStatus
       tags: [reference]
-      summary: Get Procast integration status
+      summary: Get Procas integration status
       responses:
         "200":
-          description: Procast status
+          description: Procas status
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProcastStatus"
+                $ref: "#/components/schemas/ProcasStatus"
 
-  /procast/connect:
+  /procas/connect:
     post:
-      operationId: connectProcast
+      operationId: connectProcas
       tags: [reference]
-      summary: Connect the live Procast API (validates and stores credentials)
+      summary: Connect the live Procas API (validates and stores credentials)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProcastConnectInput"
+              $ref: "#/components/schemas/ProcasConnectInput"
       responses:
         "200":
-          description: Procast status after connecting
+          description: Procas status after connecting
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProcastStatus"
+                $ref: "#/components/schemas/ProcasStatus"
 
-  /procast/disconnect:
+  /procas/disconnect:
     post:
-      operationId: disconnectProcast
+      operationId: disconnectProcas
       tags: [reference]
-      summary: Disconnect the live Procast API and revert to upload mode
+      summary: Disconnect the live Procas API and revert to upload mode
       responses:
         "200":
-          description: Procast status after disconnecting
+          description: Procas status after disconnecting
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProcastStatus"
+                $ref: "#/components/schemas/ProcasStatus"
 
-  /procast/scheduler:
+  /procas/scheduler:
     get:
-      operationId: getProcastScheduler
+      operationId: getProcasScheduler
       tags: [reference]
-      summary: Get the background Procast refresh schedule and last cycle result
+      summary: Get the background Procas refresh schedule and last cycle result
       responses:
         "200":
-          description: Procast scheduler status
+          description: Procas scheduler status
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProcastSchedulerStatus"
+                $ref: "#/components/schemas/ProcasSchedulerStatus"
     put:
-      operationId: updateProcastScheduler
+      operationId: updateProcasScheduler
       tags: [reference]
-      summary: Update the background Procast refresh interval
+      summary: Update the background Procas refresh interval
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProcastSchedulerInput"
+              $ref: "#/components/schemas/ProcasSchedulerInput"
       responses:
         "200":
-          description: Updated Procast scheduler status
+          description: Updated Procas scheduler status
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProcastSchedulerStatus"
+                $ref: "#/components/schemas/ProcasSchedulerStatus"
 
-  /procast/refresh:
+  /procas/refresh:
     post:
-      operationId: refreshProcastNow
+      operationId: refreshProcasNow
       tags: [reference]
-      summary: Run a full Procast refresh cycle for all open invoices immediately
+      summary: Run a full Procas refresh cycle for all open invoices immediately
       responses:
         "200":
           description: Scheduler status reflecting the on-demand cycle
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProcastSchedulerStatus"
+                $ref: "#/components/schemas/ProcasSchedulerStatus"
 
   /packages:
     get:
@@ -1597,7 +1597,7 @@ components:
       properties:
         source:
           type: string
-          enum: [procast, timesheet]
+          enum: [procas, timesheet]
         file:
           type: string
           format: binary
@@ -1747,7 +1747,7 @@ components:
         description: { type: ["string", "null"] }
         createdAt: { type: string }
 
-    ProcastStatus:
+    ProcasStatus:
       type: object
       required: [connected, mode, message]
       properties:
@@ -1759,14 +1759,14 @@ components:
         lastSyncAt: { type: ["string", "null"] }
         message: { type: string }
 
-    ProcastConnectInput:
+    ProcasConnectInput:
       type: object
       required: [baseUrl, apiKey]
       properties:
         baseUrl: { type: string }
         apiKey: { type: string }
 
-    ProcastSchedulerStatus:
+    ProcasSchedulerStatus:
       type: object
       required:
         - connected
@@ -1785,7 +1785,7 @@ components:
         lastSkipped: { type: boolean }
         lastError: { type: ["string", "null"] }
 
-    ProcastSchedulerInput:
+    ProcasSchedulerInput:
       type: object
       required: [intervalMs]
       properties:
