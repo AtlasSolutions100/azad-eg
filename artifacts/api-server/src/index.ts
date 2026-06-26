@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { ensureDirs } from "./lib/paths";
 import { seedDatabase } from "./lib/seed";
+import { startProcastScheduler } from "./lib/procastScheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -29,6 +30,8 @@ app.listen(port, async (err) => {
   } catch (seedErr) {
     logger.error({ err: seedErr }, "Database seed failed");
   }
+
+  startProcastScheduler();
 
   logger.info({ port }, "Server listening");
 });

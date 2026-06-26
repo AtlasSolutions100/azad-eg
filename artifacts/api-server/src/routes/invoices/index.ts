@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, desc, ne } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 import {
   db,
   invoicesTable,
@@ -35,8 +35,10 @@ import { recomputeCarryOver, deriveCarryOverFromPriors } from "../../lib/carryov
 import { evaluateBudgetStatus } from "../../lib/financials";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
-import { parseTimeFile, parseTimeRecords, type ParsedLine } from "../../lib/timeimport";
-import { getProcastConnection, fetchProcastTimesheets, markProcastSynced } from "../../lib/procast";
+import { parseTimeFile } from "../../lib/timeimport";
+import { getProcastConnection } from "../../lib/procast";
+import { syncInvoiceFromProcast } from "../../lib/procastSync";
+import { linesToLineItems, clearAutoImportedLineItems } from "../../lib/lineMapping";
 import { buildInvoiceWorkbook, convertToPdf, resolveSignaturePath } from "../../lib/excel";
 import path from "node:path";
 
@@ -45,57 +47,6 @@ const router: IRouter = Router();
 function pid(req: { params: Record<string, string | string[]> }): number {
   const raw = req.params.id;
   return parseInt(Array.isArray(raw) ? raw[0] : raw, 10);
-}
-
-type EmployeeRow = typeof employeesTable.$inferSelect;
-
-// Shared mapping of parsed timesheet lines (from file upload OR live Procast pull)
-// into invoice line-item rows: matches employees to apply billable rates and
-// classifications, and accumulates warnings for rows that need manual attention.
-function linesToLineItems(
-  lines: ParsedLine[],
-  invoiceId: number,
-  employees: EmployeeRow[],
-  source: string,
-): { toInsert: Array<typeof lineItemsTable.$inferInsert>; warnings: string[] } {
-  const empByName = new Map(employees.map((e) => [e.name.toLowerCase().trim(), e]));
-  const warnings: string[] = [];
-  const toInsert = lines.map((line) => {
-    const emp = empByName.get(line.employeeName.toLowerCase().trim());
-    let rate = line.rate;
-    let classification = line.classification;
-    if (rate <= 0 && emp) {
-      rate = line.location === "field" ? emp.fieldRate ?? emp.homeRate : emp.homeRate;
-    }
-    if (!classification && emp) classification = emp.classification;
-    if (rate <= 0) warnings.push(`${line.employeeName}: no rate available, set to 0 — please correct manually.`);
-    return {
-      invoiceId,
-      employeeId: emp?.id ?? null,
-      employeeName: line.employeeName,
-      classification: classification || "Unspecified",
-      category: line.category,
-      location: line.location,
-      hours: line.hours,
-      rate,
-      amount: line.hours * rate,
-      taskNo: line.taskNo ?? emp?.defaultTaskNo ?? null,
-      notes: line.notes ?? null,
-      source,
-    };
-  });
-  return { toInsert, warnings };
-}
-
-// Re-importing a period must not stack duplicate labor rows on top of a prior
-// import. Remove any previously auto-imported rows (source !== "manual") for the
-// invoice before inserting the fresh pull; hand-entered "manual" rows are kept.
-async function clearAutoImportedLineItems(invoiceId: number): Promise<number> {
-  const removed = await db
-    .delete(lineItemsTable)
-    .where(and(eq(lineItemsTable.invoiceId, invoiceId), ne(lineItemsTable.source, "manual")))
-    .returning();
-  return removed.length;
 }
 
 async function loadContext(invoiceId: number): Promise<
@@ -395,52 +346,23 @@ router.post("/invoices/:id/procast-sync", async (req, res): Promise<void> => {
     return;
   }
 
-  let records: Array<Record<string, unknown>>;
-  try {
-    records = await fetchProcastTimesheets(
-      { baseUrl: conn.baseUrl, apiKey: conn.apiKey },
-      { start: ctx.invoice.periodStart, end: ctx.invoice.periodEnd },
-    );
-  } catch (e) {
-    res.status(502).json({ error: e instanceof Error ? e.message : "Failed to pull from Procast." });
+  const result = await syncInvoiceFromProcast(ctx.invoice, conn, "procast");
+  if (!result.ok) {
+    if (result.reason === "fetch_failed") {
+      res.status(502).json({ error: result.message });
+    } else {
+      res.status(400).json({ error: result.message, warnings: result.warnings });
+    }
     return;
   }
-
-  const parsed = parseTimeRecords(records);
-  if (parsed.lines.length === 0) {
-    res.status(400).json({ error: "No valid timesheet rows returned by Procast.", warnings: parsed.warnings });
-    return;
-  }
-
-  const employees = await db.select().from(employeesTable);
-  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsed.lines, id, employees, "procast");
-  const warnings = [...parsed.warnings, ...mapWarnings];
-
-  // Replace any previously auto-imported rows so re-syncing the same period
-  // does not duplicate labor; hand-entered rows are preserved.
-  const replacedCount = await clearAutoImportedLineItems(id);
-  if (replacedCount > 0) {
-    warnings.unshift(`Replaced ${replacedCount} previously imported line item(s) for this period.`);
-  }
-
-  const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
-  // New labor changes this invoice's total-to-date; refresh downstream carry-over.
-  await recomputeCarryOver(ctx.invoice.workPlanId);
-  await markProcastSynced(new Date());
-  await recordAudit({
-    action: "synced from Procast",
-    entityType: "invoice",
-    entityId: id,
-    description: `${inserted.length} line items pulled live from Procast${replacedCount > 0 ? ` (replaced ${replacedCount})` : ""}`,
-  });
 
   res.json(
     ImportTimeDataResponse.parse({
-      importedCount: inserted.length,
-      replacedCount,
+      importedCount: result.importedCount,
+      replacedCount: result.replacedCount,
       source: "procast",
-      warnings,
-      lineItems: inserted.map(toApiLineItem),
+      warnings: result.warnings,
+      lineItems: result.lineItems.map(toApiLineItem),
     }),
   );
 });

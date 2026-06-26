@@ -175,6 +175,100 @@ describe("procast integration", () => {
     expect(status.body.lastSyncAt).toBeTruthy();
   });
 
+  it("scheduled cycle skips entirely when Procast is in upload mode", async () => {
+    const { runProcastSyncCycle } = await import("../lib/procastScheduler");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const result = await runProcastSyncCycle();
+    expect(result.skipped).toBe(true);
+    expect(result.synced).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("scheduled cycle pulls open invoices and skips finalized ones", async () => {
+    const { runProcastSyncCycle } = await import("../lib/procastScheduler");
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `Sched Emp ${suffix}`, classification: "Engineer", homeRate: 120, fieldRate: 140 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({
+        code: `SCHED-WP-${suffix}`,
+        title: "Sched WP",
+        client: "Client",
+        jobNumber: "JOB",
+        poNumber: "PO",
+        totalBudget: 100000,
+      })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+
+    // Use a far-future period unique to this test so the global scheduled cycle
+    // (which pulls every open invoice in the DB, including seed data) only
+    // imports rows for THIS invoice — other open invoices fall on other periods
+    // and get an empty feed.
+    const periodStart = "2099-01-01";
+    const periodEnd = "2099-01-15";
+
+    const [draftInv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `SCHED-DRAFT-${suffix}`,
+        invoiceDate: "2099-02-01",
+        periodStart,
+        periodEnd,
+        status: "draft",
+      })
+      .returning();
+    createdInvoiceIds.push(draftInv.id);
+
+    const [approvedInv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `SCHED-APPROVED-${suffix}`,
+        invoiceDate: "2099-02-01",
+        periodStart,
+        periodEnd,
+        status: "approved",
+      })
+      .returning();
+    createdInvoiceIds.push(approvedInv.id);
+
+    mockFetch((url) => {
+      if (url.includes("/health")) return new Response(null, { status: 200 });
+      if (url.includes("/timesheets")) {
+        const rows = url.includes(`start=${periodStart}`)
+          ? [{ Employee: emp.name, Hours: "8", Rate: "120", Category: "Regular", Location: "Home" }]
+          : [];
+        return new Response(JSON.stringify({ timesheets: rows }), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    await request(app)
+      .post("/api/procast/connect")
+      .send({ baseUrl: "https://procast.example.com", apiKey: "good" })
+      .expect(200);
+
+    const result = await runProcastSyncCycle();
+    expect(result.skipped).toBe(false);
+    expect(result.synced).toBe(1);
+
+    // Only the open (draft) invoice was pulled.
+    const draftItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, draftInv.id));
+    expect(draftItems).toHaveLength(1);
+    const approvedItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, approvedInv.id));
+    expect(approvedItems).toHaveLength(0);
+
+    // Last-synced reflects the scheduled pull.
+    const status = await request(app).get("/api/procast/status");
+    expect(status.body.lastSyncAt).toBeTruthy();
+  });
+
   it("refuses to sync when Procast is not connected", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
