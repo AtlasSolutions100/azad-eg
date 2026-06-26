@@ -5,7 +5,7 @@ import path from "node:path";
 import { db, signaturesTable } from "@workspace/db";
 import { ListSignaturesResponse, UploadSignatureResponse } from "@workspace/api-zod";
 import { imageUpload, detectImage } from "../lib/upload";
-import { uploadsDir, ensureDirs } from "../lib/paths";
+import { uploadsDir, ensureDirs, deleteUploadedFile } from "../lib/paths";
 import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
@@ -72,6 +72,7 @@ router.delete("/signatures/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Signature not found" });
     return;
   }
+  deleteUploadedFile(row.imageUrl);
   res.sendStatus(204);
 });
 
