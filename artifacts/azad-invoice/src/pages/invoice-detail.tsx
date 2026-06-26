@@ -37,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import BudgetOverrideHistory from "@/components/budget-override-history";
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -412,6 +413,8 @@ export default function InvoiceDetail() {
           </AlertDescription>
         </Alert>
       )}
+
+      <BudgetOverrideHistory entityType="invoice" entityId={invoiceId} />
 
       {preview?.budgetStatus && preview.budgetStatus.level !== "ok" && (
         <Alert

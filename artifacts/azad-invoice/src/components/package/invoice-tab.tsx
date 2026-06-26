@@ -30,6 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/package-ui";
 import DocDownload from "./doc-download";
+import BudgetOverrideHistory from "@/components/budget-override-history";
 
 export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
   const { package: pkg, rollup } = detail;
@@ -131,6 +132,8 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
         description="Cover invoice with billing summary and signature."
         status={pkg.invoiceDocStatus}
       />
+
+      <BudgetOverrideHistory entityType="package" entityId={pkg.id} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
