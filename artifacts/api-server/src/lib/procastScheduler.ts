@@ -236,7 +236,8 @@ export async function runAndRecordCycle(): Promise<ProcastSchedulerState> {
   return getSchedulerState();
 }
 
-async function tick(): Promise<void> {
+// Exported for tests so the overlapping-run guard can be exercised directly.
+export async function tick(): Promise<void> {
   await runAndRecordCycle();
 }
 
