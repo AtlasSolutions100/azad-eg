@@ -2,12 +2,26 @@ import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   useListPackagesGrouped,
+  useCreatePackage,
+  useListEmployees,
+  useListWorkPlans,
   type PackageSummary,
   type PackageEmployeeGroup,
+  type PackageInput,
 } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -28,6 +42,7 @@ import {
   CalendarRange,
   Clock,
   FileStack,
+  Plus,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -136,8 +151,48 @@ function PackageTile({
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { data: groups, isLoading, error } = useListPackagesGrouped();
+  const { data: employees } = useListEmployees();
+  const { data: workPlans } = useListWorkPlans();
+  const createPackage = useCreatePackage();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState<Partial<PackageInput>>({
+    invoiceDate: new Date().toISOString().split("T")[0],
+  });
+
+  const handleCreatePackage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !form.employeeId ||
+      !form.workPlanId ||
+      !form.payPeriodStart ||
+      !form.payPeriodEnd
+    )
+      return;
+    try {
+      const res = await createPackage.mutateAsync({ data: form as PackageInput });
+      setCreateOpen(false);
+      setForm({ invoiceDate: new Date().toISOString().split("T")[0] });
+      setLocation(`/packages/${res.id}`);
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Could not create package",
+        description:
+          err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreateOpenChange = (next: boolean) => {
+    setCreateOpen(next);
+    if (!next) {
+      setForm({ invoiceDate: new Date().toISOString().split("T")[0] });
+    }
+  };
 
   const filtered = useMemo<PackageEmployeeGroup[]>(() => {
     if (!groups) return [];
@@ -190,15 +245,155 @@ export default function Dashboard() {
     return { employees, packages, billed };
   }, [filtered]);
 
+  const createDialog = (
+    <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white">
+          <Plus className="mr-2 h-4 w-4" />
+          New Package
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create Package</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleCreatePackage} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Employee</Label>
+            <Select
+              value={form.employeeId ? String(form.employeeId) : undefined}
+              onValueChange={(val) =>
+                setForm({ ...form, employeeId: Number(val) })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select an employee" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees && employees.length > 0 ? (
+                  employees.map((emp) => (
+                    <SelectItem key={emp.id} value={String(emp.id)}>
+                      {emp.name} — {emp.classification}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <div className="px-2 py-1.5 text-xs text-[#5F5F5F]">
+                    No employees yet. Add one on the Employees page first.
+                  </div>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Work Plan</Label>
+            <Select
+              value={form.workPlanId ? String(form.workPlanId) : undefined}
+              onValueChange={(val) =>
+                setForm({ ...form, workPlanId: Number(val) })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a work plan" />
+              </SelectTrigger>
+              <SelectContent>
+                {workPlans && workPlans.length > 0 ? (
+                  workPlans.map((wp) => (
+                    <SelectItem key={wp.id} value={String(wp.id)}>
+                      {wp.code} - {wp.title}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <div className="px-2 py-1.5 text-xs text-[#5F5F5F]">
+                    No work plans yet. Add one on the Work Plans page first.
+                  </div>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Pay Period Start</Label>
+              <Input
+                type="date"
+                required
+                value={form.payPeriodStart || ""}
+                onChange={(e) =>
+                  setForm({ ...form, payPeriodStart: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Pay Period End</Label>
+              <Input
+                type="date"
+                required
+                value={form.payPeriodEnd || ""}
+                onChange={(e) =>
+                  setForm({ ...form, payPeriodEnd: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Invoice Number (optional)</Label>
+              <Input
+                value={form.invoiceNumber || ""}
+                onChange={(e) =>
+                  setForm({ ...form, invoiceNumber: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Invoice Date (optional)</Label>
+              <Input
+                type="date"
+                value={form.invoiceDate || ""}
+                onChange={(e) =>
+                  setForm({ ...form, invoiceDate: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Prepared By (optional)</Label>
+            <Input
+              value={form.preparedBy || ""}
+              onChange={(e) =>
+                setForm({ ...form, preparedBy: e.target.value })
+              }
+            />
+          </div>
+          <Button
+            type="submit"
+            className="w-full bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
+            disabled={
+              createPackage.isPending ||
+              !form.employeeId ||
+              !form.workPlanId ||
+              !form.payPeriodStart ||
+              !form.payPeriodEnd
+            }
+          >
+            {createPackage.isPending ? "Creating…" : "Create Package"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-semibold tracking-tight text-[#333333]">
-          Packages
-        </h1>
-        <p className="text-sm text-[#5F5F5F]">
-          Billing packages organized by employee, job number, and pay period.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-semibold tracking-tight text-[#333333]">
+            Packages
+          </h1>
+          <p className="text-sm text-[#5F5F5F]">
+            Billing packages organized by employee, job number, and pay period.
+          </p>
+        </div>
+        {createDialog}
       </div>
 
       {/* Summary strip */}
@@ -277,8 +472,19 @@ export default function Dashboard() {
           <p className="text-xs text-[#5F5F5F]">
             {search || statusFilter !== "all"
               ? "Try adjusting your search or filters."
-              : "Packages will appear here once they are created."}
+              : "Create a package to generate invoices and export the document bundle."}
           </p>
+          {!search && statusFilter === "all" && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                New Package
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <Accordion
