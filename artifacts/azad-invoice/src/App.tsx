@@ -24,6 +24,7 @@ import NotFound from "@/pages/not-found";
 import Layout from "./components/layout";
 
 import Dashboard from "@/pages/dashboard";
+import PackageWorkspace from "@/pages/package-workspace";
 import Invoices from "@/pages/invoices";
 import InvoiceDetail from "@/pages/invoice-detail";
 import WorkPlans from "@/pages/work-plans";
@@ -153,6 +154,7 @@ function AppShell() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/packages/:id" component={PackageWorkspace} />
         <Route path="/invoices" component={Invoices} />
         <Route path="/invoices/:id" component={InvoiceDetail} />
         <Route path="/work-plans" component={WorkPlans} />

@@ -1,4 +1,1 @@
-- [Invoice status state machine](invoice-state-machine.md) — transitions are enforced in routes, not the generic PATCH; generate is a preview unless already approved.
-- [LibreOffice PDF latency](pdf-export-latency.md) — soffice headless PDF render is ~14s; export UI must show progress or it reads as broken.
-- [Excel template injection](excel-template-injection.md) — write computed financials as values into the BART template; exceljs/soffice won't recalc stale formulas.
-- [API server testing](api-server-testing.md) — vitest+supertest hit real DB; toggle Clerk auth via a vi.hoisted state mock; clean up rows + generated xlsx.
+- [Labor Attachment template bounds](labor-attachment-template-bounds.md) — Sub Labor sheet has fixed row capacity (home 11 / field 6); cap overrides or they corrupt subtotals.

@@ -1,10 +1,11 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { FileText, LayoutDashboard, Briefcase, Users, FileSignature, Settings, FileSearch, Search } from "lucide-react";
+import { LayoutGrid, Briefcase, Users, FileSignature, Settings, FileSearch, Search } from "lucide-react";
 import logoUrl from "@assets/Azad_Logo_1782418426096.jpeg";
 import { useSearch } from "@workspace/api-client-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import ProcastIndicator from "@/components/procast-indicator";
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -17,8 +18,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   );
 
   const navItems = [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "Invoices", href: "/invoices", icon: FileText },
+    { label: "Packages", href: "/", icon: LayoutGrid },
     { label: "Work Plans", href: "/work-plans", icon: Briefcase },
     { label: "Employees", href: "/employees", icon: Users },
     { label: "Signatures", href: "/signatures", icon: FileSignature },
@@ -63,6 +63,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             Azad Invoice Automation
           </div>
           <div className="flex items-center gap-4">
+            <ProcastIndicator />
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
                 <div className="relative cursor-pointer">
