@@ -15,3 +15,19 @@ export function ensureDirs(): void {
     fs.mkdirSync(dir, { recursive: true });
   }
 }
+
+/**
+ * Deletes a previously stored upload given its public URL
+ * (e.g. "/api/files/progress_1_123.xlsx" -> uploadsDir/progress_1_123.xlsx).
+ * No-ops when the URL is empty, points outside uploadsDir, or the file is gone,
+ * so callers can use it freely on replace/remove/cascade-delete flows.
+ */
+export function deleteUploadedFile(fileUrl: string | null | undefined): void {
+  if (!fileUrl) return;
+  const filename = path.basename(decodeURIComponent(fileUrl));
+  if (!filename) return;
+  const abs = path.resolve(uploadsDir, filename);
+  if (abs.startsWith(uploadsDir + path.sep) && fs.existsSync(abs)) {
+    fs.rmSync(abs, { force: true });
+  }
+}

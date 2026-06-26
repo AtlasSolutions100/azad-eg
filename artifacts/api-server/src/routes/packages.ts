@@ -62,7 +62,7 @@ import { resolveSignaturePath } from "../lib/excel";
 import { recordAudit } from "../lib/audit";
 import fs from "node:fs";
 import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
-import { uploadsDir, ensureDirs } from "../lib/paths";
+import { uploadsDir, ensureDirs, deleteUploadedFile } from "../lib/paths";
 
 const DOC_KINDS: PackageDocKind[] = ["invoice", "subcalc", "progress", "labor", "timesheets"];
 
@@ -330,6 +330,12 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
 
 router.delete("/packages/:id", async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
+  // Capture the attached progress-report file (if any) before the row is gone,
+  // so we can clean it off disk after the cascade delete.
+  const [progress] = await db
+    .select()
+    .from(packageProgressReportsTable)
+    .where(eq(packageProgressReportsTable.packageId, id));
   // Child rows (weeks, entries, progress report, overrides) are removed
   // atomically via ON DELETE CASCADE foreign keys.
   const [row] = await db.delete(packagesTable).where(eq(packagesTable.id, id)).returning();
@@ -337,6 +343,7 @@ router.delete("/packages/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package not found" });
     return;
   }
+  deleteUploadedFile(progress?.uploadedFileUrl);
   await recordAudit({ action: "deleted package", entityType: "package", entityId: id });
   res.sendStatus(204);
 });
@@ -525,6 +532,16 @@ router.put("/packages/:id/progress-report", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(packageProgressReportsTable).where(eq(packageProgressReportsTable.packageId, id));
   let row;
   if (existing) {
+    // When the attachment is replaced (new URL) or cleared (empty/null), remove
+    // the previously stored file so it doesn't linger as an orphan on disk.
+    const nextUrl = parsed.data.uploadedFileUrl;
+    if (
+      existing.uploadedFileUrl &&
+      nextUrl !== undefined &&
+      nextUrl !== existing.uploadedFileUrl
+    ) {
+      deleteUploadedFile(existing.uploadedFileUrl);
+    }
     [row] = await db
       .update(packageProgressReportsTable)
       .set(parsed.data)

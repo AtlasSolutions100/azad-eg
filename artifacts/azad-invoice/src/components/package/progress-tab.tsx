@@ -113,8 +113,8 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
           costForecast: form.costForecast || undefined,
           preparedBy: form.preparedBy || undefined,
           reportDate: form.reportDate || undefined,
-          uploadedFileName: form.uploadedFileName || undefined,
-          uploadedFileUrl: form.uploadedFileUrl || undefined,
+          uploadedFileName: form.uploadedFileName,
+          uploadedFileUrl: form.uploadedFileUrl,
         },
       });
       queryClient.invalidateQueries();
