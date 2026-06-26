@@ -304,6 +304,112 @@ describe("carry-over recompute when an earlier invoice changes", () => {
   });
 });
 
+describe("carry-over recompute across multi-invoice chains", () => {
+  // Builds N sequential approved invoices on one work plan, each with 10h @ 100
+  // (this period 2200) so total-to-date climbs by 2200 per period. The stored
+  // previouslyBilled values are seeded to the correct chain values; recompute
+  // should leave them untouched until an upstream invoice changes.
+  async function buildApprovedChain(
+    wpId: number,
+    months: { start: string; end: string }[],
+  ): Promise<number[]> {
+    const ids: number[] = [];
+    let carry = 0;
+    for (const m of months) {
+      const id = await createInvoice(wpId, "approved", {
+        periodStart: m.start,
+        periodEnd: m.end,
+        previouslyBilled: carry,
+      });
+      await addLineItem(id, { hours: 10, rate: 100 });
+      ids.push(id);
+      carry += 2200; // this period total, becomes the next invoice's carry-over
+    }
+    return ids;
+  }
+
+  const MONTHS = [
+    { start: "2026-01-01", end: "2026-01-31" },
+    { start: "2026-02-01", end: "2026-02-28" },
+    { start: "2026-03-01", end: "2026-03-31" },
+    { start: "2026-04-01", end: "2026-04-30" },
+  ];
+
+  it("cascades a first-invoice edit through every later invoice in the chain", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+    const [janId, febId, marId, aprId] = await buildApprovedChain(wpId, MONTHS);
+
+    // Sanity: chain starts at 0 / 2200 / 4400 / 6600.
+    expect((await request(app).get(`/api/invoices/${febId}`)).body.previouslyBilled).toBe(2200);
+    expect((await request(app).get(`/api/invoices/${marId}`)).body.previouslyBilled).toBe(4400);
+    expect((await request(app).get(`/api/invoices/${aprId}`)).body.previouslyBilled).toBe(6600);
+
+    // Edit January: add another 10h @ 100 → this period 4400, total-to-date 4400.
+    const addRes = await request(app)
+      .post(`/api/invoices/${janId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+    expect(addRes.status).toBe(201);
+
+    // The new January total (4400) must cascade through all three later periods.
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    const mar = await request(app).get(`/api/invoices/${marId}`);
+    const apr = await request(app).get(`/api/invoices/${aprId}`);
+    expect(feb.body.previouslyBilled).toBe(4400);
+    expect(feb.body.totalToDate).toBe(6600);
+    expect(mar.body.previouslyBilled).toBe(6600);
+    expect(mar.body.totalToDate).toBe(8800);
+    expect(apr.body.previouslyBilled).toBe(8800);
+    expect(apr.body.totalToDate).toBe(11000);
+  });
+
+  it("only changes invoices after the one edited in the middle of the chain", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+    const [janId, febId, marId, aprId] = await buildApprovedChain(wpId, MONTHS);
+
+    // Edit February (the middle): add 10h @ 100 → this period 4400.
+    const addRes = await request(app)
+      .post(`/api/invoices/${febId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+    expect(addRes.status).toBe(201);
+
+    const jan = await request(app).get(`/api/invoices/${janId}`);
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    const mar = await request(app).get(`/api/invoices/${marId}`);
+    const apr = await request(app).get(`/api/invoices/${aprId}`);
+
+    // January precedes the edit, so it is untouched.
+    expect(jan.body.previouslyBilled).toBe(0);
+    expect(jan.body.totalToDate).toBe(2200);
+    // February's own carry-over still comes from January (unchanged at 2200),
+    // but its total-to-date grew to 6600 from the new line item.
+    expect(feb.body.previouslyBilled).toBe(2200);
+    expect(feb.body.totalToDate).toBe(6600);
+    // Everything after February shifts up by the 2200 increase.
+    expect(mar.body.previouslyBilled).toBe(6600);
+    expect(apr.body.previouslyBilled).toBe(8800);
+  });
+
+  it("re-derives the rest of the chain after a middle invoice is deleted", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+    const [janId, febId, marId, aprId] = await buildApprovedChain(wpId, MONTHS);
+
+    // Delete February from the middle of the chain.
+    const delRes = await request(app).delete(`/api/invoices/${febId}`);
+    expect(delRes.status).toBe(204);
+
+    const jan = await request(app).get(`/api/invoices/${janId}`);
+    const mar = await request(app).get(`/api/invoices/${marId}`);
+    const apr = await request(app).get(`/api/invoices/${aprId}`);
+
+    // January is unaffected; March now carries from January, April from March.
+    expect(jan.body.previouslyBilled).toBe(0);
+    expect(mar.body.previouslyBilled).toBe(2200);
+    expect(mar.body.totalToDate).toBe(4400);
+    expect(apr.body.previouslyBilled).toBe(4400);
+    expect(apr.body.totalToDate).toBe(6600);
+  });
+});
+
 describe("GET /api/invoices/:id/validations", () => {
   it("flags an error when there are no line items", async () => {
     const wpId = await createWorkPlan();
