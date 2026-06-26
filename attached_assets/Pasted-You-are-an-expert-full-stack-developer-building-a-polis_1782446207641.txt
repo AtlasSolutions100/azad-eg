@@ -1,0 +1,83 @@
+You are an expert full-stack developer building a polished, high-performance internal automation dashboard for Azad Engineering PC on Replit.
+
+**Company & Branding (apply from the very first screen):**
+- Company name: Azad Engineering PC (civil engineering / construction management & inspection, focused on BART transit projects)
+- Use the attached Azad_Logo.jpeg prominently
+- Primary brand color: Gold accent from the logo (#CF AF42 or closest high-quality match). Use this for buttons, highlights, active states, and key accents.
+- Secondary: Professional dark grays (#5F5F5F, #333333) for text and headers. Clean white/light backgrounds with subtle modern shadows. Overall feel must be premium, trustworthy, fast, and "kick butt" — like a high-end internal finance/ops tool, not generic software.
+
+**Phase 1 Mission:**
+Build a beautiful, intuitive dashboard that lets Julie and Mahsa dramatically reduce the manual work of creating BART client invoices while producing **100% client-compliant outputs**. Start with one BART Work Plan type (A.04-02 style from the sample) but architect the system so adding Caltrans (mileage, per diem, signed timesheets, CPR) later is straightforward.
+
+**Core Requirements (non-negotiable):**
+
+**1. Time Data Inputs (support both paths)**
+- Primary path: Procast integration. Support direct API connection when available (show a clear live green indicator when the API is connected and working properly). When API is not connected, fall back gracefully to file upload.
+- Upload path: Procast CSV/Excel export (user filters by project first in Procast then uploads). Also support weekly per-employee timesheet Excel uploads matching the format in the sample "JP Week 1–5" tabs.
+- The system must intelligently parse employee name, hours by classification/role (Straight Time-Night, Overtime, Doubletime, etc.), project/task order/EA identifiers, and shift type.
+
+**2. Progress Report Inputs (support both methods)**
+- Upload a single Excel/CSV containing all employees’ narratives tagged by Work Plan/EA.
+- OR free-text / rich-text entry directly in the dashboard per invoice.
+- Both methods must populate the exact Progress Report tab correctly.
+
+**3. Previously Billed Carry-Over**
+- The dashboard must remember and automatically populate "Previously Billed" and related carry-over fields from the last approved invoice for that specific Work Plan. This is required for accuracy.
+
+**4. Data Transparency Layer (very important)**
+- Build a clear **Column Definitions Authoritative Reference** section (accessible from settings or help) that explains, for every field/column in the output, exactly where the data comes from (Procast export field, calculated, user input, previous invoice, Reference Data, etc.).
+- Include a **Reference Data** management area so Julie and Mahsa can see and manage the sources of truth.
+
+**5. Signatures**
+- Allow upload of PNG/JPG signature files for Mahsa (and future signers).
+- Auto-place signatures at the exact certification spot on the Invoice tab and on the Progress Report tab.
+- Give Julie easy controls to remove a signature, add new ones via dropdown + upload.
+- Send a clear in-app notification/alert whenever a signature is changed or updated.
+
+**6. Output Fidelity (critical)**
+- Generated .xlsx must match the sample template **exactly**:
+  - Same tab names
+  - Same merged cells, column structure, formatting, colors, and layout
+  - Working Excel formulas preserved wherever they exist in the original (so the team can still tweak if needed)
+- One-click PDF export that looks identical to printing the Excel to PDF.
+
+**7. Billing Period Logic**
+- Dashboard must support and help enforce the client rules: "whole month" vs "last Friday of the month".
+- Allow upload of a cheat sheet for these rules.
+- Provide smart date handling and clear visual guidance.
+
+**8. Search & Navigation**
+- Full search across Client → Employee → Job Number / Work Plan.
+- Easy navigation between invoices, master data, and history.
+
+**9. Polish, Validation & UX**
+- Clean modern dashboard with your branding.
+- Step-by-step wizard or clear tabbed flow for creating a new invoice.
+- Live preview of key populated sections (especially Sub Labor, Invoice summary, and Progress Report) so users can verify before generating.
+- Smart validation flags (e.g. OT rule anomalies, hours mismatches, missing data).
+- Activity / audit log showing who did what and when.
+- Fast, responsive, desktop-first experience.
+
+**10. Phase 1 Scope**
+- Focus on one BART Work Plan type first and make it production-ready and delightful.
+- Design the template engine and mapping logic to be extensible for future contract types (Caltrans etc.).
+- Procast is the preferred long-term source; uploads are a strong supporting feature.
+
+**Attached Resources (use these as the source of truth):**
+- Discovery transcript with Julie, Mahsa, and Griselda
+- Video walkthrough by Julie showing every field that must be automated (yellow highlights)
+- SAMPLE INVOICE .xlsm (exact multi-tab template to replicate)
+- Azad_Logo.jpeg
+
+**Success Criteria:**
+When Julie or Mahsa uses the dashboard they should be able to:
+1. Connect or upload Procast time data + progress information
+2. Review mappings and live preview with validation flags
+3. Have signatures placed automatically (with easy override)
+4. Generate an .xlsx that opens and behaves identically to their current manual files (same tabs, formulas, formatting)
+5. Also generate a matching PDF in one click
+6. Feel the process is dramatically faster, clearer, and more reliable than today
+
+Let Replit recommend the best modern tech stack for a polished dashboard with high-fidelity Excel generation (formulas + formatting preserved) and PDF export.
+
+Build this as a complete, production-ready application. Prioritize clarity, speed, data transparency (Column Definitions + Reference Data), signature handling with notifications, and perfect output fidelity. Make the experience feel like a genuine upgrade — fast, obvious, and trustworthy.
