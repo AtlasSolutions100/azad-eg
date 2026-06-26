@@ -10,4 +10,8 @@ export interface ApprovalInput {
   /** @minLength 1 */
   approvedBy: string;
   signatureId?: number;
+  /** Explicit acknowledgement that this invoice exceeds its work plan budget. Required to approve an over-budget invoice; the override is recorded in the audit log. */
+  budgetOverride?: boolean;
+  /** Optional justification recorded with a budget override. */
+  budgetOverrideReason?: string;
 }

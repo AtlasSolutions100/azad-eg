@@ -201,6 +201,58 @@ describe("POST /api/packages/:id/export", () => {
   });
 });
 
+describe("PATCH /api/packages/:id over-budget approval", () => {
+  // Forces a seeded draft package over its work plan budget by shrinking the
+  // budget below the timesheet-derived total, then returns its id.
+  async function seedOverBudgetDraft(): Promise<number> {
+    const pkgId = await seedPackage("draft");
+    const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
+    await db.update(workPlansTable).set({ totalBudget: 1 }).where(eq(workPlansTable.id, pkg.workPlanId));
+    return pkgId;
+  }
+
+  it("blocks approving an over-budget package without an override (422)", async () => {
+    const pkgId = await seedOverBudgetDraft();
+
+    const res = await request(app)
+      .patch(`/api/packages/${pkgId}`)
+      .send({ status: "approved", approvedBy: "Approver" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("BUDGET_OVERRIDE_REQUIRED");
+
+    const [row] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
+    expect(row.status).toBe("draft");
+  });
+
+  it("approves an over-budget package with an override and logs it", async () => {
+    const pkgId = await seedOverBudgetDraft();
+
+    const res = await request(app)
+      .patch(`/api/packages/${pkgId}`)
+      .send({ status: "approved", approvedBy: "Approver", budgetOverride: true, budgetOverrideReason: "client amendment" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("approved");
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.entityId, pkgId));
+    const override = audits.find((a) => a.action === "approved over budget");
+    expect(override).toBeDefined();
+    expect(override?.description).toContain("client amendment");
+  });
+
+  it("allows non-approval edits on an over-budget package without an override", async () => {
+    const pkgId = await seedOverBudgetDraft();
+
+    const res = await request(app)
+      .patch(`/api/packages/${pkgId}`)
+      .send({ invoiceNumber: "EDIT-OK" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.invoiceNumber).toBe("EDIT-OK");
+  });
+});
+
 describe("POST /api/packages/:id/documents/:doc/generate", () => {
   it(
     "generates a single xlsx document and marks its status ready",

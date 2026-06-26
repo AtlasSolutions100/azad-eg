@@ -1452,6 +1452,15 @@ components:
       properties:
         approvedBy: { type: string, minLength: 1 }
         signatureId: { type: integer }
+        budgetOverride:
+          type: boolean
+          description: >-
+            Explicit acknowledgement that this invoice exceeds its work plan
+            budget. Required to approve an over-budget invoice; the override is
+            recorded in the audit log.
+        budgetOverrideReason:
+          type: string
+          description: Optional justification recorded with a budget override.
 
     LineItem:
       type: object
@@ -1930,6 +1939,15 @@ components:
         status:
           type: string
           enum: [draft, in_review, approved, exported]
+        budgetOverride:
+          type: boolean
+          description: >-
+            Explicit acknowledgement that this package exceeds its work plan
+            budget. Required to set status to "approved" when over budget; the
+            override is recorded in the audit log.
+        budgetOverrideReason:
+          type: string
+          description: Optional justification recorded with a budget override.
         invoiceDocStatus:
           $ref: "#/components/schemas/DocStatus"
         subCalcDocStatus:

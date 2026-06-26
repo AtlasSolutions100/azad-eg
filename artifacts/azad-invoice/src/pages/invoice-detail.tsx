@@ -79,6 +79,10 @@ export default function InvoiceDetail() {
 
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
 
+  // Over-budget approval requires an explicit, audited override.
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+
   // Line item modal state
   const [liOpen, setLiOpen] = useState(false);
   const [liEditId, setLiEditId] = useState<number | null>(null);
@@ -168,7 +172,7 @@ export default function InvoiceDetail() {
     }
   };
 
-  const handleApprove = async () => {
+  const submitApproval = async (budgetOverride: boolean, reason?: string) => {
     const signature = signatures?.find(s => s.isDefault);
     if (!signature) {
       alert("No default signature found. Please add one in Signatures.");
@@ -177,12 +181,34 @@ export default function InvoiceDetail() {
     try {
       await approveInvoice.mutateAsync({
         id: invoiceId,
-        data: { approvedBy: signature.name, signatureId: signature.id }
+        data: {
+          approvedBy: signature.name,
+          signatureId: signature.id,
+          ...(budgetOverride ? { budgetOverride: true, budgetOverrideReason: reason || undefined } : {}),
+        },
       });
       queryClient.invalidateQueries();
+      setOverrideOpen(false);
+      setOverrideReason("");
+      toast({ title: "Invoice approved" });
     } catch (e) {
       console.error(e);
+      toast({
+        variant: "destructive",
+        title: "Approval failed",
+        description: e instanceof Error ? e.message : "Could not approve this invoice.",
+      });
     }
+  };
+
+  const handleApprove = () => {
+    // An over-budget invoice cannot be approved without an explicit override
+    // that gets recorded in the audit log — prompt for confirmation first.
+    if (preview?.budgetStatus?.overBudget) {
+      setOverrideOpen(true);
+      return;
+    }
+    submitApproval(false);
   };
 
   const handleExport = async (format: GenerateInputFormat) => {
@@ -312,6 +338,47 @@ export default function InvoiceDetail() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" /> Approve over budget?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Alert variant="destructive" className="border-red-300 bg-red-50">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                {preview?.budgetStatus?.message} Remaining balance: $
+                {(preview?.budgetStatus?.remainingBalance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.
+                {" "}Approving will record a budget override in the audit log.
+              </AlertDescription>
+            </Alert>
+            <div className="space-y-2">
+              <Label>Reason for override (optional)</Label>
+              <Textarea
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="e.g. Client PO amendment pending, approved by PM."
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOverrideOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-red-600 text-white hover:bg-red-700"
+                onClick={() => submitApproval(true, overrideReason)}
+                disabled={approveInvoice.isPending}
+              >
+                {approveInvoice.isPending ? "Approving..." : "Override & Approve"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-6 md:grid-cols-4">
         <Card>

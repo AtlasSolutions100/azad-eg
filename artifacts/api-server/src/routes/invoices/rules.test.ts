@@ -192,6 +192,45 @@ describe("POST /api/invoices/:id/approve", () => {
     const [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invId));
     expect(row.status).toBe("exported");
   });
+
+  it("blocks approving an over-budget invoice without an override (422)", async () => {
+    const wpId = await createWorkPlan();
+    // previouslyBilled alone exceeds the 100000 budget, so any line item puts
+    // total-to-date over 100% expended.
+    const invId = await createInvoice(wpId, "draft", { previouslyBilled: 200000 });
+    await addLineItem(invId);
+
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/approve`)
+      .send({ approvedBy: "Approver" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("BUDGET_OVERRIDE_REQUIRED");
+
+    const [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invId));
+    expect(row.status).toBe("draft");
+  });
+
+  it("approves an over-budget invoice with an override and logs it", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId, "draft", { previouslyBilled: 200000 });
+    await addLineItem(invId);
+
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/approve`)
+      .send({ approvedBy: "Approver", budgetOverride: true, budgetOverrideReason: "PO amendment pending" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("approved");
+
+    const audits = await db
+      .select()
+      .from(auditLogsTable)
+      .where(eq(auditLogsTable.entityId, invId));
+    const override = audits.find((a) => a.action === "approved over budget");
+    expect(override).toBeDefined();
+    expect(override?.description).toContain("PO amendment pending");
+  });
 });
 
 describe("POST /api/invoices/:id/generate marks exported only when approved", () => {

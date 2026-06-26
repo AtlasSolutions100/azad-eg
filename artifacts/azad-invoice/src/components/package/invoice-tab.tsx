@@ -17,9 +17,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/package-ui";
 import DocDownload from "./doc-download";
 
@@ -38,6 +46,11 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
     otherDirectCosts: pkg.otherDirectCosts,
     signatureId: pkg.signatureId ?? undefined,
   });
+
+  // Over-budget approval requires an explicit, audited override.
+  const overBudget = rollup.remainingBalance < 0;
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
 
   useEffect(() => {
     setForm({
@@ -68,18 +81,38 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
     }
   };
 
-  const approve = async () => {
+  const submitApproval = async (budgetOverride: boolean, reason?: string) => {
     const sig = signatures?.find((s) => s.id === form.signatureId);
     try {
       await updatePackage.mutateAsync({
         id: pkg.id,
-        data: { status: "approved", approvedBy: sig?.name },
+        data: {
+          status: "approved",
+          approvedBy: sig?.name,
+          ...(budgetOverride ? { budgetOverride: true, budgetOverrideReason: reason || undefined } : {}),
+        },
       });
       queryClient.invalidateQueries();
+      setOverrideOpen(false);
+      setOverrideReason("");
       toast({ title: "Package approved" });
-    } catch {
-      toast({ variant: "destructive", title: "Failed to approve package" });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Failed to approve package",
+        description: e instanceof Error ? e.message : undefined,
+      });
     }
+  };
+
+  const approve = () => {
+    // An over-budget package cannot be approved without an explicit override
+    // that gets recorded in the audit log — prompt for confirmation first.
+    if (overBudget) {
+      setOverrideOpen(true);
+      return;
+    }
+    submitApproval(false);
   };
 
   const summary: { label: string; amount: number; emphasis?: boolean }[] = [
@@ -195,8 +228,55 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
                 Resolve validation issues before approving.
               </p>
             )}
+            {overBudget && pkg.status === "draft" && (
+              <p className="flex items-center gap-1 text-xs text-red-600">
+                <AlertTriangle className="h-3 w-3" /> Over budget — approval
+                requires a recorded override.
+              </p>
+            )}
           </CardContent>
         </Card>
+
+        <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="h-5 w-5" /> Approve over budget?
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Alert variant="destructive" className="border-red-300 bg-red-50">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Total billed to date exceeds the work plan budget. Remaining
+                  balance: {formatCurrency(rollup.remainingBalance)}. Approving
+                  will record a budget override in the audit log.
+                </AlertDescription>
+              </Alert>
+              <div className="space-y-2">
+                <Label>Reason for override (optional)</Label>
+                <Textarea
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="e.g. Client PO amendment pending, approved by PM."
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setOverrideOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => submitApproval(true, overrideReason)}
+                  disabled={updatePackage.isPending}
+                >
+                  {updatePackage.isPending ? "Approving…" : "Override & Approve"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Card>
           <CardHeader>

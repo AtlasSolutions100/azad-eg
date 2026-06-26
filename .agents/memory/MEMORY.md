@@ -5,3 +5,4 @@
 - [Procast credential encryption](procast-credential-encryption.md) — api_key stored AES-256-GCM encrypted; key derived from a managed secret (PROCAST_ENC_KEY or SESSION_SECRET), never plaintext, never committed to .replit.
 - [api-server tests share seeded dev DB](api-server-test-db.md) — specs hit real Postgres with seed rows; scope global-query tests by unique keys/periods; new tables need `pnpm push`.
 - [api-spec codegen rebuild](api-spec-codegen-rebuild.md) — stale @workspace/api-zod/api-client-react errors? run `pnpm --filter @workspace/api-spec run codegen`.
+- [azad vite build env](azad-vite-build-env.md) — azad-invoice vite.config throws without PORT and BASE_PATH; build needs both set, typecheck needs neither.

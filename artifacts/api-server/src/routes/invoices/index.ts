@@ -204,13 +204,28 @@ router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [current] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
-  if (!current) {
+  const ctx = await loadContext(id);
+  if (!ctx) {
     res.status(404).json({ error: "Invoice not found" });
     return;
   }
+  const { invoice: current } = ctx;
   if (current.status !== "draft" && current.status !== "in_review") {
     res.status(409).json({ error: `Cannot approve an invoice with status '${current.status}'.` });
+    return;
+  }
+  // Hard stop on over-budget approval unless the biller explicitly overrides.
+  // An over-budget invoice can only be approved when budgetOverride is set, and
+  // the override (with any reason) is captured in the audit log below.
+  const budget = evaluateBudgetStatus(buildInvoice(current, ctx.workPlan, ctx.lineItems).financials);
+  if (budget.overBudget && !parsed.data.budgetOverride) {
+    res.status(422).json({
+      error:
+        `This invoice is over budget (${budget.message} Remaining balance: ${budget.remainingBalance}). ` +
+        `Approval requires an explicit budget override.`,
+      code: "BUDGET_OVERRIDE_REQUIRED",
+      budgetStatus: budget,
+    });
     return;
   }
   const [row] = await db
@@ -231,6 +246,18 @@ router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
   const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
   await recordAudit({ action: "approved", entityType: "invoice", entityId: id, userName: parsed.data.approvedBy, description: `Invoice ${row.invoiceNumber}` });
+  if (budget.overBudget && parsed.data.budgetOverride) {
+    const reason = parsed.data.budgetOverrideReason?.trim();
+    await recordAudit({
+      action: "approved over budget",
+      entityType: "invoice",
+      entityId: id,
+      userName: parsed.data.approvedBy,
+      description:
+        `Invoice ${row.invoiceNumber} approved over budget (${budget.percentExpended}% expended, ` +
+        `remaining ${budget.remainingBalance}).` + (reason ? ` Reason: ${reason}` : ""),
+    });
+  }
   res.json(ApproveInvoiceResponse.parse(buildInvoice(row, wp, lineItems).api));
 });
 

@@ -296,6 +296,10 @@ export interface ApprovalInput {
   /** @minLength 1 */
   approvedBy: string;
   signatureId?: number;
+  /** Explicit acknowledgement that this invoice exceeds its work plan budget. Required to approve an over-budget invoice; the override is recorded in the audit log. */
+  budgetOverride?: boolean;
+  /** Optional justification recorded with a budget override. */
+  budgetOverrideReason?: string;
 }
 
 export type LineItemCategory = typeof LineItemCategory[keyof typeof LineItemCategory];
@@ -784,6 +788,10 @@ export interface PackageUpdate {
   preparedBy?: string;
   approvedBy?: string;
   status?: PackageUpdateStatus;
+  /** Explicit acknowledgement that this package exceeds its work plan budget. Required to set status to "approved" when over budget; the override is recorded in the audit log. */
+  budgetOverride?: boolean;
+  /** Optional justification recorded with a budget override. */
+  budgetOverrideReason?: string;
   invoiceDocStatus?: DocStatus;
   subCalcDocStatus?: DocStatus;
   progressReportDocStatus?: DocStatus;

@@ -59,6 +59,7 @@ import {
   type PackageDocContext,
 } from "../lib/packageDocs";
 import { resolveSignaturePath } from "../lib/excel";
+import { evaluateBudgetStatus } from "../lib/financials";
 import { recordAudit } from "../lib/audit";
 import fs from "node:fs";
 import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
@@ -314,7 +315,41 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package not found" });
     return;
   }
-  const [row] = await db.update(packagesTable).set(parsed.data).where(eq(packagesTable.id, id)).returning();
+  // budgetOverride / budgetOverrideReason are approval-control flags, not stored
+  // columns — pull them out so they never reach the db update.
+  const { budgetOverride, budgetOverrideReason, ...updateFields } = parsed.data;
+
+  // A package becomes "billed" the moment its status flips to approved. If that
+  // transition pushes (or leaves) the package over its work plan budget, block
+  // it unless the biller explicitly overrides, and record the override.
+  const approving = updateFields.status === "approved" && existing.status !== "approved" && existing.status !== "exported";
+  let overBudget: ReturnType<typeof evaluateBudgetStatus> | null = null;
+  if (approving) {
+    const [wpForBudget] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, existing.workPlanId));
+    if (wpForBudget) {
+      const entries = await db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id));
+      const rollup = buildPackageRollup(entries, wpForBudget, {
+        previouslyBilled: updateFields.previouslyBilled ?? existing.previouslyBilled,
+        otherDirectCosts: updateFields.otherDirectCosts ?? existing.otherDirectCosts,
+      });
+      const budget = evaluateBudgetStatus(rollup);
+      if (budget.overBudget) {
+        if (!budgetOverride) {
+          res.status(422).json({
+            error:
+              `This package is over budget (${budget.message} Remaining balance: ${budget.remainingBalance}). ` +
+              `Approval requires an explicit budget override.`,
+            code: "BUDGET_OVERRIDE_REQUIRED",
+            budgetStatus: budget,
+          });
+          return;
+        }
+        overBudget = budget;
+      }
+    }
+  }
+
+  const [row] = await db.update(packagesTable).set(updateFields).where(eq(packagesTable.id, id)).returning();
   const { emp, wp } = await loadContext(row);
   if (!emp || !wp) {
     res.status(404).json({ error: "Package references missing employee or work plan" });
@@ -325,6 +360,18 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)),
   ]);
   await recordAudit({ action: "updated package", entityType: "package", entityId: id });
+  if (overBudget) {
+    const reason = budgetOverrideReason?.trim();
+    await recordAudit({
+      action: "approved over budget",
+      entityType: "package",
+      entityId: id,
+      userName: updateFields.approvedBy,
+      description:
+        `Package approved over budget (${overBudget.percentExpended}% expended, ` +
+        `remaining ${overBudget.remainingBalance}).` + (reason ? ` Reason: ${reason}` : ""),
+    });
+  }
   res.json(UpdatePackageResponse.parse(toApiPackageSummary(row, emp, wp, weekCount, entries)));
 });
 
@@ -730,8 +777,13 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
       previouslyBilled: pkg.previouslyBilled,
       otherDirectCosts: pkg.otherDirectCosts,
     });
-    if (rollup.remainingBalance < 0) {
-      flags.push({ severity: "error", field: "budget", message: "Total billed to date exceeds the work plan budget." });
+    const budget = evaluateBudgetStatus(rollup);
+    if (budget.overBudget) {
+      // Over budget is a warning (not a blocking error): approval is still
+      // possible, but only with an explicit budget override that is audited.
+      flags.push({ severity: "warning", field: "budget", message: "Total billed to date exceeds the work plan budget." });
+    } else if (budget.level === "approaching") {
+      flags.push({ severity: "info", field: "budget", message: budget.message });
     }
   } else {
     flags.push({ severity: "error", field: "workPlan", message: "Package references a missing work plan." });
