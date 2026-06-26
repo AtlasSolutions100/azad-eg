@@ -628,4 +628,73 @@ describe("procast integration", () => {
     expect(sync.status).toBe(409);
     expect(sync.body.error).toMatch(/not connected/i);
   });
+
+  it("tick logs and swallows an error when the cycle itself throws, then resets the running guard", async () => {
+    const scheduler = await import("../lib/procastScheduler");
+    const procastModule = await import("../lib/procast");
+    const { logger } = await import("../lib/logger");
+
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation((() => logger) as never);
+
+    // Force the whole cycle to blow up the way a database hiccup would: the
+    // open-invoices read (reached right after the connection check) rejects.
+    // This is an unexpected, top-level error — not a per-invoice Procast error.
+    const connSpy = vi
+      .spyOn(procastModule, "getProcastConnection")
+      .mockRejectedValueOnce(new Error("database hiccup while loading open invoices"));
+
+    // The top-level safety net must swallow the throw — tick resolves, it never
+    // rejects, so a single bad cycle can't take the background loop down.
+    await expect(scheduler.tick()).resolves.toBeUndefined();
+    // ...and the failure is logged, not lost silently.
+    expect(errorSpy).toHaveBeenCalled();
+
+    // The in-instance running guard is reset afterward so the loop isn't wedged.
+    const afterThrow = await scheduler.getSchedulerState();
+    expect(afterThrow.running).toBe(false);
+
+    // A later tick runs normally (here it skips cleanly because Procast is not
+    // connected) instead of being permanently blocked by a stuck guard.
+    connSpy.mockRestore();
+    await expect(scheduler.tick()).resolves.toBeUndefined();
+  });
+
+  it("startProcastScheduler is idempotent and honors PROCAST_SYNC_INTERVAL_MS with a default fallback", async () => {
+    const { startProcastScheduler, stopProcastScheduler } = await import("../lib/procastScheduler");
+    const prev = process.env["PROCAST_SYNC_INTERVAL_MS"];
+    const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+
+    try {
+      // A valid env interval is honored. No UI-configured row exists (beforeEach
+      // clears the scheduler table), so the env value is what takes effect.
+      process.env["PROCAST_SYNC_INTERVAL_MS"] = String(5 * 60 * 1000);
+      await startProcastScheduler();
+      // Calling it again is a no-op: a single timer stays active.
+      await startProcastScheduler();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+      expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(5 * 60 * 1000);
+      stopProcastScheduler();
+
+      // An invalid (non-numeric) env value falls back to the built-in default.
+      setIntervalSpy.mockClear();
+      process.env["PROCAST_SYNC_INTERVAL_MS"] = "not-a-number";
+      await startProcastScheduler();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+      expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(DEFAULT_INTERVAL_MS);
+      stopProcastScheduler();
+
+      // An unset env value also falls back to the default.
+      setIntervalSpy.mockClear();
+      delete process.env["PROCAST_SYNC_INTERVAL_MS"];
+      await startProcastScheduler();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+      expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(DEFAULT_INTERVAL_MS);
+      stopProcastScheduler();
+    } finally {
+      stopProcastScheduler();
+      if (prev === undefined) delete process.env["PROCAST_SYNC_INTERVAL_MS"];
+      else process.env["PROCAST_SYNC_INTERVAL_MS"] = prev;
+    }
+  });
 });
