@@ -11,6 +11,8 @@ export interface ProcastStatus {
   connected: boolean;
   mode: ProcastStatusMode;
   /** @nullable */
+  baseUrl?: string | null;
+  /** @nullable */
   lastSyncAt?: string | null;
   message: string;
 }

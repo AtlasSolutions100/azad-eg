@@ -35,7 +35,8 @@ import { recomputeCarryOver, deriveCarryOverFromPriors } from "../../lib/carryov
 import { evaluateBudgetStatus } from "../../lib/financials";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
-import { parseTimeFile } from "../../lib/timeimport";
+import { parseTimeFile, parseTimeRecords, type ParsedLine } from "../../lib/timeimport";
+import { getProcastConnection, fetchProcastTimesheets, markProcastSynced } from "../../lib/procast";
 import { buildInvoiceWorkbook, convertToPdf, resolveSignaturePath } from "../../lib/excel";
 import path from "node:path";
 
@@ -44,6 +45,44 @@ const router: IRouter = Router();
 function pid(req: { params: Record<string, string | string[]> }): number {
   const raw = req.params.id;
   return parseInt(Array.isArray(raw) ? raw[0] : raw, 10);
+}
+
+type EmployeeRow = typeof employeesTable.$inferSelect;
+
+// Shared mapping of parsed timesheet lines (from file upload OR live Procast pull)
+// into invoice line-item rows: matches employees to apply billable rates and
+// classifications, and accumulates warnings for rows that need manual attention.
+function linesToLineItems(
+  lines: ParsedLine[],
+  invoiceId: number,
+  employees: EmployeeRow[],
+): { toInsert: Array<typeof lineItemsTable.$inferInsert>; warnings: string[] } {
+  const empByName = new Map(employees.map((e) => [e.name.toLowerCase().trim(), e]));
+  const warnings: string[] = [];
+  const toInsert = lines.map((line) => {
+    const emp = empByName.get(line.employeeName.toLowerCase().trim());
+    let rate = line.rate;
+    let classification = line.classification;
+    if (rate <= 0 && emp) {
+      rate = line.location === "field" ? emp.fieldRate ?? emp.homeRate : emp.homeRate;
+    }
+    if (!classification && emp) classification = emp.classification;
+    if (rate <= 0) warnings.push(`${line.employeeName}: no rate available, set to 0 — please correct manually.`);
+    return {
+      invoiceId,
+      employeeId: emp?.id ?? null,
+      employeeName: line.employeeName,
+      classification: classification || "Unspecified",
+      category: line.category,
+      location: line.location,
+      hours: line.hours,
+      rate,
+      amount: line.hours * rate,
+      taskNo: line.taskNo ?? emp?.defaultTaskNo ?? null,
+      notes: line.notes ?? null,
+    };
+  });
+  return { toInsert, warnings };
 }
 
 async function loadContext(invoiceId: number): Promise<
@@ -301,32 +340,8 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
   }
 
   const employees = await db.select().from(employeesTable);
-  const empByName = new Map(employees.map((e) => [e.name.toLowerCase().trim(), e]));
-  const warnings = [...parsedFile.warnings];
-
-  const toInsert = parsedFile.lines.map((line) => {
-    const emp = empByName.get(line.employeeName.toLowerCase().trim());
-    let rate = line.rate;
-    let classification = line.classification;
-    if (rate <= 0 && emp) {
-      rate = line.location === "field" ? emp.fieldRate ?? emp.homeRate : emp.homeRate;
-    }
-    if (!classification && emp) classification = emp.classification;
-    if (rate <= 0) warnings.push(`${line.employeeName}: no rate available, set to 0 — please correct manually.`);
-    return {
-      invoiceId: id,
-      employeeId: emp?.id ?? null,
-      employeeName: line.employeeName,
-      classification: classification || "Unspecified",
-      category: line.category,
-      location: line.location,
-      hours: line.hours,
-      rate,
-      amount: line.hours * rate,
-      taskNo: line.taskNo ?? emp?.defaultTaskNo ?? null,
-      notes: line.notes ?? null,
-    };
-  });
+  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsedFile.lines, id, employees);
+  const warnings = [...parsedFile.warnings, ...mapWarnings];
 
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
   // New labor changes this invoice's total-to-date; refresh downstream carry-over.
@@ -337,6 +352,62 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
     ImportTimeDataResponse.parse({
       importedCount: inserted.length,
       source,
+      warnings,
+      lineItems: inserted.map(toApiLineItem),
+    }),
+  );
+});
+
+// Live Procast pull: fetch timesheet records for this invoice's billing period
+// directly from the connected Procast API and import them as line items.
+router.post("/invoices/:id/procast-sync", async (req, res): Promise<void> => {
+  const id = pid(req);
+  const ctx = await loadContext(id);
+  if (!ctx) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+
+  const conn = await getProcastConnection();
+  if (!conn || !conn.connected || !conn.baseUrl || !conn.apiKey) {
+    res.status(409).json({ error: "Procast is not connected. Connect it first or use file upload." });
+    return;
+  }
+
+  let records: Array<Record<string, unknown>>;
+  try {
+    records = await fetchProcastTimesheets(
+      { baseUrl: conn.baseUrl, apiKey: conn.apiKey },
+      { start: ctx.invoice.periodStart, end: ctx.invoice.periodEnd },
+    );
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : "Failed to pull from Procast." });
+    return;
+  }
+
+  const parsed = parseTimeRecords(records);
+  if (parsed.lines.length === 0) {
+    res.status(400).json({ error: "No valid timesheet rows returned by Procast.", warnings: parsed.warnings });
+    return;
+  }
+
+  const employees = await db.select().from(employeesTable);
+  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsed.lines, id, employees);
+  const warnings = [...parsed.warnings, ...mapWarnings];
+
+  const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
+  await markProcastSynced(new Date());
+  await recordAudit({
+    action: "synced from Procast",
+    entityType: "invoice",
+    entityId: id,
+    description: `${inserted.length} line items pulled live from Procast`,
+  });
+
+  res.json(
+    ImportTimeDataResponse.parse({
+      importedCount: inserted.length,
+      source: "procast",
       warnings,
       lineItems: inserted.map(toApiLineItem),
     }),

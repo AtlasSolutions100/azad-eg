@@ -110,6 +110,23 @@ function rowsToLines(rows: string[][]): ParseResult {
   return { lines, warnings };
 }
 
+// Maps arbitrary JSON timesheet records (e.g. from the live Procast API) through
+// the same fuzzy column matching used for uploaded files, so any reasonable
+// Procast field naming is understood without a hard-coded schema.
+export function parseTimeRecords(records: Array<Record<string, unknown>>): ParseResult {
+  if (records.length === 0) {
+    return { lines: [], warnings: ["Procast returned no timesheet records for this period."] };
+  }
+  const headerSet = new Set<string>();
+  for (const r of records) for (const k of Object.keys(r)) headerSet.add(k);
+  const headers = [...headerSet];
+  const rows: string[][] = [headers];
+  for (const r of records) {
+    rows.push(headers.map((h) => (r[h] == null ? "" : String(r[h]))));
+  }
+  return rowsToLines(rows);
+}
+
 export async function parseTimeFile(buffer: Buffer, filename: string): Promise<ParseResult> {
   const lower = filename.toLowerCase();
   const wb = new ExcelJS.Workbook();

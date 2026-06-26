@@ -624,8 +624,15 @@ export interface ProcastStatus {
   connected: boolean;
   mode: ProcastStatusMode;
   /** @nullable */
+  baseUrl?: string | null;
+  /** @nullable */
   lastSyncAt?: string | null;
   message: string;
+}
+
+export interface ProcastConnectInput {
+  baseUrl: string;
+  apiKey: string;
 }
 
 export interface StatusCount {

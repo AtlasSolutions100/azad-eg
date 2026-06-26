@@ -68,6 +68,7 @@ export * from './packageValidationResult';
 export * from './packageWeek';
 export * from './packageWeekInput';
 export * from './packageWeekUpdate';
+export * from './procastConnectInput';
 export * from './procastStatus';
 export * from './procastStatusMode';
 export * from './progressReport';

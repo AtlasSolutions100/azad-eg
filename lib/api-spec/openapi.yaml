@@ -448,6 +448,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportResult"
+  /invoices/{id}/procast-sync:
+    post:
+      operationId: syncProcastTimesheets
+      tags: [invoices]
+      summary: Pull timesheets for this invoice's period live from the connected Procast API
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
   /invoices/{id}/generate:
     post:
       operationId: generateInvoiceFile
@@ -682,6 +696,38 @@ paths:
       responses:
         "200":
           description: Procast status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcastStatus"
+
+  /procast/connect:
+    post:
+      operationId: connectProcast
+      tags: [reference]
+      summary: Connect the live Procast API (validates and stores credentials)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcastConnectInput"
+      responses:
+        "200":
+          description: Procast status after connecting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcastStatus"
+
+  /procast/disconnect:
+    post:
+      operationId: disconnectProcast
+      tags: [reference]
+      summary: Disconnect the live Procast API and revert to upload mode
+      responses:
+        "200":
+          description: Procast status after disconnecting
           content:
             application/json:
               schema:
@@ -1655,8 +1701,16 @@ components:
         mode:
           type: string
           enum: [live, upload]
+        baseUrl: { type: ["string", "null"] }
         lastSyncAt: { type: ["string", "null"] }
         message: { type: string }
+
+    ProcastConnectInput:
+      type: object
+      required: [baseUrl, apiKey]
+      properties:
+        baseUrl: { type: string }
+        apiKey: { type: string }
 
     DashboardSummary:
       type: object

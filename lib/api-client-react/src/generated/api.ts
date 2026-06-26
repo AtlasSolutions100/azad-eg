@@ -59,6 +59,7 @@ import type {
   PackageWeek,
   PackageWeekInput,
   PackageWeekUpdate,
+  ProcastConnectInput,
   ProcastStatus,
   ProgressReport,
   ProgressReportFileUpload,
@@ -2037,6 +2038,76 @@ export const useImportTimeData = <TError = ErrorType<unknown>,
       return useMutation(getImportTimeDataMutationOptions(options));
     }
 
+export const getSyncProcastTimesheetsUrl = (id: number,) => {
+
+
+
+
+  return `/api/invoices/${id}/procast-sync`
+}
+
+/**
+ * @summary Pull timesheets for this invoice's period live from the connected Procast API
+ */
+export const syncProcastTimesheets = async (id: number, options?: RequestInit): Promise<ImportResult> => {
+
+  return customFetch<ImportResult>(getSyncProcastTimesheetsUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getSyncProcastTimesheetsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncProcastTimesheets>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncProcastTimesheets>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['syncProcastTimesheets'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncProcastTimesheets>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  syncProcastTimesheets(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncProcastTimesheetsMutationResult = NonNullable<Awaited<ReturnType<typeof syncProcastTimesheets>>>
+
+    export type SyncProcastTimesheetsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pull timesheets for this invoice's period live from the connected Procast API
+ */
+export const useSyncProcastTimesheets = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncProcastTimesheets>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncProcastTimesheets>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getSyncProcastTimesheetsMutationOptions(options));
+    }
+
 export const getGenerateInvoiceFileUrl = (id: number,) => {
 
 
@@ -3149,6 +3220,146 @@ export function useGetProcastStatus<TData = Awaited<ReturnType<typeof getProcast
 
 
 
+
+export const getConnectProcastUrl = () => {
+
+
+
+
+  return `/api/procast/connect`
+}
+
+/**
+ * @summary Connect the live Procast API (validates and stores credentials)
+ */
+export const connectProcast = async (procastConnectInput: ProcastConnectInput, options?: RequestInit): Promise<ProcastStatus> => {
+
+  return customFetch<ProcastStatus>(getConnectProcastUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(procastConnectInput)
+  }
+);}
+
+
+
+
+export const getConnectProcastMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectProcast>>, TError,{data: BodyType<ProcastConnectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof connectProcast>>, TError,{data: BodyType<ProcastConnectInput>}, TContext> => {
+
+const mutationKey = ['connectProcast'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof connectProcast>>, {data: BodyType<ProcastConnectInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  connectProcast(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConnectProcastMutationResult = NonNullable<Awaited<ReturnType<typeof connectProcast>>>
+    export type ConnectProcastMutationBody = BodyType<ProcastConnectInput>
+    export type ConnectProcastMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Connect the live Procast API (validates and stores credentials)
+ */
+export const useConnectProcast = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectProcast>>, TError,{data: BodyType<ProcastConnectInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof connectProcast>>,
+        TError,
+        {data: BodyType<ProcastConnectInput>},
+        TContext
+      > => {
+      return useMutation(getConnectProcastMutationOptions(options));
+    }
+
+export const getDisconnectProcastUrl = () => {
+
+
+
+
+  return `/api/procast/disconnect`
+}
+
+/**
+ * @summary Disconnect the live Procast API and revert to upload mode
+ */
+export const disconnectProcast = async ( options?: RequestInit): Promise<ProcastStatus> => {
+
+  return customFetch<ProcastStatus>(getDisconnectProcastUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDisconnectProcastMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectProcast>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectProcast>>, TError,void, TContext> => {
+
+const mutationKey = ['disconnectProcast'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectProcast>>, void> = () => {
+
+
+          return  disconnectProcast(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisconnectProcastMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectProcast>>>
+
+    export type DisconnectProcastMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Disconnect the live Procast API and revert to upload mode
+ */
+export const useDisconnectProcast = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectProcast>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disconnectProcast>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDisconnectProcastMutationOptions(options));
+    }
 
 export const getListPackagesUrl = (params?: ListPackagesParams,) => {
   const normalizedParams = new URLSearchParams();

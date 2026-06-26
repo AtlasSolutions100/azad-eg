@@ -758,6 +758,34 @@ export const ImportTimeDataResponse = zod.object({
 
 
 /**
+ * @summary Pull timesheets for this invoice's period live from the connected Procast API
+ */
+export const SyncProcastTimesheetsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SyncProcastTimesheetsResponse = zod.object({
+  "importedCount": zod.number(),
+  "source": zod.string().optional(),
+  "warnings": zod.array(zod.string()).optional(),
+  "lineItems": zod.array(zod.object({
+  "id": zod.number(),
+  "invoiceId": zod.number(),
+  "employeeId": zod.number().nullish(),
+  "employeeName": zod.string(),
+  "classification": zod.string(),
+  "category": zod.enum(['regular', 'ot', 'dt', 'holiday', 'pto']),
+  "location": zod.enum(['home', 'field']),
+  "hours": zod.number(),
+  "rate": zod.number(),
+  "amount": zod.number(),
+  "taskNo": zod.string().nullish(),
+  "notes": zod.string().nullish()
+}))
+})
+
+
+/**
  * @summary Generate the populated Excel workbook or PDF for an invoice
  */
 export const GenerateInvoiceFileParams = zod.object({
@@ -1065,6 +1093,36 @@ export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
 export const GetProcastStatusResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
+  "baseUrl": zod.string().nullish(),
+  "lastSyncAt": zod.string().nullish(),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Connect the live Procast API (validates and stores credentials)
+ */
+export const ConnectProcastBody = zod.object({
+  "baseUrl": zod.string(),
+  "apiKey": zod.string()
+})
+
+export const ConnectProcastResponse = zod.object({
+  "connected": zod.boolean(),
+  "mode": zod.enum(['live', 'upload']),
+  "baseUrl": zod.string().nullish(),
+  "lastSyncAt": zod.string().nullish(),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Disconnect the live Procast API and revert to upload mode
+ */
+export const DisconnectProcastResponse = zod.object({
+  "connected": zod.boolean(),
+  "mode": zod.enum(['live', 'upload']),
+  "baseUrl": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),
   "message": zod.string()
 })

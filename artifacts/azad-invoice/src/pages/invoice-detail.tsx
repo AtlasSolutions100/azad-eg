@@ -8,6 +8,8 @@ import {
   useGetProgressReport, 
   useListSignatures,
   useImportTimeData,
+  useSyncProcastTimesheets,
+  useGetProcastStatus,
   useSaveProgressReport,
   useApproveInvoice,
   useGenerateInvoiceFile,
@@ -51,6 +53,8 @@ export default function InvoiceDetail() {
   const { data: employees } = useListEmployees();
 
   const importTime = useImportTimeData();
+  const syncProcast = useSyncProcastTimesheets();
+  const { data: procastStatus } = useGetProcastStatus();
   const saveProgress = useSaveProgressReport();
   const approveInvoice = useApproveInvoice();
   const generateFile = useGenerateInvoiceFile();
@@ -96,6 +100,23 @@ export default function InvoiceDetail() {
       queryClient.invalidateQueries();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleProcastSync = async () => {
+    try {
+      const result = await syncProcast.mutateAsync({ id: invoiceId });
+      queryClient.invalidateQueries();
+      toast({
+        title: "Synced from Procast",
+        description: `${result.importedCount} line item(s) pulled for this period.`,
+      });
+    } catch (e) {
+      toast({
+        title: "Procast sync failed",
+        description: e instanceof Error ? e.message : "Could not pull timesheets from Procast.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -473,9 +494,25 @@ export default function InvoiceDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Import Time Data</CardTitle>
-              <CardDescription>Upload Procast or Timesheet data to generate line items.</CardDescription>
+              <CardDescription>Pull live from Procast, or upload Procast/Timesheet files to generate line items.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {procastStatus?.connected && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-sm font-semibold text-emerald-800">Live Procast Connection</p>
+                  <p className="mt-1 text-xs text-emerald-700">
+                    Pull timesheets directly from Procast for this invoice's billing period
+                    {invoice ? ` (${invoice.periodStart} → ${invoice.periodEnd})` : ""}.
+                  </p>
+                  <Button
+                    onClick={handleProcastSync}
+                    disabled={syncProcast.isPending}
+                    className="mt-3 bg-emerald-600 text-white hover:bg-emerald-700"
+                  >
+                    {syncProcast.isPending ? "Syncing..." : "Sync from Procast"}
+                  </Button>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Source</Label>
                 <Select value={importSource} onValueChange={(val: any) => setImportSource(val)}>
