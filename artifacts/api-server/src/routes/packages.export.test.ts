@@ -253,6 +253,159 @@ describe("PATCH /api/packages/:id over-budget approval", () => {
   });
 });
 
+// Human-friendly document labels embedded in every export filename. Mirrors
+// DOC_LABELS in packageDocs.ts; duplicated here so the test fails loudly if a
+// label is renamed without updating the regression guard.
+const DOC_LABELS: Record<string, string> = {
+  invoice: "Invoice",
+  subcalc: "SubCalc",
+  progress: "ProgressReport",
+  labor: "LaborAttachment",
+  timesheets: "Timesheets",
+};
+
+// Mirrors sanitizeFilePart in packageDocs.ts.
+function sanitizeFilePart(value: string): string {
+  return value
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Derives the expected `EmployeeName_Job#` filename base for a seeded package
+// straight from the database, so the assertion tracks the real data.
+async function expectedFileBase(pkgId: number): Promise<string> {
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
+  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId));
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
+  const parts = [emp.name, wp.jobNumber].map((p) => sanitizeFilePart(p ?? "")).filter((p) => p.length > 0);
+  return parts.join("_") || `Package-${pkgId}`;
+}
+
+function downloadNameFromUrl(url: string): string | null {
+  return new URL(url, "http://test.local").searchParams.get("download");
+}
+
+describe("export filenames follow EmployeeName_Job#_DocumentName", () => {
+  it(
+    "names every ZIP entry EmployeeName_Job#_DocumentName.ext",
+    async () => {
+      const pkgId = await seedPackage("approved");
+
+      const res = await request(app).post(`/api/packages/${pkgId}/export`).send({});
+      expect(res.status).toBe(200);
+
+      const base = await expectedFileBase(pkgId);
+      const docs = res.body.documents as { doc: string; filename: string; format: string }[];
+      expect(docs.length).toBeGreaterThan(0);
+      for (const d of docs) {
+        expect(d.filename).toBe(`${base}_${DOC_LABELS[d.doc]}.${d.format}`);
+      }
+    },
+    120000,
+  );
+
+  it(
+    "names the single-document download EmployeeName_Job#_DocumentName.ext",
+    async () => {
+      const pkgId = await seedPackage("draft");
+
+      const res = await request(app)
+        .post(`/api/packages/${pkgId}/documents/labor/generate`)
+        .send({ format: "xlsx" });
+      expect(res.status).toBe(200);
+
+      const base = await expectedFileBase(pkgId);
+      expect(downloadNameFromUrl(res.body.url)).toBe(`${base}_LaborAttachment.xlsx`);
+    },
+    60000,
+  );
+
+  it(
+    "falls back to the employee name alone when the job number is missing",
+    async () => {
+      const pkgId = await seedPackage("draft");
+      const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
+      await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId));
+      const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId));
+
+      const res = await request(app)
+        .post(`/api/packages/${pkgId}/documents/invoice/generate`)
+        .send({ format: "xlsx" });
+      expect(res.status).toBe(200);
+
+      const download = downloadNameFromUrl(res.body.url);
+      expect(download).toBe(`${sanitizeFilePart(emp.name)}_Invoice.xlsx`);
+      // No empty Job# segment should leak in as a doubled underscore.
+      expect(download).not.toContain("__");
+    },
+    60000,
+  );
+
+  it(
+    "falls back to Package-<id> when both employee name and job number are missing",
+    async () => {
+      const pkgId = await seedPackage("draft");
+      const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
+      await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId));
+      await db.update(employeesTable).set({ name: "" }).where(eq(employeesTable.id, pkg.employeeId));
+
+      const res = await request(app)
+        .post(`/api/packages/${pkgId}/documents/invoice/generate`)
+        .send({ format: "xlsx" });
+      expect(res.status).toBe(200);
+
+      expect(downloadNameFromUrl(res.body.url)).toBe(`Package-${pkgId}_Invoice.xlsx`);
+    },
+    60000,
+  );
+});
+
+describe("exported workbooks carry no repair-triggering defined names", () => {
+  // Valid in-workbook named ranges the templates' formulas depend on. These
+  // must survive the strip; only #REF!/external `[...]` names get removed.
+  const VALID_NAMES: Record<string, string[]> = {
+    subcalc: ["BALANCE", "FIXFEE"],
+    labor: ["consultant", "_xlnm._FilterDatabase"],
+  };
+
+  it(
+    "strips #REF!/external defined names while keeping valid in-workbook ranges",
+    async () => {
+      const ExcelJS = (await import("exceljs")).default;
+      const pkgId = await seedPackage("draft");
+      const kinds = ["invoice", "subcalc", "progress", "labor", "timesheets"] as const;
+
+      for (const kind of kinds) {
+        const res = await request(app)
+          .post(`/api/packages/${pkgId}/documents/${kind}/generate`)
+          .send({ format: "xlsx" });
+        expect(res.status).toBe(200);
+
+        const wb = new ExcelJS.Workbook();
+        await wb.xlsx.readFile(path.resolve(generatedDir, res.body.filename));
+        const names = wb.definedNames.model.map((dn) => dn.name);
+
+        for (const dn of wb.definedNames.model) {
+          for (const range of dn.ranges) {
+            expect(range, `${kind}: defined name ${dn.name} targets #REF!`).not.toMatch(/#REF!/i);
+            expect(range, `${kind}: defined name ${dn.name} targets external workbook`).not.toMatch(
+              /\[[^\]]+\]/,
+            );
+          }
+        }
+        // The broken external INVOICE name shipped in every template must be gone.
+        expect(names).not.toContain("INVOICE");
+        // Valid ranges the templates' formulas rely on must remain.
+        for (const required of VALID_NAMES[kind] ?? []) {
+          expect(names, `${kind} should still contain ${required}`).toContain(required);
+        }
+      }
+    },
+    120000,
+  );
+});
+
 describe("POST /api/packages/:id/documents/:doc/generate", () => {
   it(
     "generates a single xlsx document and marks its status ready",
