@@ -509,4 +509,110 @@ describe("POST /api/invoices/:id/time-import", () => {
     expect(manualRow?.employeeName).toBe("Hand Entered");
     expect(importedRow).toBeDefined();
   });
+
+  // Real users upload binary .xlsx workbooks through the UI, so the full request
+  // path (multipart upload of a binary workbook, employee matching, persistence)
+  // must work for Excel exactly as it does for CSV.
+  it("imports a real .xlsx workbook, matching an employee by name (case-insensitive)", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const emp = await createEmployee({
+      name: `Xlsx Matched ${Date.now()}`,
+      classification: "Principal Engineer",
+      homeRate: 200,
+    });
+
+    const buf = await xlsxBuffer([
+      ["Name", "Hours", "Rate"],
+      [emp.name.toUpperCase(), 10, 175],
+    ]);
+
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", buf, "timesheet.xlsx");
+
+    expect(res.status).toBe(200);
+    expect(res.body.importedCount).toBe(1);
+    const li = res.body.lineItems[0];
+    expect(li.employeeId).toBe(emp.id);
+    expect(li.classification).toBe("Principal Engineer");
+    expect(li.rate).toBe(175);
+    expect(li.amount).toBe(10 * 175);
+  });
+
+  it("falls back to the employee field rate for an .xlsx upload with no rate", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const emp = await createEmployee({
+      name: `Xlsx Field Worker ${Date.now()}`,
+      homeRate: 100,
+      fieldRate: 130,
+    });
+
+    const buf = await xlsxBuffer([
+      ["Name", "Location", "Hours", "Rate"],
+      [emp.name, "Field", 8, ""],
+    ]);
+
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", buf, "timesheet.xlsx");
+
+    expect(res.status).toBe(200);
+    const li = res.body.lineItems[0];
+    expect(li.location).toBe("field");
+    expect(li.rate).toBe(130);
+    expect(li.amount).toBe(8 * 130);
+  });
+
+  it("persists .xlsx-imported line items whose amount equals hours times the resolved rate", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const emp = await createEmployee({
+      name: `Xlsx Persisted ${Date.now()}`,
+      homeRate: 100,
+      fieldRate: 160,
+    });
+
+    const buf = await xlsxBuffer([
+      ["Name", "Location", "Hours", "Rate"],
+      [emp.name, "Field", 6, ""],
+    ]);
+
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", buf, "timesheet.xlsx");
+    expect(res.status).toBe(200);
+
+    const rows = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, invId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe("timesheet");
+    expect(rows[0].rate).toBe(160);
+    expect(rows[0].hours).toBe(6);
+    expect(rows[0].amount).toBe(6 * 160);
+  });
+
+  it("imports multiple rows from a single .xlsx workbook with normalized categories", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+
+    const buf = await xlsxBuffer([
+      ["Employee", "Classification", "Category", "Location", "Hours", "Rate"],
+      [`Xlsx OT ${Date.now()}`, "Senior Engineer", "Overtime", "Field", 8, 150],
+      [`Xlsx Reg ${Date.now()}`, "Engineer", "Regular", "Home", 40, 100],
+    ]);
+
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", buf, "timesheet.xlsx");
+
+    expect(res.status).toBe(200);
+    expect(res.body.importedCount).toBe(2);
+    const [ot, reg] = res.body.lineItems;
+    expect(ot).toMatchObject({ category: "ot", location: "field", hours: 8, rate: 150, amount: 8 * 150 });
+    expect(reg).toMatchObject({ category: "regular", location: "home", hours: 40, rate: 100, amount: 40 * 100 });
+
+    const rows = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, invId));
+    expect(rows).toHaveLength(2);
+  });
 });
