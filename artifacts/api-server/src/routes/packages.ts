@@ -61,7 +61,7 @@ import {
 import { resolveSignaturePath } from "../lib/excel";
 import { recordAudit } from "../lib/audit";
 import fs from "node:fs";
-import { upload } from "../lib/upload";
+import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
 import { uploadsDir, ensureDirs } from "../lib/paths";
 
 const DOC_KINDS: PackageDocKind[] = ["invoice", "subcalc", "progress", "labor", "timesheets"];
@@ -576,6 +576,16 @@ router.post(
     const ext = path.extname(originalName).toLowerCase();
     if (!PROGRESS_REPORT_EXTENSIONS.has(ext)) {
       res.status(400).json({ error: "Unsupported file type. Upload an Excel, Word, or PDF document." });
+      return;
+    }
+    // Content-based check: confirm the bytes really are the document type the
+    // extension claims, so a renamed/mislabeled file can't slip past the
+    // extension allow-list above.
+    const detected = detectDocument(file.buffer);
+    if (!detected || !EXTENSION_FORMATS[ext]?.includes(detected)) {
+      res.status(400).json({
+        error: "File content does not match its extension. Upload a genuine Excel, Word, or PDF document.",
+      });
       return;
     }
     ensureDirs();

@@ -35,3 +35,49 @@ export function detectImage(buffer: Buffer): { ext: ".png" | ".jpg"; mime: "imag
   }
   return null;
 }
+
+/** Format families recognized by magic bytes for progress-report documents. */
+export type DocumentFormat = "ooxml" | "ole2" | "pdf";
+
+function startsWith(buffer: Buffer, bytes: number[]): boolean {
+  if (buffer.length < bytes.length) return false;
+  for (let i = 0; i < bytes.length; i++) {
+    if (buffer[i] !== bytes[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Inspects a buffer's magic bytes and returns the detected document format
+ * family, or null when the content is not a supported document. Modern Office
+ * files (.xlsx/.docx) are ZIP containers, legacy Office files (.xls/.doc) are
+ * OLE2 compound files, and PDFs start with "%PDF".
+ */
+export function detectDocument(buffer: Buffer): DocumentFormat | null {
+  // OOXML (.xlsx/.docx) and other ZIP-based: "PK" local file header.
+  if (
+    startsWith(buffer, [0x50, 0x4b, 0x03, 0x04]) ||
+    startsWith(buffer, [0x50, 0x4b, 0x05, 0x06]) ||
+    startsWith(buffer, [0x50, 0x4b, 0x07, 0x08])
+  ) {
+    return "ooxml";
+  }
+  // Legacy OLE2 compound file (.xls/.doc).
+  if (startsWith(buffer, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) {
+    return "ole2";
+  }
+  // PDF: "%PDF".
+  if (startsWith(buffer, [0x25, 0x50, 0x44, 0x46])) {
+    return "pdf";
+  }
+  return null;
+}
+
+/** Maps an allowed extension to the document format families its content may have. */
+export const EXTENSION_FORMATS: Record<string, DocumentFormat[]> = {
+  ".xlsx": ["ooxml"],
+  ".docx": ["ooxml"],
+  ".xls": ["ole2"],
+  ".doc": ["ole2"],
+  ".pdf": ["pdf"],
+};
