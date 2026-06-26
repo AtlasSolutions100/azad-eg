@@ -13,10 +13,12 @@ import {
   SignIn,
   SignUp,
   Show,
+  useAuth,
   useClerk,
 } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -172,6 +174,25 @@ function AppShell() {
   );
 }
 
+function ClerkAuthTokenBridge() {
+  const { getToken } = useAuth();
+
+  // The app runs inside cross-origin contexts (the Replit canvas iframe,
+  // deployments on a different host), where the Clerk session cookie is not
+  // sent to the API. Attach the session token as a Bearer header instead so
+  // API requests authenticate in every context. Register synchronously during
+  // render (not in an effect) so the getter is in place before any first-mount
+  // query fires its request — effects run too late and would leak an
+  // unauthenticated request on first paint. getToken() returns a fresh,
+  // unexpired token per call (customFetch invokes it before every request) and
+  // null when signed out.
+  setAuthTokenGetter(() => getToken());
+
+  useEffect(() => () => setAuthTokenGetter(null), []);
+
+  return null;
+}
+
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const qc = useQueryClient();
@@ -244,6 +265,7 @@ function ClerkProviderWithRoutes() {
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
     >
       <QueryClientProvider client={queryClient}>
+        <ClerkAuthTokenBridge />
         <ClerkQueryClientCacheInvalidator />
         <TooltipProvider>
           <AppRouter />

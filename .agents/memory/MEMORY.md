@@ -1,8 +1,1 @@
-- [Labor Attachment template bounds](labor-attachment-template-bounds.md) — Sub Labor sheet has fixed row capacity (home 11 / field 6); cap overrides or they corrupt subtotals.
-- [db schema change rebuild](db-schema-change-rebuild.md) — after editing lib/db schema, run drizzle push AND `tsc --build` in lib/db, else downstream typecheck sees stale dist types.
-- [API server auth & local testing](api-server-auth-testing.md) — every /api route is behind Clerk requireAuth; curl returns Unauthorized, test via supertest mocking @clerk/express.
-- [Idempotent time import](idempotent-time-import.md) — line_items.source marks manual vs imported rows; re-import deletes non-manual rows then re-inserts, never appends.
-- [Procas credential encryption](procas-credential-encryption.md) — api_key stored AES-256-GCM encrypted; key derived from a managed secret (PROCAS_ENC_KEY or SESSION_SECRET), never plaintext, never committed to .replit.
-- [api-server tests share seeded dev DB](api-server-test-db.md) — specs hit real Postgres with seed rows; scope global-query tests by unique keys/periods; new tables need `pnpm push`.
-- [api-spec codegen rebuild](api-spec-codegen-rebuild.md) — stale @workspace/api-zod/api-client-react errors? run `pnpm --filter @workspace/api-spec run codegen`.
-- [azad vite build env](azad-vite-build-env.md) — azad-invoice vite.config throws without PORT and BASE_PATH; build needs both set, typecheck needs neither.
+- [Web→API auth needs Bearer token, not just cookie](auth-bearer-token.md) — Clerk session cookie isn't sent from the canvas iframe / cross-origin; wire setAuthTokenGetter or every API call 401s.
