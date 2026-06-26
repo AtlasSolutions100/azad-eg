@@ -678,6 +678,13 @@ paths:
       operationId: listAuditLogs
       tags: [reference]
       summary: List audit log entries
+      parameters:
+        - name: entityType
+          in: query
+          schema: { type: string }
+        - name: entityId
+          in: query
+          schema: { type: integer }
       responses:
         "200":
           description: Audit logs

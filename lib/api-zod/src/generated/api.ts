@@ -1084,6 +1084,11 @@ export const UpdateReferenceDataResponse = zod.object({
 /**
  * @summary List audit log entries
  */
+export const ListAuditLogsQueryParams = zod.object({
+  "entityType": zod.coerce.string().optional(),
+  "entityId": zod.coerce.number().optional()
+})
+
 export const ListAuditLogsResponseItem = zod.object({
   "id": zod.number(),
   "userId": zod.string().nullish(),

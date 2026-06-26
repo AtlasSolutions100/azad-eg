@@ -46,6 +46,7 @@ export * from './lineItemLocation';
 export * from './lineItemUpdate';
 export * from './lineItemUpdateCategory';
 export * from './lineItemUpdateLocation';
+export * from './listAuditLogsParams';
 export * from './listInvoicesParams';
 export * from './listPackagesParams';
 export * from './notFoundResponse';

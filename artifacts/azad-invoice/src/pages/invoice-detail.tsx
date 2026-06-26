@@ -53,16 +53,13 @@ export default function InvoiceDetail() {
   const { data: progressReport } = useGetProgressReport(invoiceId);
   const { data: signatures } = useListSignatures();
   const { data: employees } = useListEmployees();
-  const { data: auditLogs } = useListAuditLogs();
+  const { data: auditLogs } = useListAuditLogs({ entityType: "invoice", entityId: invoiceId });
 
   // Surface when this invoice's carry-over ("previously billed") was
   // automatically recalculated because an upstream invoice on the same work
   // plan changed. The most recent such audit entry is shown as a notice.
   const carryOverNotice = auditLogs?.find(
-    (log) =>
-      log.entityType === "invoice" &&
-      log.entityId === invoiceId &&
-      log.action === "carry-over recalculated",
+    (log) => log.action === "carry-over recalculated",
   );
 
   const importTime = useImportTimeData();
@@ -444,6 +441,7 @@ export default function InvoiceDetail() {
           <TabsTrigger value="import">Time Import</TabsTrigger>
           <TabsTrigger value="progress">Progress Report</TabsTrigger>
           <TabsTrigger value="validations">Validations</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
         
         <TabsContent value="preview" className="mt-4">
@@ -720,6 +718,43 @@ export default function InvoiceDetail() {
                     <p className="text-muted-foreground">No validation data available.</p>
                   )}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Activity</CardTitle>
+              <CardDescription>Full audit history for this invoice, most recent first.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {auditLogs && auditLogs.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">When</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>User</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {auditLogs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {new Date(log.createdAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-medium capitalize">{log.action}</TableCell>
+                        <TableCell className="text-muted-foreground">{log.description}</TableCell>
+                        <TableCell>{log.userName}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-muted-foreground">No activity recorded for this invoice yet.</p>
               )}
             </CardContent>
           </Card>

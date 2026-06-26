@@ -1062,6 +1062,11 @@ status?: string;
 workPlanId?: number;
 };
 
+export type ListAuditLogsParams = {
+entityType?: string;
+entityId?: number;
+};
+
 export type ListPackagesParams = {
 employeeId?: number;
 workPlanId?: number;
