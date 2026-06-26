@@ -659,6 +659,111 @@ describe("procas integration", () => {
     await expect(scheduler.tick()).resolves.toBeUndefined();
   });
 
+  it("skips a concurrent cycle cleanly when another instance holds the cross-instance sync lock", async () => {
+    const { tick, getSchedulerState } = await import("../lib/procasScheduler");
+    const { pool } = await import("@workspace/db");
+    // Must match SYNC_LOCK_KEY in procasScheduler.ts. A regression that changes
+    // or removes this key would let two instances run a cycle at once.
+    const SYNC_LOCK_KEY = 0x70726373; // "prcs"
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `Lock Emp ${suffix}`, classification: "Engineer", homeRate: 120, fieldRate: 140 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({
+        code: `LOCK-WP-${suffix}`,
+        title: "Lock WP",
+        client: "Client",
+        jobNumber: "JOB",
+        poNumber: "PO",
+        totalBudget: 100000,
+      })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+
+    // Far-future period unique to this test so the global cycle only imports
+    // rows for THIS invoice when it does run.
+    const periodStart = "2093-01-01";
+    const periodEnd = "2093-01-15";
+    const [draftInv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `LOCK-DRAFT-${suffix}`,
+        invoiceDate: "2093-02-01",
+        periodStart,
+        periodEnd,
+        status: "draft",
+      })
+      .returning();
+    createdInvoiceIds.push(draftInv.id);
+
+    let timesheetCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/health")) return new Response(null, { status: 200 });
+      if (url.includes("/timesheets")) {
+        timesheetCalls += 1;
+        const rows = url.includes(`start=${periodStart}`)
+          ? [{ Employee: emp.name, Hours: "8", Rate: "120", Category: "Regular", Location: "Home" }]
+          : [];
+        return new Response(JSON.stringify({ timesheets: rows }), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    await request(app)
+      .post("/api/procas/connect")
+      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
+      .expect(200);
+
+    // Simulate a second autoscale instance already mid-cycle by holding the
+    // cross-instance advisory lock on a separate pooled session.
+    const holder = await pool.connect();
+    try {
+      const held = await holder.query<{ locked: boolean }>(
+        "SELECT pg_try_advisory_lock($1) AS locked",
+        [SYNC_LOCK_KEY],
+      );
+      expect(held.rows[0]?.locked).toBe(true);
+
+      // A tick on THIS instance cannot acquire the lock, so it must skip cleanly:
+      // the cycle body never runs (no timesheets fetch), no rows imported, no error.
+      await tick();
+      expect(timesheetCalls).toBe(0);
+
+      const itemsWhileLocked = await db
+        .select()
+        .from(lineItemsTable)
+        .where(eq(lineItemsTable.invoiceId, draftInv.id));
+      expect(itemsWhileLocked).toHaveLength(0);
+
+      // Persisted state is untouched (no cycle result recorded) and no error raised.
+      const state = await getSchedulerState();
+      expect(state.lastRunAt).toBeNull();
+      expect(state.lastError).toBeNull();
+      expect(state.lastSynced).toBe(0);
+    } finally {
+      // Release the lock so it does not leak into other specs.
+      await holder.query("SELECT pg_advisory_unlock($1)", [SYNC_LOCK_KEY]);
+      holder.release();
+    }
+
+    // Once the lock is free, a later tick acquires it and runs normally — proving
+    // the earlier skip was caused purely by the held lock, not a broken cycle.
+    await tick();
+    expect(timesheetCalls).toBeGreaterThanOrEqual(1);
+    const itemsAfterRelease = await db
+      .select()
+      .from(lineItemsTable)
+      .where(eq(lineItemsTable.invoiceId, draftInv.id));
+    expect(itemsAfterRelease).toHaveLength(1);
+  });
+
   it("startProcasScheduler is idempotent and honors PROCAS_SYNC_INTERVAL_MS with a default fallback", async () => {
     const { startProcasScheduler, stopProcasScheduler } = await import("../lib/procasScheduler");
     const prev = process.env["PROCAS_SYNC_INTERVAL_MS"];
