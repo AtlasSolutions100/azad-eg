@@ -453,4 +453,60 @@ describe("POST /api/invoices/:id/time-import", () => {
     expect(res.body.error).toMatch(/No valid rows/i);
     expect(Array.isArray(res.body.warnings)).toBe(true);
   });
+
+  it("replaces prior auto-imported rows instead of duplicating on re-import", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const emp = await createEmployee({ name: `Reimport Worker ${Date.now()}`, homeRate: 100 });
+
+    const buf = (): Buffer =>
+      csvBuffer([
+        ["Name", "Location", "Hours", "Rate"],
+        [emp.name, "Home", "8", "100"],
+      ]);
+
+    const first = await request(app).post(`/api/invoices/${invId}/time-import`).attach("file", buf(), "timesheet.csv");
+    expect(first.status).toBe(200);
+    expect(first.body.importedCount).toBe(1);
+    expect(first.body.replacedCount).toBe(0);
+
+    const second = await request(app).post(`/api/invoices/${invId}/time-import`).attach("file", buf(), "timesheet.csv");
+    expect(second.status).toBe(200);
+    expect(second.body.importedCount).toBe(1);
+    expect(second.body.replacedCount).toBe(1);
+    expect(second.body.warnings.some((w: string) => /Replaced 1 previously imported/i.test(w))).toBe(true);
+
+    const rows = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, invId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source).toBe("timesheet");
+  });
+
+  it("preserves manually-added rows when re-importing a period", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const emp = await createEmployee({ name: `Mixed Worker ${Date.now()}`, homeRate: 100 });
+
+    // A hand-entered row should survive re-imports.
+    const manual = await request(app)
+      .post(`/api/invoices/${invId}/line-items`)
+      .send({ employeeName: "Hand Entered", classification: "Engineer", category: "regular", location: "home", hours: 4, rate: 50 });
+    expect(manual.status).toBe(201);
+
+    const buf = (): Buffer =>
+      csvBuffer([
+        ["Name", "Location", "Hours", "Rate"],
+        [emp.name, "Home", "8", "100"],
+      ]);
+
+    await request(app).post(`/api/invoices/${invId}/time-import`).attach("file", buf(), "timesheet.csv");
+    const second = await request(app).post(`/api/invoices/${invId}/time-import`).attach("file", buf(), "timesheet.csv");
+    expect(second.body.replacedCount).toBe(1);
+
+    const rows = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, invId));
+    expect(rows).toHaveLength(2);
+    const manualRow = rows.find((r) => r.source === "manual");
+    const importedRow = rows.find((r) => r.source === "timesheet");
+    expect(manualRow?.employeeName).toBe("Hand Entered");
+    expect(importedRow).toBeDefined();
+  });
 });

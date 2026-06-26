@@ -9,6 +9,7 @@ import type { LineItem } from './lineItem';
 
 export interface ImportResult {
   importedCount: number;
+  replacedCount?: number;
   source?: string;
   warnings?: string[];
   lineItems: LineItem[];

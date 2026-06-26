@@ -16,6 +16,7 @@ function lineItem(overrides: Partial<LineItemRow>): LineItemRow {
     amount: 0,
     taskNo: null,
     notes: null,
+    source: "manual",
     ...overrides,
   };
 }

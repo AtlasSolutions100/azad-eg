@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, ne } from "drizzle-orm";
 import {
   db,
   invoicesTable,
@@ -56,6 +56,7 @@ function linesToLineItems(
   lines: ParsedLine[],
   invoiceId: number,
   employees: EmployeeRow[],
+  source: string,
 ): { toInsert: Array<typeof lineItemsTable.$inferInsert>; warnings: string[] } {
   const empByName = new Map(employees.map((e) => [e.name.toLowerCase().trim(), e]));
   const warnings: string[] = [];
@@ -80,9 +81,21 @@ function linesToLineItems(
       amount: line.hours * rate,
       taskNo: line.taskNo ?? emp?.defaultTaskNo ?? null,
       notes: line.notes ?? null,
+      source,
     };
   });
   return { toInsert, warnings };
+}
+
+// Re-importing a period must not stack duplicate labor rows on top of a prior
+// import. Remove any previously auto-imported rows (source !== "manual") for the
+// invoice before inserting the fresh pull; hand-entered "manual" rows are kept.
+async function clearAutoImportedLineItems(invoiceId: number): Promise<number> {
+  const removed = await db
+    .delete(lineItemsTable)
+    .where(and(eq(lineItemsTable.invoiceId, invoiceId), ne(lineItemsTable.source, "manual")))
+    .returning();
+  return removed.length;
 }
 
 async function loadContext(invoiceId: number): Promise<
@@ -340,17 +353,25 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
   }
 
   const employees = await db.select().from(employeesTable);
-  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsedFile.lines, id, employees);
+  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsedFile.lines, id, employees, source);
   const warnings = [...parsedFile.warnings, ...mapWarnings];
+
+  // Replace any previously auto-imported rows so re-importing the same period
+  // does not duplicate labor; hand-entered rows are preserved.
+  const replacedCount = await clearAutoImportedLineItems(id);
+  if (replacedCount > 0) {
+    warnings.unshift(`Replaced ${replacedCount} previously imported line item(s) for this period.`);
+  }
 
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
   // New labor changes this invoice's total-to-date; refresh downstream carry-over.
   await recomputeCarryOver(ctx.invoice.workPlanId);
-  await recordAudit({ action: "imported time data", entityType: "invoice", entityId: id, description: `${inserted.length} line items from ${source}` });
+  await recordAudit({ action: "imported time data", entityType: "invoice", entityId: id, description: `${inserted.length} line items from ${source}${replacedCount > 0 ? ` (replaced ${replacedCount})` : ""}` });
 
   res.json(
     ImportTimeDataResponse.parse({
       importedCount: inserted.length,
+      replacedCount,
       source,
       warnings,
       lineItems: inserted.map(toApiLineItem),
@@ -392,21 +413,31 @@ router.post("/invoices/:id/procast-sync", async (req, res): Promise<void> => {
   }
 
   const employees = await db.select().from(employeesTable);
-  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsed.lines, id, employees);
+  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsed.lines, id, employees, "procast");
   const warnings = [...parsed.warnings, ...mapWarnings];
 
+  // Replace any previously auto-imported rows so re-syncing the same period
+  // does not duplicate labor; hand-entered rows are preserved.
+  const replacedCount = await clearAutoImportedLineItems(id);
+  if (replacedCount > 0) {
+    warnings.unshift(`Replaced ${replacedCount} previously imported line item(s) for this period.`);
+  }
+
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
+  // New labor changes this invoice's total-to-date; refresh downstream carry-over.
+  await recomputeCarryOver(ctx.invoice.workPlanId);
   await markProcastSynced(new Date());
   await recordAudit({
     action: "synced from Procast",
     entityType: "invoice",
     entityId: id,
-    description: `${inserted.length} line items pulled live from Procast`,
+    description: `${inserted.length} line items pulled live from Procast${replacedCount > 0 ? ` (replaced ${replacedCount})` : ""}`,
   });
 
   res.json(
     ImportTimeDataResponse.parse({
       importedCount: inserted.length,
+      replacedCount,
       source: "procast",
       warnings,
       lineItems: inserted.map(toApiLineItem),

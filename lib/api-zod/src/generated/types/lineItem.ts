@@ -24,4 +24,5 @@ export interface LineItem {
   taskNo?: string | null;
   /** @nullable */
   notes?: string | null;
+  source?: string;
 }

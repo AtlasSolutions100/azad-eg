@@ -93,13 +93,25 @@ export default function InvoiceDetail() {
   const handleImport = async () => {
     if (!importFile) return;
     try {
-      await importTime.mutateAsync({
+      const result = await importTime.mutateAsync({
         id: invoiceId,
         data: { source: importSource, file: importFile }
       });
       queryClient.invalidateQueries();
+      const replaced = result.replacedCount ?? 0;
+      toast({
+        title: "Time data imported",
+        description:
+          `${result.importedCount} line item(s) imported for this period.` +
+          (replaced > 0 ? ` Replaced ${replaced} previously imported row(s).` : ""),
+      });
     } catch (e) {
       console.error(e);
+      toast({
+        title: "Import failed",
+        description: e instanceof Error ? e.message : "Could not import the uploaded file.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -107,9 +119,12 @@ export default function InvoiceDetail() {
     try {
       const result = await syncProcast.mutateAsync({ id: invoiceId });
       queryClient.invalidateQueries();
+      const replaced = result.replacedCount ?? 0;
       toast({
         title: "Synced from Procast",
-        description: `${result.importedCount} line item(s) pulled for this period.`,
+        description:
+          `${result.importedCount} line item(s) pulled for this period.` +
+          (replaced > 0 ? ` Replaced ${replaced} previously imported row(s).` : ""),
       });
     } catch (e) {
       toast({

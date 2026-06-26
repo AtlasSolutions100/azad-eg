@@ -36,6 +36,7 @@ export function toApiLineItem(li: LineItemRow) {
     amount: li.amount,
     taskNo: li.taskNo,
     notes: li.notes,
+    source: li.source,
   };
 }
 

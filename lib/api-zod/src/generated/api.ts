@@ -687,7 +687,8 @@ export const GetInvoicePreviewResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "taskNo": zod.string().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "source": zod.string().optional()
 })),
   "financials": zod.array(zod.object({
   "label": zod.string(),
@@ -738,6 +739,7 @@ export const ImportTimeDataBody = zod.object({
 
 export const ImportTimeDataResponse = zod.object({
   "importedCount": zod.number(),
+  "replacedCount": zod.number().optional(),
   "source": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional(),
   "lineItems": zod.array(zod.object({
@@ -752,7 +754,8 @@ export const ImportTimeDataResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "taskNo": zod.string().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "source": zod.string().optional()
 }))
 })
 
@@ -766,6 +769,7 @@ export const SyncProcastTimesheetsParams = zod.object({
 
 export const SyncProcastTimesheetsResponse = zod.object({
   "importedCount": zod.number(),
+  "replacedCount": zod.number().optional(),
   "source": zod.string().optional(),
   "warnings": zod.array(zod.string()).optional(),
   "lineItems": zod.array(zod.object({
@@ -780,7 +784,8 @@ export const SyncProcastTimesheetsResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "taskNo": zod.string().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "source": zod.string().optional()
 }))
 })
 
@@ -822,7 +827,8 @@ export const ListLineItemsResponseItem = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "taskNo": zod.string().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "source": zod.string().optional()
 })
 export const ListLineItemsResponse = zod.array(ListLineItemsResponseItem)
 
@@ -862,7 +868,8 @@ export const CreateLineItemResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "taskNo": zod.string().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "source": zod.string().optional()
 })
 
 
@@ -901,7 +908,8 @@ export const UpdateLineItemResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "taskNo": zod.string().nullish(),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "source": zod.string().optional()
 })
 
 

@@ -333,6 +333,7 @@ export interface LineItem {
   taskNo?: string | null;
   /** @nullable */
   notes?: string | null;
+  source?: string;
 }
 
 export type LineItemInputCategory = typeof LineItemInputCategory[keyof typeof LineItemInputCategory];
@@ -476,6 +477,7 @@ export interface TimeImportUpload {
 
 export interface ImportResult {
   importedCount: number;
+  replacedCount?: number;
   source?: string;
   warnings?: string[];
   lineItems: LineItem[];

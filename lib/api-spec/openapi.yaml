@@ -1439,6 +1439,7 @@ components:
         amount: { type: number }
         taskNo: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        source: { type: string }
     LineItemInput:
       type: object
       required: [employeeName, classification, category, location, hours, rate]
@@ -1553,6 +1554,7 @@ components:
       required: [importedCount, lineItems]
       properties:
         importedCount: { type: integer }
+        replacedCount: { type: integer }
         source: { type: string }
         warnings:
           type: array
