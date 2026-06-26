@@ -22,6 +22,8 @@ import type {
 import type {
   ApprovalInput,
   AuditLog,
+  BillingRuleSheet,
+  BillingRuleSheetUpload,
   Classification,
   ClassificationInput,
   ClassificationUpdate,
@@ -3068,6 +3070,229 @@ export const useUpdateReferenceData = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateReferenceDataMutationOptions(options));
+    }
+
+export const getListBillingRuleSheetsUrl = () => {
+
+
+
+
+  return `/api/billing-rule-sheets`
+}
+
+/**
+ * @summary List billing rule cheat-sheets
+ */
+export const listBillingRuleSheets = async ( options?: RequestInit): Promise<BillingRuleSheet[]> => {
+
+  return customFetch<BillingRuleSheet[]>(getListBillingRuleSheetsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListBillingRuleSheetsQueryKey = () => {
+    return [
+    `/api/billing-rule-sheets`
+    ] as const;
+    }
+
+
+export const getListBillingRuleSheetsQueryOptions = <TData = Awaited<ReturnType<typeof listBillingRuleSheets>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBillingRuleSheets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListBillingRuleSheetsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBillingRuleSheets>>> = ({ signal }) => listBillingRuleSheets({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listBillingRuleSheets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListBillingRuleSheetsQueryResult = NonNullable<Awaited<ReturnType<typeof listBillingRuleSheets>>>
+export type ListBillingRuleSheetsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List billing rule cheat-sheets
+ */
+
+export function useListBillingRuleSheets<TData = Awaited<ReturnType<typeof listBillingRuleSheets>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBillingRuleSheets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListBillingRuleSheetsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUploadBillingRuleSheetUrl = () => {
+
+
+
+
+  return `/api/billing-rule-sheets`
+}
+
+/**
+ * @summary Upload a billing rule cheat-sheet (Excel/Word/PDF/image)
+ */
+export const uploadBillingRuleSheet = async (billingRuleSheetUpload: BillingRuleSheetUpload, options?: RequestInit): Promise<BillingRuleSheet> => {
+    const formData = new FormData();
+formData.append(`title`, billingRuleSheetUpload.title);
+if(billingRuleSheetUpload.notes !== undefined) {
+ formData.append(`notes`, billingRuleSheetUpload.notes);
+ }
+formData.append(`file`, billingRuleSheetUpload.file);
+
+  return customFetch<BillingRuleSheet>(getUploadBillingRuleSheetUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+export const getUploadBillingRuleSheetMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadBillingRuleSheet>>, TError,{data: BodyType<BillingRuleSheetUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadBillingRuleSheet>>, TError,{data: BodyType<BillingRuleSheetUpload>}, TContext> => {
+
+const mutationKey = ['uploadBillingRuleSheet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadBillingRuleSheet>>, {data: BodyType<BillingRuleSheetUpload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadBillingRuleSheet(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadBillingRuleSheetMutationResult = NonNullable<Awaited<ReturnType<typeof uploadBillingRuleSheet>>>
+    export type UploadBillingRuleSheetMutationBody = BodyType<BillingRuleSheetUpload>
+    export type UploadBillingRuleSheetMutationError = ErrorType<void>
+
+    /**
+ * @summary Upload a billing rule cheat-sheet (Excel/Word/PDF/image)
+ */
+export const useUploadBillingRuleSheet = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadBillingRuleSheet>>, TError,{data: BodyType<BillingRuleSheetUpload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadBillingRuleSheet>>,
+        TError,
+        {data: BodyType<BillingRuleSheetUpload>},
+        TContext
+      > => {
+      return useMutation(getUploadBillingRuleSheetMutationOptions(options));
+    }
+
+export const getDeleteBillingRuleSheetUrl = (id: number,) => {
+
+
+
+
+  return `/api/billing-rule-sheets/${id}`
+}
+
+/**
+ * @summary Delete a billing rule cheat-sheet
+ */
+export const deleteBillingRuleSheet = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteBillingRuleSheetUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteBillingRuleSheetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteBillingRuleSheet>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteBillingRuleSheet>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteBillingRuleSheet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteBillingRuleSheet>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteBillingRuleSheet(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteBillingRuleSheetMutationResult = NonNullable<Awaited<ReturnType<typeof deleteBillingRuleSheet>>>
+
+    export type DeleteBillingRuleSheetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a billing rule cheat-sheet
+ */
+export const useDeleteBillingRuleSheet = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteBillingRuleSheet>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteBillingRuleSheet>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteBillingRuleSheetMutationOptions(options));
     }
 
 export const getListAuditLogsUrl = (params?: ListAuditLogsParams,) => {

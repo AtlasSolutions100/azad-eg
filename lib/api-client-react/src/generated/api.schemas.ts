@@ -457,6 +457,24 @@ export interface SignatureUpload {
   file: Blob;
 }
 
+export interface BillingRuleSheet {
+  id: number;
+  title: string;
+  /** @nullable */
+  notes?: string | null;
+  fileUrl: string;
+  fileName: string;
+  /** @nullable */
+  contentType?: string | null;
+  createdAt: string;
+}
+
+export interface BillingRuleSheetUpload {
+  title: string;
+  notes?: string;
+  file: Blob;
+}
+
 export interface ProgressReportFileUpload {
   file: Blob;
 }

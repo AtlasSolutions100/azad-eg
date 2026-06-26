@@ -11,6 +11,7 @@ export * from "./package-progress-reports";
 export * from "./labor-overrides";
 export * from "./signatures";
 export * from "./reference-entries";
+export * from "./billing-rule-sheets";
 export * from "./column-definitions";
 export * from "./audit-logs";
 export * from "./procas-connection";

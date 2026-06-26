@@ -32,6 +32,7 @@ import Employees from "@/pages/employees";
 import Classifications from "@/pages/classifications";
 import Signatures from "@/pages/signatures";
 import Reference from "@/pages/reference";
+import BillingRules from "@/pages/billing-rules";
 import ColumnDefinitions from "@/pages/column-definitions";
 import AuditLog from "@/pages/audit-log";
 
@@ -162,6 +163,7 @@ function AppShell() {
         <Route path="/classifications" component={Classifications} />
         <Route path="/signatures" component={Signatures} />
         <Route path="/reference" component={Reference} />
+        <Route path="/billing-rules" component={BillingRules} />
         <Route path="/column-definitions" component={ColumnDefinitions} />
         <Route path="/audit-log" component={AuditLog} />
         <Route component={NotFound} />

@@ -673,6 +673,50 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReferenceEntry"
 
+  /billing-rule-sheets:
+    get:
+      operationId: listBillingRuleSheets
+      tags: [reference]
+      summary: List billing rule cheat-sheets
+      responses:
+        "200":
+          description: Billing rule cheat-sheets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BillingRuleSheet"
+    post:
+      operationId: uploadBillingRuleSheet
+      tags: [reference]
+      summary: Upload a billing rule cheat-sheet (Excel/Word/PDF/image)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/BillingRuleSheetUpload"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingRuleSheet"
+        "400":
+          description: Invalid or unsupported file
+  /billing-rule-sheets/{id}:
+    delete:
+      operationId: deleteBillingRuleSheet
+      tags: [reference]
+      summary: Delete a billing rule cheat-sheet
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
   /audit-logs:
     get:
       operationId: listAuditLogs
@@ -1580,6 +1624,27 @@ components:
         name: { type: string }
         title: { type: string }
         email: { type: string }
+        file:
+          type: string
+          format: binary
+
+    BillingRuleSheet:
+      type: object
+      required: [id, title, fileUrl, fileName, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        notes: { type: ["string", "null"] }
+        fileUrl: { type: string }
+        fileName: { type: string }
+        contentType: { type: ["string", "null"] }
+        createdAt: { type: string }
+    BillingRuleSheetUpload:
+      type: object
+      required: [title, file]
+      properties:
+        title: { type: string }
+        notes: { type: string }
         file:
           type: string
           format: binary

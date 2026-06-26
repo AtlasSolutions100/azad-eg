@@ -1082,6 +1082,51 @@ export const UpdateReferenceDataResponse = zod.object({
 
 
 /**
+ * @summary List billing rule cheat-sheets
+ */
+export const ListBillingRuleSheetsResponseItem = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "notes": zod.string().nullish(),
+  "fileUrl": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const ListBillingRuleSheetsResponse = zod.array(ListBillingRuleSheetsResponseItem)
+
+
+/**
+ * @summary Upload a billing rule cheat-sheet (Excel/Word/PDF/image)
+ */
+export const UploadBillingRuleSheetBody = zod.object({
+  "title": zod.string(),
+  "notes": zod.string().optional(),
+  "file": zod.instanceof(File)
+})
+
+export const UploadBillingRuleSheetResponse = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "notes": zod.string().nullish(),
+  "fileUrl": zod.string(),
+  "fileName": zod.string(),
+  "contentType": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a billing rule cheat-sheet
+ */
+export const DeleteBillingRuleSheetParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteBillingRuleSheetResponse = zod.void()
+
+
+/**
  * @summary List audit log entries
  */
 export const ListAuditLogsQueryParams = zod.object({

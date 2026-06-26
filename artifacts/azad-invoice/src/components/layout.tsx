@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutGrid, Briefcase, Users, FileSignature, Settings, FileSearch, Search } from "lucide-react";
+import { LayoutGrid, Briefcase, Users, FileSignature, Settings, FileSearch, Search, CalendarDays } from "lucide-react";
 import logoUrl from "@assets/Azad_Logo_1782418426096.jpeg";
 import { useSearch } from "@workspace/api-client-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -23,6 +23,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     { label: "Employees", href: "/employees", icon: Users },
     { label: "Signatures", href: "/signatures", icon: FileSignature },
     { label: "Reference Data", href: "/reference", icon: Settings },
+    { label: "Billing Rules", href: "/billing-rules", icon: CalendarDays },
     { label: "Column Definitions", href: "/column-definitions", icon: Settings },
     { label: "Audit Log", href: "/audit-log", icon: FileSearch },
   ];
