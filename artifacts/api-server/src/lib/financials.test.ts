@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LineItemRow, WorkPlan } from "@workspace/db";
-import { computeFinancials } from "./financials";
+import { computeFinancials, evaluateBudgetStatus } from "./financials";
 
 function lineItem(overrides: Partial<LineItemRow>): LineItemRow {
   return {
@@ -133,5 +133,48 @@ describe("computeFinancials", () => {
     expect(f.totalThisPeriod).toBe(0);
     expect(f.totalToDate).toBe(0);
     expect(f.remainingBalance).toBe(100000);
+  });
+});
+
+describe("evaluateBudgetStatus", () => {
+  it("reports ok well under the budget", () => {
+    const status = evaluateBudgetStatus({ percentExpended: 50, remainingBalance: 50000 });
+    expect(status.level).toBe("ok");
+    expect(status.overBudget).toBe(false);
+    expect(status.remainingBalance).toBe(50000);
+  });
+
+  it("reports approaching above 90% but not over 100%", () => {
+    const status = evaluateBudgetStatus({ percentExpended: 95, remainingBalance: 5000 });
+    expect(status.level).toBe("approaching");
+    expect(status.overBudget).toBe(false);
+    expect(status.message).toContain("95%");
+  });
+
+  it("treats exactly 90% as still ok (threshold is exclusive)", () => {
+    expect(evaluateBudgetStatus({ percentExpended: 90, remainingBalance: 10000 }).level).toBe("ok");
+  });
+
+  it("treats exactly 100% as approaching, not over (threshold is exclusive)", () => {
+    expect(evaluateBudgetStatus({ percentExpended: 100, remainingBalance: 0 }).level).toBe("approaching");
+  });
+
+  it("reports over budget above 100%", () => {
+    const status = evaluateBudgetStatus({ percentExpended: 120, remainingBalance: -20000 });
+    expect(status.level).toBe("over");
+    expect(status.overBudget).toBe(true);
+    expect(status.remainingBalance).toBe(-20000);
+    expect(status.message).toContain("120%");
+  });
+
+  it("derives the status straight from computeFinancials output", () => {
+    const f = computeFinancials([lineItem({ hours: 10, rate: 100 })], workPlan({ totalBudget: 100 }), {
+      previouslyBilled: 0,
+      otherDirectCosts: 0,
+    });
+    const status = evaluateBudgetStatus(f);
+    expect(status.level).toBe("over");
+    expect(status.percentExpended).toBe(f.percentExpended);
+    expect(status.remainingBalance).toBe(f.remainingBalance);
   });
 });

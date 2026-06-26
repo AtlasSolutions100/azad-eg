@@ -1549,7 +1549,7 @@ components:
 
     InvoicePreview:
       type: object
-      required: [invoice, lineItems, financials]
+      required: [invoice, lineItems, financials, budgetStatus]
       properties:
         invoice:
           $ref: "#/components/schemas/Invoice"
@@ -1562,6 +1562,19 @@ components:
           items:
             $ref: "#/components/schemas/FinancialLine"
         budgetUsedPercent: { type: number }
+        budgetStatus:
+          $ref: "#/components/schemas/BudgetStatus"
+    BudgetStatus:
+      type: object
+      required: [level, overBudget, percentExpended, remainingBalance, message]
+      properties:
+        level:
+          type: string
+          enum: [ok, approaching, over]
+        overBudget: { type: boolean }
+        percentExpended: { type: number }
+        remainingBalance: { type: number }
+        message: { type: string }
     FinancialLine:
       type: object
       required: [label, amount]

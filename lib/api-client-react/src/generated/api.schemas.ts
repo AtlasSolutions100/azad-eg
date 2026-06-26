@@ -521,11 +521,29 @@ export interface FinancialLine {
   emphasis?: boolean | null;
 }
 
+export type BudgetStatusLevel = typeof BudgetStatusLevel[keyof typeof BudgetStatusLevel];
+
+
+export const BudgetStatusLevel = {
+  ok: 'ok',
+  approaching: 'approaching',
+  over: 'over',
+} as const;
+
+export interface BudgetStatus {
+  level: BudgetStatusLevel;
+  overBudget: boolean;
+  percentExpended: number;
+  remainingBalance: number;
+  message: string;
+}
+
 export interface InvoicePreview {
   invoice: Invoice;
   lineItems: LineItem[];
   financials: FinancialLine[];
   budgetUsedPercent?: number;
+  budgetStatus: BudgetStatus;
 }
 
 export type ValidationFlagSeverity = typeof ValidationFlagSeverity[keyof typeof ValidationFlagSeverity];

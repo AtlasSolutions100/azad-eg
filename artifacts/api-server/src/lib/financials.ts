@@ -28,6 +28,57 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** Percent-expended at/above which a work plan is "approaching" its budget. */
+export const BUDGET_APPROACHING_THRESHOLD = 90;
+/** Percent-expended above which a work plan is over its budget. */
+export const BUDGET_OVER_THRESHOLD = 100;
+
+export type BudgetStatusLevel = "ok" | "approaching" | "over";
+
+export interface BudgetStatus {
+  level: BudgetStatusLevel;
+  overBudget: boolean;
+  percentExpended: number;
+  remainingBalance: number;
+  message: string;
+}
+
+/**
+ * Maps computed financials onto a budget signal using the shared thresholds.
+ * This is the single source of truth for the over-budget / approaching-budget
+ * logic so the validations endpoint and the workspace preview stay in sync.
+ */
+export function evaluateBudgetStatus(
+  financials: Pick<ComputedFinancials, "percentExpended" | "remainingBalance">,
+): BudgetStatus {
+  const { percentExpended, remainingBalance } = financials;
+  if (percentExpended > BUDGET_OVER_THRESHOLD) {
+    return {
+      level: "over",
+      overBudget: true,
+      percentExpended,
+      remainingBalance,
+      message: `Total billed to date is ${percentExpended}% of the work plan budget.`,
+    };
+  }
+  if (percentExpended > BUDGET_APPROACHING_THRESHOLD) {
+    return {
+      level: "approaching",
+      overBudget: false,
+      percentExpended,
+      remainingBalance,
+      message: `Budget is ${percentExpended}% expended.`,
+    };
+  }
+  return {
+    level: "ok",
+    overBudget: false,
+    percentExpended,
+    remainingBalance,
+    message: `${percentExpended}% of budget expended.`,
+  };
+}
+
 /**
  * Computes invoice financials from line items and the parent work plan.
  *

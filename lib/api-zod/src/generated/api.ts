@@ -695,7 +695,14 @@ export const GetInvoicePreviewResponse = zod.object({
   "note": zod.string().nullish(),
   "emphasis": zod.boolean().nullish()
 })),
-  "budgetUsedPercent": zod.number().optional()
+  "budgetUsedPercent": zod.number().optional(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+})
 })
 
 

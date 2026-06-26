@@ -32,6 +32,7 @@ import {
 } from "@workspace/api-zod";
 import { buildInvoice, toApiLineItem } from "../../lib/mappers";
 import { recomputeCarryOver, deriveCarryOverFromPriors } from "../../lib/carryover";
+import { evaluateBudgetStatus } from "../../lib/financials";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
 import { parseTimeFile } from "../../lib/timeimport";
@@ -229,6 +230,8 @@ router.get("/invoices/:id/preview", async (req, res): Promise<void> => {
       invoice: built.api,
       lineItems: ctx.lineItems.map(toApiLineItem),
       financials: built.financials.financials,
+      budgetUsedPercent: built.financials.budgetUsedPercent,
+      budgetStatus: evaluateBudgetStatus(built.financials),
     }),
   );
 });
@@ -257,10 +260,11 @@ router.get("/invoices/:id/validations", async (req, res): Promise<void> => {
   if (new Date(ctx.invoice.periodStart) > new Date(ctx.invoice.periodEnd)) {
     flags.push({ severity: "error", field: "periodEnd", message: "Period end is before period start." });
   }
-  if (built.financials.percentExpended > 100) {
-    flags.push({ severity: "warning", field: "budget", message: `Total billed to date is ${built.financials.percentExpended}% of the work plan budget.` });
-  } else if (built.financials.percentExpended > 90) {
-    flags.push({ severity: "info", field: "budget", message: `Budget is ${built.financials.percentExpended}% expended.` });
+  const budget = evaluateBudgetStatus(built.financials);
+  if (budget.level === "over") {
+    flags.push({ severity: "warning", field: "budget", message: budget.message });
+  } else if (budget.level === "approaching") {
+    flags.push({ severity: "info", field: "budget", message: budget.message });
   }
   const [pr] = await db.select().from(progressReportsTable).where(eq(progressReportsTable.invoiceId, id));
   if (!pr) {

@@ -278,14 +278,35 @@ export default function InvoiceDetail() {
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-[#5F5F5F]">Total to Date</CardTitle></CardHeader>
           <CardContent><div className="text-2xl font-bold">${invoice.totalToDate.toLocaleString()}</div></CardContent>
         </Card>
-        <Card>
+        <Card className={preview?.budgetStatus.overBudget ? "border-red-300" : ""}>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-[#5F5F5F]">Remaining Balance</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${invoice.remainingBalance.toLocaleString()}</div>
+            <div className={`text-2xl font-bold ${preview?.budgetStatus.overBudget ? "text-red-600" : ""}`}>${invoice.remainingBalance.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">{invoice.percentExpended.toFixed(1)}% expended</p>
           </CardContent>
         </Card>
       </div>
+
+      {preview?.budgetStatus && preview.budgetStatus.level !== "ok" && (
+        <Alert
+          variant={preview.budgetStatus.level === "over" ? "destructive" : "default"}
+          className={preview.budgetStatus.level === "over" ? "border-red-300 bg-red-50" : "border-yellow-200 bg-yellow-50"}
+        >
+          {preview.budgetStatus.level === "over" ? (
+            <AlertTriangle className="h-4 w-4" />
+          ) : (
+            <Info className="h-4 w-4 text-yellow-600" />
+          )}
+          <AlertTitle className={preview.budgetStatus.level === "over" ? "" : "text-yellow-800"}>
+            {preview.budgetStatus.level === "over" ? "Over budget" : "Approaching budget limit"}
+          </AlertTitle>
+          <AlertDescription className={preview.budgetStatus.level === "over" ? "" : "text-yellow-700"}>
+            {preview.budgetStatus.message} Remaining balance: $
+            {preview.budgetStatus.remainingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.
+            {preview.budgetStatus.level === "over" && " Review line items before approving this invoice."}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="preview" className="w-full">
         <TabsList>

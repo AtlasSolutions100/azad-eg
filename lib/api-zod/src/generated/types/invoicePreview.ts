@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { BudgetStatus } from './budgetStatus';
 import type { FinancialLine } from './financialLine';
 import type { Invoice } from './invoice';
 import type { LineItem } from './lineItem';
@@ -14,4 +15,5 @@ export interface InvoicePreview {
   lineItems: LineItem[];
   financials: FinancialLine[];
   budgetUsedPercent?: number;
+  budgetStatus: BudgetStatus;
 }
