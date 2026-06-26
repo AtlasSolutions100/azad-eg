@@ -55,6 +55,7 @@ import {
 import {
   generatePackageDocument,
   generatePackageZip,
+  packageDocFileName,
   type PackageDocKind,
   type PackageDocContext,
 } from "../lib/packageDocs";
@@ -817,6 +818,10 @@ router.post("/packages/:id/documents/:doc/generate", async (req, res): Promise<v
 
   const outPath = await generatePackageDocument(ctx, doc, parsed.data.format);
   const filename = path.basename(outPath);
+  // Friendly, identifiable download name (EmployeeName_Job#_DocumentName.ext).
+  // The on-disk file keeps its unique name to avoid collisions; the file route
+  // honors the `download` query param for the Content-Disposition filename.
+  const downloadName = packageDocFileName(ctx, doc, parsed.data.format);
 
   await db
     .update(packagesTable)
@@ -826,12 +831,12 @@ router.post("/packages/:id/documents/:doc/generate", async (req, res): Promise<v
     action: "generated package document",
     entityType: "package",
     entityId: id,
-    description: `${doc} ${parsed.data.format.toUpperCase()} ${filename}`,
+    description: `${doc} ${parsed.data.format.toUpperCase()} ${downloadName}`,
   });
 
   res.json(
     GeneratePackageDocumentResponse.parse({
-      url: `/api/files/${encodeURIComponent(filename)}`,
+      url: `/api/files/${encodeURIComponent(filename)}?download=${encodeURIComponent(downloadName)}`,
       filename,
       format: parsed.data.format,
     }),

@@ -1,2 +1,3 @@
 - [Web→API auth needs Bearer token, not just cookie](auth-bearer-token.md) — Clerk session cookie isn't sent from the canvas iframe / cross-origin; wire setAuthTokenGetter or every API call 401s.
 - [Package billing document engine](package-billing-engine.md) — 5 docs fill real uploaded xlsx templates from timesheet rollups; work-plan overheadRate/fccmRate are nullable and yield $0 unless set in the form.
+- [Excel export repair warning](excel-export-defined-names.md) — templates carry broken external/`#REF!` named ranges; strip them before write or Excel shows a "Removed Records: Named range" repair prompt.

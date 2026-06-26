@@ -68,6 +68,28 @@ function toDate(value: string): Date {
   return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
 }
 
+/**
+ * Removes leftover defined (named) ranges whose target is a `#REF!` error or an
+ * external-workbook reference (e.g. `'[1]Sub Calc'!$H$51`). Excel strips these
+ * broken names when the regenerated workbook is opened and surfaces an alarming
+ * "Removed Records: Named range from /xl/workbook.xml" repair prompt. None of
+ * the broken names are used by the generated documents; valid in-workbook named
+ * ranges that the templates' formulas rely on are preserved untouched.
+ */
+export function stripBrokenDefinedNames(wb: ExcelJS.Workbook): void {
+  const isBrokenRange = (range: string): boolean =>
+    /#REF!/i.test(range) || /\[[^\]]+\]/.test(range);
+  try {
+    const model = wb.definedNames.model;
+    const kept = model.filter((dn) => !dn.ranges.some(isBrokenRange));
+    if (kept.length !== model.length) {
+      wb.definedNames.model = kept;
+    }
+  } catch (err) {
+    logger.warn({ err }, "Failed to strip broken defined names from workbook");
+  }
+}
+
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -216,6 +238,7 @@ export async function buildInvoiceWorkbook(data: InvoiceExportData): Promise<str
     }
   }
 
+  stripBrokenDefinedNames(wb);
   wb.calcProperties.fullCalcOnLoad = true;
 
   const safeNumber = data.invoiceNumber.replace(/[^A-Za-z0-9._-]/g, "_");

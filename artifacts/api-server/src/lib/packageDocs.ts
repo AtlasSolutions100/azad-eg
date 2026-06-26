@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { ZipArchive } from "archiver";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
-import { convertToPdf } from "./excel";
+import { convertToPdf, stripBrokenDefinedNames } from "./excel";
 import { buildPackageRollup } from "./packageMappers";
 import { logger } from "./logger";
 import type {
@@ -85,6 +85,36 @@ function safeSlug(ctx: PackageDocContext): string {
   return num.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
+/** Strips characters that are illegal in filenames while keeping spaces/dashes. */
+function sanitizeFilePart(value: string): string {
+  return value
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Builds the `EmployeeName_Job#` prefix shared by every exported document, so
+ * files are identifiable and two packages never collide on `Invoice.xlsx`.
+ * Falls back gracefully when the employee name or job number is missing.
+ */
+function docFileBase(ctx: PackageDocContext): string {
+  const parts = [ctx.employee.name, ctx.workPlan.jobNumber]
+    .map((p) => sanitizeFilePart(p ?? ""))
+    .filter((p) => p.length > 0);
+  const base = parts.join("_");
+  return base || `Package-${ctx.pkg.id}`;
+}
+
+/** User-facing download name: `EmployeeName_Job#_DocumentName.ext`. */
+export function packageDocFileName(
+  ctx: PackageDocContext,
+  kind: PackageDocKind,
+  format: "xlsx" | "pdf",
+): string {
+  return `${docFileBase(ctx)}_${DOC_LABELS[kind]}.${format}`;
+}
+
 async function loadTemplate(kind: PackageDocKind): Promise<ExcelJS.Workbook> {
   const file = path.resolve(templatesDir, TEMPLATES[kind]);
   if (!fs.existsSync(file)) {
@@ -136,6 +166,7 @@ function placeSignature(
 }
 
 async function writeOut(wb: ExcelJS.Workbook, kind: PackageDocKind, ctx: PackageDocContext): Promise<string> {
+  stripBrokenDefinedNames(wb);
   wb.calcProperties.fullCalcOnLoad = true;
   const filename = `${DOC_LABELS[kind]}_${safeSlug(ctx)}_${Date.now()}.xlsx`;
   const outPath = path.resolve(generatedDir, filename);
@@ -574,10 +605,10 @@ export async function generatePackageZip(ctx: PackageDocContext): Promise<Packag
   try {
     for (const doc of order) {
       const xlsx = await GENERATORS[doc](ctx);
-      files.push({ path: xlsx, name: `${DOC_LABELS[doc]}.xlsx`, doc, format: "xlsx" });
+      files.push({ path: xlsx, name: packageDocFileName(ctx, doc, "xlsx"), doc, format: "xlsx" });
       if (PDF_DOCS.includes(doc)) {
         const pdf = await convertToPdf(xlsx);
-        files.push({ path: pdf, name: `${DOC_LABELS[doc]}.pdf`, doc, format: "pdf" });
+        files.push({ path: pdf, name: packageDocFileName(ctx, doc, "pdf"), doc, format: "pdf" });
       }
     }
 
