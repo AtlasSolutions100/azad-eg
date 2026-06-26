@@ -2,3 +2,4 @@
 - [db schema change rebuild](db-schema-change-rebuild.md) — after editing lib/db schema, run drizzle push AND `tsc --build` in lib/db, else downstream typecheck sees stale dist types.
 - [API server auth & local testing](api-server-auth-testing.md) — every /api route is behind Clerk requireAuth; curl returns Unauthorized, test via supertest mocking @clerk/express.
 - [Idempotent time import](idempotent-time-import.md) — line_items.source marks manual vs imported rows; re-import deletes non-manual rows then re-inserts, never appends.
+- [Procast credential encryption](procast-credential-encryption.md) — api_key stored AES-256-GCM encrypted; key derived from a managed secret (PROCAST_ENC_KEY or SESSION_SECRET), never plaintext, never committed to .replit.

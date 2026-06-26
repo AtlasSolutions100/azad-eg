@@ -89,6 +89,16 @@ describe("procast integration", () => {
     expect(connect.body.mode).toBe("live");
     expect(connect.body.baseUrl).toBe("https://procast.example.com/v1");
 
+    // The API key must be encrypted at rest, never readable plaintext in the DB.
+    const [stored] = await db
+      .select()
+      .from(procastConnectionTable)
+      .where(eq(procastConnectionTable.id, 1));
+    expect(stored?.apiKey).toBeTruthy();
+    expect(stored?.apiKey).not.toBe("good");
+    expect(stored?.apiKey).not.toContain("good");
+    expect(stored?.apiKey?.startsWith("enc:")).toBe(true);
+
     const disconnect = await request(app).post("/api/procast/disconnect");
     expect(disconnect.status).toBe(200);
     expect(disconnect.body.connected).toBe(false);

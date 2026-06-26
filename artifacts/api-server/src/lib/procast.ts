@@ -1,5 +1,6 @@
 import { db, procastConnectionTable, type ProcastConnectionRow } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { encryptSecret, decryptSecret } from "./crypto";
 
 const CONNECTION_ID = 1;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -116,23 +117,29 @@ function extractRecords(body: unknown): Array<Record<string, unknown>> | null {
 
 // --- Persisted connection state (single row) ---
 
+// The api_key column holds AES-256-GCM ciphertext, never plaintext. We decrypt
+// on read and encrypt on write so callers continue to work with the bare key
+// while it stays protected at rest in the database.
 export async function getProcastConnection(): Promise<ProcastConnectionRow | null> {
   const [row] = await db
     .select()
     .from(procastConnectionTable)
     .where(eq(procastConnectionTable.id, CONNECTION_ID));
-  return row ?? null;
+  if (!row) return null;
+  return { ...row, apiKey: row.apiKey ? decryptSecret(row.apiKey) : row.apiKey };
 }
 
 export async function saveProcastConnection(
   values: { connected: boolean; baseUrl: string | null; apiKey: string | null; lastSyncAt?: Date | null },
 ): Promise<ProcastConnectionRow> {
+  const stored = { ...values, apiKey: values.apiKey ? encryptSecret(values.apiKey) : values.apiKey };
   const [row] = await db
     .insert(procastConnectionTable)
-    .values({ id: CONNECTION_ID, ...values })
-    .onConflictDoUpdate({ target: procastConnectionTable.id, set: values })
+    .values({ id: CONNECTION_ID, ...stored })
+    .onConflictDoUpdate({ target: procastConnectionTable.id, set: stored })
     .returning();
-  return row;
+  // Return the plaintext key to the caller; only the persisted copy is encrypted.
+  return { ...row, apiKey: values.apiKey };
 }
 
 export async function markProcastSynced(at: Date): Promise<void> {
