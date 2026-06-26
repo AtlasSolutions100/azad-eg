@@ -270,6 +270,50 @@ describe("carry-over recompute when an earlier invoice changes", () => {
     expect(feb.body.previouslyBilled).toBe(2200);
   });
 
+  it("records an audit entry on each downstream invoice auto-updated by an upstream change", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    const janId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    const febRes = await request(app)
+      .post("/api/invoices")
+      .send({
+        workPlanId: wpId,
+        invoiceNumber: `TEST-INV-FEBD-${Date.now()}`,
+        invoiceDate: "2026-02-15",
+        periodStart: "2026-02-01",
+        periodEnd: "2026-02-28",
+      });
+    const febId = febRes.body.id as number;
+    createdInvoiceIds.push(febId);
+    expect(febRes.body.previouslyBilled).toBe(2200);
+
+    // Edit January so February's carry-over auto-updates from 2200 → 4400.
+    await request(app)
+      .post(`/api/invoices/${janId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    expect(feb.body.previouslyBilled).toBe(4400);
+
+    // A "carry-over recalculated" audit entry must exist for February (the
+    // downstream invoice) but not for January (the invoice that was edited).
+    const audits = await db
+      .select()
+      .from(auditLogsTable)
+      .where(inArray(auditLogsTable.entityId, [janId, febId]));
+    const recalcs = audits.filter((a) => a.action === "carry-over recalculated");
+    expect(recalcs.some((a) => a.entityId === febId)).toBe(true);
+    expect(recalcs.some((a) => a.entityId === janId)).toBe(false);
+    const febRecalc = recalcs.find((a) => a.entityId === febId);
+    expect(febRecalc?.description).toContain("2,200.00");
+    expect(febRecalc?.description).toContain("4,400.00");
+  });
+
   it("preserves an explicitly-set carry-over across recompute", async () => {
     const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
 

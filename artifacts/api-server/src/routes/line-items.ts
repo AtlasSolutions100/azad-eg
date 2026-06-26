@@ -9,7 +9,7 @@ import {
   UpdateLineItemResponse,
 } from "@workspace/api-zod";
 import { toApiLineItem } from "../lib/mappers";
-import { recomputeCarryOver } from "../lib/carryover";
+import { recomputeCarryOverWithAudit } from "../lib/carryover";
 import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
@@ -34,7 +34,11 @@ router.post("/invoices/:id/line-items", async (req, res): Promise<void> => {
   }
   const amount = parsed.data.hours * parsed.data.rate;
   const [row] = await db.insert(lineItemsTable).values({ ...parsed.data, invoiceId, amount }).returning();
-  await recomputeCarryOver(inv.workPlanId);
+  await recomputeCarryOverWithAudit(inv.workPlanId, {
+    invoiceId,
+    invoiceNumber: inv.invoiceNumber,
+    reason: "a line-item change on",
+  });
   await recordAudit({ action: "added line item", entityType: "invoice", entityId: invoiceId, description: row.employeeName });
   res.status(201).json(CreateLineItemResponse.parse(toApiLineItem(row)));
 });
@@ -59,7 +63,12 @@ router.patch("/line-items/:id", async (req, res): Promise<void> => {
     .where(eq(lineItemsTable.id, id))
     .returning();
   const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, row.invoiceId));
-  if (inv) await recomputeCarryOver(inv.workPlanId);
+  if (inv)
+    await recomputeCarryOverWithAudit(inv.workPlanId, {
+      invoiceId: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      reason: "a line-item change on",
+    });
   res.json(UpdateLineItemResponse.parse(toApiLineItem(row)));
 });
 
@@ -71,7 +80,12 @@ router.delete("/line-items/:id", async (req, res): Promise<void> => {
     return;
   }
   const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, row.invoiceId));
-  if (inv) await recomputeCarryOver(inv.workPlanId);
+  if (inv)
+    await recomputeCarryOverWithAudit(inv.workPlanId, {
+      invoiceId: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      reason: "a line-item change on",
+    });
   res.sendStatus(204);
 });
 

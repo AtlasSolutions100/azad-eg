@@ -17,6 +17,7 @@ import {
   useUpdateLineItem,
   useDeleteLineItem,
   useListEmployees,
+  useListAuditLogs,
   TimeImportUploadSource,
   GenerateInputFormat,
   ProgressReportInput,
@@ -51,6 +52,17 @@ export default function InvoiceDetail() {
   const { data: progressReport } = useGetProgressReport(invoiceId);
   const { data: signatures } = useListSignatures();
   const { data: employees } = useListEmployees();
+  const { data: auditLogs } = useListAuditLogs();
+
+  // Surface when this invoice's carry-over ("previously billed") was
+  // automatically recalculated because an upstream invoice on the same work
+  // plan changed. The most recent such audit entry is shown as a notice.
+  const carryOverNotice = auditLogs?.find(
+    (log) =>
+      log.entityType === "invoice" &&
+      log.entityId === invoiceId &&
+      log.action === "carry-over recalculated",
+  );
 
   const importTime = useImportTimeData();
   const syncProcast = useSyncProcastTimesheets();
@@ -322,6 +334,17 @@ export default function InvoiceDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {carryOverNotice && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800">Carry-over auto-updated</AlertTitle>
+          <AlertDescription className="text-blue-700">
+            {carryOverNotice.description} Updated by {carryOverNotice.userName} on{" "}
+            {new Date(carryOverNotice.createdAt).toLocaleString()}.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {preview?.budgetStatus && preview.budgetStatus.level !== "ok" && (
         <Alert

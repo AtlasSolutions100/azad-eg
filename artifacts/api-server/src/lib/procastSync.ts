@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { fetchProcastTimesheets, markProcastSynced } from "./procast";
 import { parseTimeRecords } from "./timeimport";
 import { linesToLineItems, clearAutoImportedLineItems } from "./lineMapping";
-import { recomputeCarryOver } from "./carryover";
+import { recomputeCarryOverWithAudit } from "./carryover";
 import { recordAudit } from "./audit";
 
 type InvoiceRow = typeof invoicesTable.$inferSelect;
@@ -58,7 +58,11 @@ export async function syncInvoiceFromProcast(
 
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
   // New labor changes this invoice's total-to-date; refresh downstream carry-over.
-  await recomputeCarryOver(invoice.workPlanId);
+  await recomputeCarryOverWithAudit(invoice.workPlanId, {
+    invoiceId: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    reason: source === "procast-scheduled" ? "a scheduled Procast sync of" : "a Procast sync of",
+  });
   await markProcastSynced(new Date());
   await recordAudit({
     action: source === "procast-scheduled" ? "auto-synced from Procast" : "synced from Procast",

@@ -8,12 +8,29 @@ import {
   type LineItemRow,
 } from "@workspace/db";
 import { computeFinancials } from "./financials";
+import { recordAudit } from "./audit";
 
 const BILLED_STATUSES = new Set(["approved", "exported"]);
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+
+function money(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Describes a downstream invoice whose carried-forward ("previously billed")
+ * total was automatically changed by a recompute, so the change can be surfaced
+ * to billers (e.g. as an audit entry).
+ */
+export type CarryOverChange = {
+  id: number;
+  invoiceNumber: string;
+  previousPreviouslyBilled: number;
+  newPreviouslyBilled: number;
+};
 
 /**
  * Re-derives the carried-forward ("previously billed") total for every invoice
@@ -26,9 +43,9 @@ function round2(n: number): number {
  * carry-over was supplied explicitly (`carryOverManual`) keep their stored
  * value but still contribute their total-to-date to the chain.
  *
- * Returns the ids of invoices whose stored previouslyBilled was changed.
+ * Returns details of the invoices whose stored previouslyBilled was changed.
  */
-export async function recomputeCarryOver(workPlanId: number): Promise<number[]> {
+export async function recomputeCarryOver(workPlanId: number): Promise<CarryOverChange[]> {
   const [workPlan] = await db
     .select()
     .from(workPlansTable)
@@ -61,7 +78,7 @@ export async function recomputeCarryOver(workPlanId: number): Promise<number[]> 
       a.id - b.id,
   );
 
-  const changed: number[] = [];
+  const changed: CarryOverChange[] = [];
   let lastBilledTotalToDate = 0;
 
   for (const inv of ordered) {
@@ -75,12 +92,18 @@ export async function recomputeCarryOver(workPlanId: number): Promise<number[]> 
       otherDirectCosts: inv.otherDirectCosts,
     }).totalToDate;
 
-    if (!inv.carryOverManual && previouslyBilled !== round2(inv.previouslyBilled)) {
+    const stored = round2(inv.previouslyBilled);
+    if (!inv.carryOverManual && previouslyBilled !== stored) {
       await db
         .update(invoicesTable)
         .set({ previouslyBilled })
         .where(eq(invoicesTable.id, inv.id));
-      changed.push(inv.id);
+      changed.push({
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        previousPreviouslyBilled: stored,
+        newPreviouslyBilled: previouslyBilled,
+      });
     }
 
     if (BILLED_STATUSES.has(inv.status)) {
@@ -89,6 +112,35 @@ export async function recomputeCarryOver(workPlanId: number): Promise<number[]> 
   }
 
   return changed;
+}
+
+/**
+ * Recompute downstream carry-over after an edit to one invoice, and record an
+ * audit entry against each invoice whose "previously billed" was automatically
+ * changed as a result. This gives billers a clear trail of which already-created
+ * invoices had their running balance silently shifted by the upstream change.
+ *
+ * Returns the list of changed downstream invoices (excluding the triggering
+ * invoice itself).
+ */
+export async function recomputeCarryOverWithAudit(
+  workPlanId: number,
+  trigger: { invoiceId: number; invoiceNumber: string; reason: string },
+): Promise<CarryOverChange[]> {
+  const changed = await recomputeCarryOver(workPlanId);
+  const downstream = changed.filter((c) => c.id !== trigger.invoiceId);
+  for (const c of downstream) {
+    await recordAudit({
+      action: "carry-over recalculated",
+      entityType: "invoice",
+      entityId: c.id,
+      description:
+        `Previously billed auto-updated from $${money(c.previousPreviouslyBilled)} ` +
+        `to $${money(c.newPreviouslyBilled)} after ${trigger.reason} ` +
+        `(invoice ${trigger.invoiceNumber}).`,
+    });
+  }
+  return downstream;
 }
 
 /**

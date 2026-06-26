@@ -31,7 +31,7 @@ import {
   ListInvoicesQueryParams,
 } from "@workspace/api-zod";
 import { buildInvoice, toApiLineItem } from "../../lib/mappers";
-import { recomputeCarryOver, deriveCarryOverFromPriors } from "../../lib/carryover";
+import { recomputeCarryOverWithAudit, deriveCarryOverFromPriors } from "../../lib/carryover";
 import { evaluateBudgetStatus } from "../../lib/financials";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
@@ -164,8 +164,13 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
     return;
   }
   // The edit may have changed this invoice's total-to-date (e.g. otherDirectCosts
-  // or period), so re-derive downstream invoices' carried-forward totals.
-  await recomputeCarryOver(row.workPlanId);
+  // or period), so re-derive downstream invoices' carried-forward totals and
+  // record an audit trail of any invoices that were auto-updated as a result.
+  await recomputeCarryOverWithAudit(row.workPlanId, {
+    invoiceId: id,
+    invoiceNumber: row.invoiceNumber,
+    reason: "an edit to",
+  });
   [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
   const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
@@ -183,7 +188,11 @@ router.delete("/invoices/:id", async (req, res): Promise<void> => {
     return;
   }
   // Removing an invoice changes the chain for any later invoices on the plan.
-  await recomputeCarryOver(row.workPlanId);
+  await recomputeCarryOverWithAudit(row.workPlanId, {
+    invoiceId: id,
+    invoiceNumber: row.invoiceNumber,
+    reason: "the deletion of",
+  });
   await recordAudit({ action: "deleted", entityType: "invoice", entityId: id, description: `Invoice ${row.invoiceNumber}` });
   res.sendStatus(204);
 });
@@ -214,7 +223,11 @@ router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
     return;
   }
   // Approval makes this invoice "billed", so downstream carry-over may shift.
-  await recomputeCarryOver(row.workPlanId);
+  await recomputeCarryOverWithAudit(row.workPlanId, {
+    invoiceId: id,
+    invoiceNumber: row.invoiceNumber,
+    reason: "the approval of",
+  });
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
   const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
   await recordAudit({ action: "approved", entityType: "invoice", entityId: id, userName: parsed.data.approvedBy, description: `Invoice ${row.invoiceNumber}` });
@@ -316,7 +329,11 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
 
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
   // New labor changes this invoice's total-to-date; refresh downstream carry-over.
-  await recomputeCarryOver(ctx.invoice.workPlanId);
+  await recomputeCarryOverWithAudit(ctx.invoice.workPlanId, {
+    invoiceId: id,
+    invoiceNumber: ctx.invoice.invoiceNumber,
+    reason: "a time-data import into",
+  });
   await recordAudit({ action: "imported time data", entityType: "invoice", entityId: id, description: `${inserted.length} line items from ${source}${replacedCount > 0 ? ` (replaced ${replacedCount})` : ""}` });
 
   res.json(
