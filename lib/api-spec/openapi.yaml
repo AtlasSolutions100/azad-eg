@@ -1030,6 +1030,50 @@ paths:
                 $ref: "#/components/schemas/PackageRollup"
         "404":
           $ref: "#/components/responses/NotFound"
+  /packages/{id}/documents/{doc}/generate:
+    post:
+      operationId: generatePackageDocument
+      tags: [packages]
+      summary: Generate one of the five package documents (xlsx or pdf)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: doc
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [invoice, subcalc, progress, labor, timesheets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateInput"
+      responses:
+        "200":
+          description: Generated file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedFile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/export:
+    post:
+      operationId: exportPackage
+      tags: [packages]
+      summary: Generate all five documents and bundle them as a ZIP
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Export bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageExport"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   parameters:
@@ -1448,6 +1492,22 @@ components:
         url: { type: string }
         filename: { type: string }
         format: { type: string }
+    PackageExport:
+      type: object
+      required: [url, filename, documentCount, documents]
+      properties:
+        url: { type: string }
+        filename: { type: string }
+        documentCount: { type: integer }
+        documents:
+          type: array
+          items:
+            type: object
+            required: [doc, filename, format]
+            properties:
+              doc: { type: string }
+              filename: { type: string }
+              format: { type: string }
 
     InvoicePreview:
       type: object

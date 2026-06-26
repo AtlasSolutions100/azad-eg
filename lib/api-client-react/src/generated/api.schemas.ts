@@ -490,6 +490,19 @@ export interface GeneratedFile {
   format: string;
 }
 
+export type PackageExportDocumentsItem = {
+  doc: string;
+  filename: string;
+  format: string;
+};
+
+export interface PackageExport {
+  url: string;
+  filename: string;
+  documentCount: number;
+  documents: PackageExportDocumentsItem[];
+}
+
 export interface FinancialLine {
   label: string;
   amount: number;

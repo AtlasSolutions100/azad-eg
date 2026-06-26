@@ -48,6 +48,7 @@ import type {
   NotFoundResponse,
   PackageDetail,
   PackageEmployeeGroup,
+  PackageExport,
   PackageInput,
   PackageProgressReport,
   PackageProgressReportInput,
@@ -4549,4 +4550,147 @@ export function useGetPackageRollup<TData = Awaited<ReturnType<typeof getPackage
 
 
 
+
+export const getGeneratePackageDocumentUrl = (id: number,
+    doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets',) => {
+
+
+
+
+  return `/api/packages/${id}/documents/${doc}/generate`
+}
+
+/**
+ * @summary Generate one of the five package documents (xlsx or pdf)
+ */
+export const generatePackageDocument = async (id: number,
+    doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets',
+    generateInput: GenerateInput, options?: RequestInit): Promise<GeneratedFile> => {
+
+  return customFetch<GeneratedFile>(getGeneratePackageDocumentUrl(id,doc),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(generateInput)
+  }
+);}
+
+
+
+
+export const getGeneratePackageDocumentMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generatePackageDocument>>, TError,{id: number;doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets';data: BodyType<GenerateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generatePackageDocument>>, TError,{id: number;doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets';data: BodyType<GenerateInput>}, TContext> => {
+
+const mutationKey = ['generatePackageDocument'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generatePackageDocument>>, {id: number;doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets';data: BodyType<GenerateInput>}> = (props) => {
+          const {id,doc,data} = props ?? {};
+
+          return  generatePackageDocument(id,doc,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GeneratePackageDocumentMutationResult = NonNullable<Awaited<ReturnType<typeof generatePackageDocument>>>
+    export type GeneratePackageDocumentMutationBody = BodyType<GenerateInput>
+    export type GeneratePackageDocumentMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Generate one of the five package documents (xlsx or pdf)
+ */
+export const useGeneratePackageDocument = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generatePackageDocument>>, TError,{id: number;doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets';data: BodyType<GenerateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generatePackageDocument>>,
+        TError,
+        {id: number;doc: 'invoice' | 'subcalc' | 'progress' | 'labor' | 'timesheets';data: BodyType<GenerateInput>},
+        TContext
+      > => {
+      return useMutation(getGeneratePackageDocumentMutationOptions(options));
+    }
+
+export const getExportPackageUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/export`
+}
+
+/**
+ * @summary Generate all five documents and bundle them as a ZIP
+ */
+export const exportPackage = async (id: number, options?: RequestInit): Promise<PackageExport> => {
+
+  return customFetch<PackageExport>(getExportPackageUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getExportPackageMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportPackage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exportPackage>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['exportPackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportPackage>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  exportPackage(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExportPackageMutationResult = NonNullable<Awaited<ReturnType<typeof exportPackage>>>
+
+    export type ExportPackageMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Generate all five documents and bundle them as a ZIP
+ */
+export const useExportPackage = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportPackage>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof exportPackage>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getExportPackageMutationOptions(options));
+    }
 

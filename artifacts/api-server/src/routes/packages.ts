@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import path from "node:path";
 import { eq, and, asc } from "drizzle-orm";
 import {
   db,
@@ -9,6 +10,7 @@ import {
   laborOverridesTable,
   employeesTable,
   workPlansTable,
+  signaturesTable,
   type TimesheetEntryRow,
   type WorkPlan,
 } from "@workspace/db";
@@ -36,6 +38,9 @@ import {
   SaveLaborOverrideResponse,
   GetPackageValidationsResponse,
   GetPackageRollupResponse,
+  GeneratePackageDocumentBody,
+  GeneratePackageDocumentResponse,
+  ExportPackageResponse,
 } from "@workspace/api-zod";
 import {
   toApiPackageSummary,
@@ -46,7 +51,57 @@ import {
   buildPackageRollup,
   entryTotalHours,
 } from "../lib/packageMappers";
+import {
+  generatePackageDocument,
+  generatePackageZip,
+  type PackageDocKind,
+  type PackageDocContext,
+} from "../lib/packageDocs";
+import { resolveSignaturePath } from "../lib/excel";
 import { recordAudit } from "../lib/audit";
+
+const DOC_KINDS: PackageDocKind[] = ["invoice", "subcalc", "progress", "labor", "timesheets"];
+
+/** Per-document status column on the packages table, keyed by doc kind. */
+const DOC_STATUS_COLUMN: Record<PackageDocKind, keyof typeof packagesTable.$inferInsert> = {
+  invoice: "invoiceDocStatus",
+  subcalc: "subCalcDocStatus",
+  progress: "progressReportDocStatus",
+  labor: "laborAttachmentDocStatus",
+  timesheets: "timesheetsDocStatus",
+};
+
+/** Assembles everything the document generators need for a package. */
+async function buildDocContext(packageId: number): Promise<PackageDocContext | null> {
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, packageId));
+  if (!pkg) return null;
+  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId));
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
+  if (!emp || !wp) return null;
+  const [weeks, entries, progressRows, overrides] = await Promise.all([
+    db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, packageId)),
+    db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, packageId)),
+    db.select().from(packageProgressReportsTable).where(eq(packageProgressReportsTable.packageId, packageId)),
+    db.select().from(laborOverridesTable).where(eq(laborOverridesTable.packageId, packageId)),
+  ]);
+
+  let signatureImagePath: string | null = null;
+  if (pkg.signatureId) {
+    const [sig] = await db.select().from(signaturesTable).where(eq(signaturesTable.id, pkg.signatureId));
+    if (sig) signatureImagePath = resolveSignaturePath(sig.imageUrl);
+  }
+
+  return {
+    pkg,
+    employee: { name: emp.name, classification: emp.classification },
+    workPlan: wp,
+    weeks,
+    entries,
+    progress: progressRows[0] ?? null,
+    overrides,
+    signatureImagePath,
+  };
+}
 
 const router: IRouter = Router();
 
@@ -614,6 +669,93 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
 
   const isValid = !flags.some((f) => f.severity === "error");
   res.json(GetPackageValidationsResponse.parse({ packageId: id, isValid, flags }));
+});
+
+// ---------------------------------------------------------------------------
+// Document generation + export
+// ---------------------------------------------------------------------------
+
+router.post("/packages/:id/documents/:doc/generate", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const doc = (Array.isArray(req.params.doc) ? req.params.doc[0] : req.params.doc) as PackageDocKind;
+  if (!DOC_KINDS.includes(doc)) {
+    res.status(400).json({ error: `Unknown document type: ${doc}` });
+    return;
+  }
+  const parsed = GeneratePackageDocumentBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const ctx = await buildDocContext(id);
+  if (!ctx) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+
+  const outPath = await generatePackageDocument(ctx, doc, parsed.data.format);
+  const filename = path.basename(outPath);
+
+  await db
+    .update(packagesTable)
+    .set({ [DOC_STATUS_COLUMN[doc]]: "ready" })
+    .where(eq(packagesTable.id, id));
+  await recordAudit({
+    action: "generated package document",
+    entityType: "package",
+    entityId: id,
+    description: `${doc} ${parsed.data.format.toUpperCase()} ${filename}`,
+  });
+
+  res.json(
+    GeneratePackageDocumentResponse.parse({
+      url: `/api/files/${encodeURIComponent(filename)}`,
+      filename,
+      format: parsed.data.format,
+    }),
+  );
+});
+
+router.post("/packages/:id/export", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const ctx = await buildDocContext(id);
+  if (!ctx) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+
+  const result = await generatePackageZip(ctx);
+
+  await db
+    .update(packagesTable)
+    .set({
+      status: ctx.pkg.status === "approved" ? "exported" : ctx.pkg.status,
+      invoiceDocStatus: "ready",
+      subCalcDocStatus: "ready",
+      progressReportDocStatus: "ready",
+      laborAttachmentDocStatus: "ready",
+      timesheetsDocStatus: "ready",
+    })
+    .where(eq(packagesTable.id, id));
+  await recordAudit({
+    action: "exported package",
+    entityType: "package",
+    entityId: id,
+    description: `ZIP ${result.zipName} (${result.documents.length} files)`,
+  });
+
+  res.json(
+    ExportPackageResponse.parse({
+      url: `/api/files/${encodeURIComponent(result.zipName)}`,
+      filename: result.zipName,
+      documentCount: result.documents.length,
+      documents: result.documents.map((d) => ({
+        doc: d.doc,
+        filename: d.filename,
+        format: d.format,
+      })),
+    }),
+  );
 });
 
 export default router;

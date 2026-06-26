@@ -1747,3 +1747,41 @@ export const GetPackageRollupResponse = zod.object({
 })
 
 
+/**
+ * @summary Generate one of the five package documents (xlsx or pdf)
+ */
+export const GeneratePackageDocumentParams = zod.object({
+  "id": zod.coerce.number(),
+  "doc": zod.enum(['invoice', 'subcalc', 'progress', 'labor', 'timesheets'])
+})
+
+export const GeneratePackageDocumentBody = zod.object({
+  "format": zod.enum(['xlsx', 'pdf'])
+})
+
+export const GeneratePackageDocumentResponse = zod.object({
+  "url": zod.string(),
+  "filename": zod.string(),
+  "format": zod.string()
+})
+
+
+/**
+ * @summary Generate all five documents and bundle them as a ZIP
+ */
+export const ExportPackageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ExportPackageResponse = zod.object({
+  "url": zod.string(),
+  "filename": zod.string(),
+  "documentCount": zod.number(),
+  "documents": zod.array(zod.object({
+  "doc": zod.string(),
+  "filename": zod.string(),
+  "format": zod.string()
+}))
+})
+
+

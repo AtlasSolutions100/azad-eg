@@ -49,6 +49,8 @@ export * from './listPackagesParams';
 export * from './notFoundResponse';
 export * from './packageDetail';
 export * from './packageEmployeeGroup';
+export * from './packageExport';
+export * from './packageExportDocumentsItem';
 export * from './packageInput';
 export * from './packageJobGroup';
 export * from './packageLaborLine';
