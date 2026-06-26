@@ -31,6 +31,7 @@ import {
   ListInvoicesQueryParams,
 } from "@workspace/api-zod";
 import { buildInvoice, toApiLineItem } from "../../lib/mappers";
+import { recomputeCarryOver, deriveCarryOverFromPriors } from "../../lib/carryover";
 import { recordAudit } from "../../lib/audit";
 import { upload } from "../../lib/upload";
 import { parseTimeFile } from "../../lib/timeimport";
@@ -107,19 +108,23 @@ router.post("/invoices", async (req, res): Promise<void> => {
   // Carry-over: when no "previously billed" was supplied, derive it from the
   // most recent already-billed (approved/exported) invoice on the same work
   // plan — its total-to-date is the new invoice's previously-billed amount.
+  // An explicitly supplied value is flagged manual so later recomputes keep it.
+  const carryOverManual = parsed.data.previouslyBilled != null;
   let previouslyBilled = parsed.data.previouslyBilled ?? 0;
-  if (parsed.data.previouslyBilled == null) {
+  if (!carryOverManual) {
     const priors = await db.select().from(invoicesTable).where(eq(invoicesTable.workPlanId, wp.id));
-    const billed = priors
-      .filter((p) => p.status === "approved" || p.status === "exported")
-      .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd) || b.createdAt.getTime() - a.createdAt.getTime());
-    if (billed.length > 0) {
-      const latest = billed[0];
-      const li = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, latest.id));
-      previouslyBilled = buildInvoice(latest, wp, li).api.totalToDate;
+    const li = priors.length
+      ? await db.select().from(lineItemsTable).where(inArray(lineItemsTable.invoiceId, priors.map((p) => p.id)))
+      : [];
+    const liByInvoice = new Map<number, LineItemRow[]>();
+    for (const item of li) {
+      const arr = liByInvoice.get(item.invoiceId) ?? [];
+      arr.push(item);
+      liByInvoice.set(item.invoiceId, arr);
     }
+    previouslyBilled = deriveCarryOverFromPriors(priors, liByInvoice, wp);
   }
-  const [row] = await db.insert(invoicesTable).values({ ...parsed.data, previouslyBilled }).returning();
+  const [row] = await db.insert(invoicesTable).values({ ...parsed.data, previouslyBilled, carryOverManual }).returning();
   await recordAudit({ action: "created", entityType: "invoice", entityId: row.id, description: `Invoice ${row.invoiceNumber}` });
   res.status(201).json(CreateInvoiceResponse.parse(buildInvoice(row, wp, []).api));
 });
@@ -141,9 +146,12 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
     return;
   }
   const { status: _ignoredStatus, ...fields } = parsed.data;
+  // A directly-edited carry-over is treated as manual so it survives recompute.
+  const patchFields: Partial<typeof invoicesTable.$inferInsert> =
+    fields.previouslyBilled != null ? { ...fields, carryOverManual: true } : fields;
   let row;
-  if (Object.keys(fields).length > 0) {
-    [row] = await db.update(invoicesTable).set(fields).where(eq(invoicesTable.id, id)).returning();
+  if (Object.keys(patchFields).length > 0) {
+    [row] = await db.update(invoicesTable).set(patchFields).where(eq(invoicesTable.id, id)).returning();
   } else {
     [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   }
@@ -151,6 +159,10 @@ router.patch("/invoices/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Invoice not found" });
     return;
   }
+  // The edit may have changed this invoice's total-to-date (e.g. otherDirectCosts
+  // or period), so re-derive downstream invoices' carried-forward totals.
+  await recomputeCarryOver(row.workPlanId);
+  [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
   const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
   await recordAudit({ action: "updated", entityType: "invoice", entityId: id, description: `Invoice ${row.invoiceNumber}` });
@@ -166,6 +178,8 @@ router.delete("/invoices/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Invoice not found" });
     return;
   }
+  // Removing an invoice changes the chain for any later invoices on the plan.
+  await recomputeCarryOver(row.workPlanId);
   await recordAudit({ action: "deleted", entityType: "invoice", entityId: id, description: `Invoice ${row.invoiceNumber}` });
   res.sendStatus(204);
 });
@@ -195,6 +209,8 @@ router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Invoice not found" });
     return;
   }
+  // Approval makes this invoice "billed", so downstream carry-over may shift.
+  await recomputeCarryOver(row.workPlanId);
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
   const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
   await recordAudit({ action: "approved", entityType: "invoice", entityId: id, userName: parsed.data.approvedBy, description: `Invoice ${row.invoiceNumber}` });
@@ -309,6 +325,8 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
   });
 
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
+  // New labor changes this invoice's total-to-date; refresh downstream carry-over.
+  await recomputeCarryOver(ctx.invoice.workPlanId);
   await recordAudit({ action: "imported time data", entityType: "invoice", entityId: id, description: `${inserted.length} line items from ${source}` });
 
   res.json(

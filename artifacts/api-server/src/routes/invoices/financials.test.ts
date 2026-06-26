@@ -201,6 +201,109 @@ describe("POST /api/invoices carry-over billing", () => {
   });
 });
 
+describe("carry-over recompute when an earlier invoice changes", () => {
+  it("updates a downstream invoice's carry-over after the prior invoice is edited", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    // January: approved invoice, 10h @ 100 → this period 2200, total-to-date 2200.
+    const janId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    // February: created via the API so its carry-over derives from January (2200).
+    const febRes = await request(app)
+      .post("/api/invoices")
+      .send({
+        workPlanId: wpId,
+        invoiceNumber: `TEST-INV-FEB-${Date.now()}`,
+        invoiceDate: "2026-02-15",
+        periodStart: "2026-02-01",
+        periodEnd: "2026-02-28",
+      });
+    expect(febRes.status).toBe(201);
+    const febId = febRes.body.id as number;
+    createdInvoiceIds.push(febId);
+    expect(febRes.body.previouslyBilled).toBe(2200);
+
+    // Edit January: add another 10h @ 100 → this period 4400, total-to-date 4400.
+    const addRes = await request(app)
+      .post(`/api/invoices/${janId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+    expect(addRes.status).toBe(201);
+
+    // February's carry-over must now reflect January's new total-to-date (4400).
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    expect(feb.body.previouslyBilled).toBe(4400);
+    // total this period is 0 (no line items), so total-to-date == carry-over.
+    expect(feb.body.totalToDate).toBe(4400);
+  });
+
+  it("re-derives carry-over when a prior invoice is approved (becomes billed)", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    // January starts as a draft, so it is not yet part of the billed chain.
+    const janId = await createInvoice(wpId, "draft", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    const febRes = await request(app)
+      .post("/api/invoices")
+      .send({
+        workPlanId: wpId,
+        invoiceNumber: `TEST-INV-FEBB-${Date.now()}`,
+        invoiceDate: "2026-02-15",
+        periodStart: "2026-02-01",
+        periodEnd: "2026-02-28",
+      });
+    const febId = febRes.body.id as number;
+    createdInvoiceIds.push(febId);
+    // No billed prior yet, so carry-over starts at 0.
+    expect(febRes.body.previouslyBilled).toBe(0);
+
+    await request(app).post(`/api/invoices/${janId}/approve`).send({ approvedBy: "Approver" });
+
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    expect(feb.body.previouslyBilled).toBe(2200);
+  });
+
+  it("preserves an explicitly-set carry-over across recompute", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    const janId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    // February explicitly pins its carry-over to 5000.
+    const febRes = await request(app)
+      .post("/api/invoices")
+      .send({
+        workPlanId: wpId,
+        invoiceNumber: `TEST-INV-FEBC-${Date.now()}`,
+        invoiceDate: "2026-02-15",
+        periodStart: "2026-02-01",
+        periodEnd: "2026-02-28",
+        previouslyBilled: 5000,
+      });
+    const febId = febRes.body.id as number;
+    createdInvoiceIds.push(febId);
+    expect(febRes.body.previouslyBilled).toBe(5000);
+
+    // Editing January must NOT overwrite February's manual carry-over.
+    await request(app)
+      .post(`/api/invoices/${janId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    expect(feb.body.previouslyBilled).toBe(5000);
+  });
+});
+
 describe("GET /api/invoices/:id/validations", () => {
   it("flags an error when there are no line items", async () => {
     const wpId = await createWorkPlan();

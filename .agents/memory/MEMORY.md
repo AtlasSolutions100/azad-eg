@@ -1,1 +1,2 @@
 - [Labor Attachment template bounds](labor-attachment-template-bounds.md) — Sub Labor sheet has fixed row capacity (home 11 / field 6); cap overrides or they corrupt subtotals.
+- [db schema change rebuild](db-schema-change-rebuild.md) — after editing lib/db schema, run drizzle push AND `tsc --build` in lib/db, else downstream typecheck sees stale dist types.

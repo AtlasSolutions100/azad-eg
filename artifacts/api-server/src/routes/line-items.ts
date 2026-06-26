@@ -9,6 +9,7 @@ import {
   UpdateLineItemResponse,
 } from "@workspace/api-zod";
 import { toApiLineItem } from "../lib/mappers";
+import { recomputeCarryOver } from "../lib/carryover";
 import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
@@ -33,6 +34,7 @@ router.post("/invoices/:id/line-items", async (req, res): Promise<void> => {
   }
   const amount = parsed.data.hours * parsed.data.rate;
   const [row] = await db.insert(lineItemsTable).values({ ...parsed.data, invoiceId, amount }).returning();
+  await recomputeCarryOver(inv.workPlanId);
   await recordAudit({ action: "added line item", entityType: "invoice", entityId: invoiceId, description: row.employeeName });
   res.status(201).json(CreateLineItemResponse.parse(toApiLineItem(row)));
 });
@@ -56,6 +58,8 @@ router.patch("/line-items/:id", async (req, res): Promise<void> => {
     .set({ ...parsed.data, amount: hours * rate })
     .where(eq(lineItemsTable.id, id))
     .returning();
+  const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, row.invoiceId));
+  if (inv) await recomputeCarryOver(inv.workPlanId);
   res.json(UpdateLineItemResponse.parse(toApiLineItem(row)));
 });
 
@@ -66,6 +70,8 @@ router.delete("/line-items/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Line item not found" });
     return;
   }
+  const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, row.invoiceId));
+  if (inv) await recomputeCarryOver(inv.workPlanId);
   res.sendStatus(204);
 });
 
