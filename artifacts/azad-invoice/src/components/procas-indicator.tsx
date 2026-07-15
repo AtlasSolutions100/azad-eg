@@ -6,8 +6,10 @@ import {
   useGetProcasScheduler,
   useUpdateProcasScheduler,
   useRefreshProcasNow,
+  useGetProcasSchedulerRuns,
   getGetProcasStatusQueryKey,
   getGetProcasSchedulerQueryKey,
+  getGetProcasSchedulerRunsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -22,7 +24,20 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RefreshCw, Wifi, WifiOff, Plug, Clock, CheckCircle2, AlertTriangle, Settings2 } from "lucide-react";
+import {
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Plug,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Settings2,
+  History,
+  ChevronDown,
+  ChevronUp,
+  MinusCircle,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -47,6 +62,17 @@ export default function ProcasIndicator() {
   });
   const updateScheduler = useUpdateProcasScheduler();
   const refreshNow = useRefreshProcasNow();
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: runs } = useGetProcasSchedulerRuns({
+    query: {
+      queryKey: getGetProcasSchedulerRunsQueryKey(),
+      // Only fetch once the biller expands the history panel; keep it fresh
+      // while it's open on the same cadence as the scheduler status.
+      enabled: connected && historyOpen,
+      refetchInterval: connected && historyOpen ? 30_000 : false,
+    },
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [companyCode, setCompanyCode] = useState("");
@@ -75,6 +101,7 @@ export default function ProcasIndicator() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: getGetProcasStatusQueryKey() }),
       queryClient.invalidateQueries({ queryKey: getGetProcasSchedulerQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetProcasSchedulerRunsQueryKey() }),
     ]);
 
   const handleRefreshNow = async () => {
@@ -301,6 +328,77 @@ export default function ProcasIndicator() {
                     />
                     {refreshNow.isPending ? "Refreshing…" : "Refresh all open invoices now"}
                   </Button>
+
+                  <div className="border-t border-[#EDE6CF] pt-2">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between text-xs text-[#5F5F5F] hover:text-[#333333]"
+                      onClick={() => setHistoryOpen((open) => !open)}
+                      aria-expanded={historyOpen}
+                    >
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <History className="h-3.5 w-3.5" />
+                        Recent refresh history
+                      </span>
+                      {historyOpen ? (
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    {historyOpen && (
+                      <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
+                        {runs == null ? (
+                          <p className="text-[11px] italic text-[#8A8A8A]">Loading history…</p>
+                        ) : runs.length === 0 ? (
+                          <p className="text-[11px] italic text-[#8A8A8A]">
+                            No refresh cycles have completed yet.
+                          </p>
+                        ) : (
+                          runs.map((run) => (
+                            <div
+                              key={run.id}
+                              className="flex items-start justify-between gap-2 rounded border border-[#EDE6CF] bg-white px-2 py-1.5"
+                            >
+                              <div className="min-w-0">
+                                {run.skipped ? (
+                                  <span className="flex items-center gap-1 text-[11px] text-amber-600">
+                                    <MinusCircle className="h-3 w-3 flex-shrink-0" />
+                                    Skipped (not connected)
+                                  </span>
+                                ) : run.error ? (
+                                  <span
+                                    className="flex items-start gap-1 text-[11px] text-red-600"
+                                    title={run.error}
+                                  >
+                                    <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                                    <span className="truncate">Errored: {run.error}</span>
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`flex items-center gap-1 text-[11px] ${
+                                      run.failed ? "text-amber-600" : "text-emerald-600"
+                                    }`}
+                                  >
+                                    {run.failed ? (
+                                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                                    ) : (
+                                      <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+                                    )}
+                                    {run.synced} synced
+                                    {run.failed ? `, ${run.failed} failed` : ""}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="flex-shrink-0 whitespace-nowrap text-[10px] text-[#8A8A8A]">
+                                {formatDistanceToNow(new Date(run.ranAt), { addSuffix: true })}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="space-y-1.5 border-t border-[#EDE6CF] pt-2">
                     <Label

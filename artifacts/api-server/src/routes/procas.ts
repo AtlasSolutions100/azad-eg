@@ -5,6 +5,7 @@ import {
   ConnectProcasResponse,
   DisconnectProcasResponse,
   GetProcasSchedulerResponse,
+  GetProcasSchedulerRunsResponse,
   UpdateProcasSchedulerBody,
   UpdateProcasSchedulerResponse,
 } from "@workspace/api-zod";
@@ -17,6 +18,7 @@ import {
   getSchedulerState,
   setSchedulerInterval,
   runAndRecordCycle,
+  getRecentRuns,
   clampInterval,
   MIN_INTERVAL_MS,
   MAX_INTERVAL_MS,
@@ -115,6 +117,25 @@ router.post("/procas/disconnect", async (_req, res): Promise<void> => {
 router.get("/procas/scheduler", async (_req, res): Promise<void> => {
   const state = await getSchedulerState();
   res.json(GetProcasSchedulerResponse.parse(await schedulerPayload(state)));
+});
+
+// Returns the rolling history of recent refresh cycles (newest first) so
+// billers can see whether automatic refreshes have been succeeding over time,
+// not just the most recent outcome.
+router.get("/procas/scheduler/runs", async (_req, res): Promise<void> => {
+  const runs = await getRecentRuns(10);
+  res.json(
+    GetProcasSchedulerRunsResponse.parse(
+      runs.map((run) => ({
+        id: run.id,
+        ranAt: run.ranAt.toISOString(),
+        synced: run.synced,
+        failed: run.failed,
+        skipped: run.skipped,
+        error: run.error,
+      })),
+    ),
+  );
 });
 
 // Updates the configurable refresh interval. The value is clamped to a safe

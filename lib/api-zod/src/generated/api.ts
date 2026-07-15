@@ -1236,6 +1236,20 @@ export const UpdateProcasSchedulerResponse = zod.object({
 
 
 /**
+ * @summary List the most recent Procas refresh cycle outcomes, newest first
+ */
+export const GetProcasSchedulerRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "ranAt": zod.string(),
+  "synced": zod.number(),
+  "failed": zod.number(),
+  "skipped": zod.boolean(),
+  "error": zod.string().nullish()
+})
+export const GetProcasSchedulerRunsResponse = zod.array(GetProcasSchedulerRunsResponseItem)
+
+
+/**
  * @summary Run a full Procas refresh cycle for all open invoices immediately
  */
 export const RefreshProcasNowResponse = zod.object({

@@ -16,3 +16,4 @@ export * from "./column-definitions";
 export * from "./audit-logs";
 export * from "./procas-connection";
 export * from "./procas-scheduler";
+export * from "./procas-scheduler-runs";

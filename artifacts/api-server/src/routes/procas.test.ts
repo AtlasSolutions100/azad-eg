@@ -20,6 +20,7 @@ const {
   db,
   procasConnectionTable,
   procasSchedulerTable,
+  procasSchedulerRunsTable,
   invoicesTable,
   workPlansTable,
   employeesTable,
@@ -33,6 +34,7 @@ const createdEmployeeIds: number[] = [];
 async function resetConnection(): Promise<void> {
   await db.delete(procasConnectionTable);
   await db.delete(procasSchedulerTable);
+  await db.delete(procasSchedulerRunsTable);
 }
 
 beforeEach(async () => {
@@ -699,6 +701,56 @@ describe("procas integration", () => {
     const status = await request(app).get("/api/procas/scheduler");
     expect(status.body.lastSynced).toBeGreaterThanOrEqual(1);
     expect(status.body.lastRunAt).toBeTruthy();
+  });
+
+  it("records each completed cycle as its own history row, newest first", async () => {
+    // Two skipped cycles (not connected) should produce two distinct rows.
+    await request(app).post("/api/procas/refresh").expect(200);
+    await request(app).post("/api/procas/refresh").expect(200);
+
+    const res = await request(app).get("/api/procas/scheduler/runs");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(2);
+    for (const run of res.body) {
+      expect(run.skipped).toBe(true);
+      expect(run.synced).toBe(0);
+      expect(run.failed).toBe(0);
+      expect(run.ranAt).toBeTruthy();
+    }
+    // Newest first.
+    const times = res.body.map((r: { ranAt: string }) => new Date(r.ranAt).getTime());
+    expect(times[0]).toBeGreaterThanOrEqual(times[1]);
+  });
+
+  it("caps run history at MAX_RUN_HISTORY rows and the endpoint returns at most 10", async () => {
+    const { MAX_RUN_HISTORY } = await import("../lib/procasScheduler");
+    const base = Date.now() - 1000 * 60 * 60;
+    await db.insert(procasSchedulerRunsTable).values(
+      Array.from({ length: MAX_RUN_HISTORY + 5 }, (_, i) => ({
+        ranAt: new Date(base + i * 1000),
+        synced: i,
+        failed: 0,
+        skipped: false,
+      })),
+    );
+
+    // Any recorded cycle triggers pruning down to the cap.
+    await request(app).post("/api/procas/refresh").expect(200);
+
+    const rows = await db.select().from(procasSchedulerRunsTable);
+    expect(rows).toHaveLength(MAX_RUN_HISTORY);
+    // The oldest rows were pruned; the newest (the refresh itself) survives.
+    const oldest = new Date(base + 5 * 1000).getTime();
+    for (const row of rows) {
+      expect(row.ranAt.getTime()).toBeGreaterThanOrEqual(oldest);
+    }
+
+    const res = await request(app).get("/api/procas/scheduler/runs");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(10);
+    // Newest first: the on-demand refresh (skipped, not connected) leads.
+    expect(res.body[0].skipped).toBe(true);
   });
 
   it("isolates a single invoice's Procas failure so the rest of the cycle still syncs", async () => {

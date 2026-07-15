@@ -814,6 +814,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcasSchedulerStatus"
 
+  /procas/scheduler/runs:
+    get:
+      operationId: getProcasSchedulerRuns
+      tags: [reference]
+      summary: List the most recent Procas refresh cycle outcomes, newest first
+      responses:
+        "200":
+          description: Recent Procas refresh cycle history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcasSchedulerRun"
+
   /procas/refresh:
     post:
       operationId: refreshProcasNow
@@ -1861,6 +1876,22 @@ components:
         lastFailed: { type: integer }
         lastSkipped: { type: boolean }
         lastError: { type: ["string", "null"] }
+
+    ProcasSchedulerRun:
+      type: object
+      required:
+        - id
+        - ranAt
+        - synced
+        - failed
+        - skipped
+      properties:
+        id: { type: integer }
+        ranAt: { type: string }
+        synced: { type: integer }
+        failed: { type: integer }
+        skipped: { type: boolean }
+        error: { type: ["string", "null"] }
 
     ProcasSchedulerInput:
       type: object

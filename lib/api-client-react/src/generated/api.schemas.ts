@@ -680,6 +680,16 @@ export interface ProcasSchedulerStatus {
   lastError?: string | null;
 }
 
+export interface ProcasSchedulerRun {
+  id: number;
+  ranAt: string;
+  synced: number;
+  failed: number;
+  skipped: boolean;
+  /** @nullable */
+  error?: string | null;
+}
+
 export interface ProcasSchedulerInput {
   intervalMs: number;
 }

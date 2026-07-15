@@ -1,5 +1,14 @@
-import { db, pool, invoicesTable, procasSchedulerTable, type ProcasSchedulerRow, type PoolClient } from "@workspace/db";
-import { inArray, eq } from "drizzle-orm";
+import {
+  db,
+  pool,
+  invoicesTable,
+  procasSchedulerTable,
+  procasSchedulerRunsTable,
+  type ProcasSchedulerRow,
+  type ProcasSchedulerRunRow,
+  type PoolClient,
+} from "@workspace/db";
+import { inArray, eq, desc, notInArray, sql } from "drizzle-orm";
 import { getProcasConnection, credsFromConnection } from "./procas";
 import { syncInvoiceFromProcas, syncReferenceFromProcas } from "./procasSync";
 import { logger } from "./logger";
@@ -107,6 +116,10 @@ export async function setSchedulerInterval(ms: number): Promise<number> {
   return clamped;
 }
 
+// Cap on retained history rows. Keeps comfortably more than the UI shows (~10)
+// so the popover always has a full list even right after pruning.
+export const MAX_RUN_HISTORY = 50;
+
 async function recordCycleResult(result: {
   skipped: boolean;
   synced: number;
@@ -114,16 +127,43 @@ async function recordCycleResult(result: {
   error?: string | null;
 }): Promise<void> {
   await getSchedulerRow();
+  const ranAt = new Date();
   await db
     .update(procasSchedulerTable)
     .set({
-      lastRunAt: new Date(),
+      lastRunAt: ranAt,
       lastSynced: result.synced,
       lastFailed: result.failed,
       lastSkipped: result.skipped,
       lastError: result.error ?? null,
     })
     .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
+  // Append this cycle to the rolling history, then prune anything beyond the
+  // newest MAX_RUN_HISTORY rows so the table stays bounded.
+  await db.insert(procasSchedulerRunsTable).values({
+    ranAt,
+    synced: result.synced,
+    failed: result.failed,
+    skipped: result.skipped,
+    error: result.error ?? null,
+  });
+  const keep = db
+    .select({ id: procasSchedulerRunsTable.id })
+    .from(procasSchedulerRunsTable)
+    .orderBy(desc(procasSchedulerRunsTable.ranAt), desc(procasSchedulerRunsTable.id))
+    .limit(MAX_RUN_HISTORY);
+  await db
+    .delete(procasSchedulerRunsTable)
+    .where(notInArray(procasSchedulerRunsTable.id, sql`(${keep})`));
+}
+
+// The most recent cycle outcomes, newest first, for the history panel.
+export async function getRecentRuns(limit = 10): Promise<ProcasSchedulerRunRow[]> {
+  return db
+    .select()
+    .from(procasSchedulerRunsTable)
+    .orderBy(desc(procasSchedulerRunsTable.ranAt), desc(procasSchedulerRunsTable.id))
+    .limit(Math.min(Math.max(1, Math.round(limit)), MAX_RUN_HISTORY));
 }
 
 // Persists a cycle outcome without letting a failed write escape. If the

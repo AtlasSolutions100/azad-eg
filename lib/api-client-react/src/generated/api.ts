@@ -64,6 +64,7 @@ import type {
   PackageWeekUpdate,
   ProcasConnectInput,
   ProcasSchedulerInput,
+  ProcasSchedulerRun,
   ProcasSchedulerStatus,
   ProcasStatus,
   ProgressReport,
@@ -3742,6 +3743,83 @@ export const useUpdateProcasScheduler = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getUpdateProcasSchedulerMutationOptions(options));
     }
+
+export const getGetProcasSchedulerRunsUrl = () => {
+
+
+
+
+  return `/api/procas/scheduler/runs`
+}
+
+/**
+ * @summary List the most recent Procas refresh cycle outcomes, newest first
+ */
+export const getProcasSchedulerRuns = async ( options?: RequestInit): Promise<ProcasSchedulerRun[]> => {
+
+  return customFetch<ProcasSchedulerRun[]>(getGetProcasSchedulerRunsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProcasSchedulerRunsQueryKey = () => {
+    return [
+    `/api/procas/scheduler/runs`
+    ] as const;
+    }
+
+
+export const getGetProcasSchedulerRunsQueryOptions = <TData = Awaited<ReturnType<typeof getProcasSchedulerRuns>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasSchedulerRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProcasSchedulerRunsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcasSchedulerRuns>>> = ({ signal }) => getProcasSchedulerRuns({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcasSchedulerRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProcasSchedulerRunsQueryResult = NonNullable<Awaited<ReturnType<typeof getProcasSchedulerRuns>>>
+export type GetProcasSchedulerRunsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the most recent Procas refresh cycle outcomes, newest first
+ */
+
+export function useGetProcasSchedulerRuns<TData = Awaited<ReturnType<typeof getProcasSchedulerRuns>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasSchedulerRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProcasSchedulerRunsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getRefreshProcasNowUrl = () => {
 

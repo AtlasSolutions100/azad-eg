@@ -74,6 +74,7 @@ export * from './packageWeekInput';
 export * from './packageWeekUpdate';
 export * from './procasConnectInput';
 export * from './procasSchedulerInput';
+export * from './procasSchedulerRun';
 export * from './procasSchedulerStatus';
 export * from './procasStatus';
 export * from './procasStatusMode';
