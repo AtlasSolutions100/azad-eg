@@ -1,0 +1,71 @@
+You are building / updating a production dashboard for Azad Engineering (client of Work Optional AI) that generates exact BART client invoices.
+
+CRITICAL CONTEXT – PROCAS INTEGRATION (from official call with Procas on 2026-07-06):
+
+- Procas provides a **read-only** Web API that exposes data via **OData**.
+- It does **not** support writing data back into Procas.
+- Almost every screen in Procas has a corresponding table in the API.
+- For invoicing hours we must prefer **Labor Journal** hours (finalized version used by Procas for invoicing) over raw timesheet hours, because timesheet hours can still be edited.
+- We also need personnel, pay rates, projects / charge codes, labor categories, and billing setups when available.
+- Aashmi from Procas is providing a Data Dictionary and Connection Guide. These files will be uploaded into the project. Use them as the source of truth for endpoints, authentication, available tables, and field names.
+- Authentication and base URL will come from the Connection Guide (typically OData endpoint + credentials or API key).
+
+REQUIREMENTS FOR THIS UPDATE:
+
+1. **Procas Connection**
+   - Implement a clean Procas OData client.
+   - Support reading the relevant tables (especially Labor Journal / timekeeping / personnel / projects).
+   - Show a clear **live green indicator** when the API connection is healthy and authenticated.
+   - Show a clear error state + helpful message when the connection fails.
+   - Allow the user to force a refresh of the data (like a query refresh in Excel/Power BI).
+   - Keep a robust **file-upload fallback** (Procas “time detail export” + verification spreadsheet) so the dashboard still works if the API is temporarily unavailable.
+
+2. **Data Mapping**
+   - Create a clear mapping layer (and a visible “Column Definitions / Reference Data” section in the UI) that shows:
+     - Which Procas field maps to which invoice field
+     - Whether the value comes from Labor Journal, timesheet, previous invoice, user input, or calculated
+   - Prefer Labor Journal hours for the final invoice numbers.
+   - Support multiple employees under one Job / Work Plan / Invoice.
+
+3. **Dashboard Organization (important UX change)**
+   - Primary organization must be by **Job / Work Plan / Invoice**, not primarily by person.
+   - Each tile/package should represent one invoice/project.
+   - Under each job tile, show the people who worked on it, total hours, labor cost, progress status, and readiness indicators (bronze/silver/gold style dots are fine).
+   - Support filtering and search by Client → Job Number → Employee.
+
+4. **Invoice Generation (Phase 1 focus)**
+   - Generate the exact multi-tab Excel structure matching Azad’s BART template:
+     - Invoice (Professional Service Agreement Invoice)
+     - Invoice Detail Attachment / Sub Calc
+     - Progress Report
+     - Labor Attachment / Sub Labor
+     - Weekly Timesheets
+   - Preserve exact tab names, structure, merged cells, formatting, and working formulas where possible.
+   - No yellow highlights or internal notes in the client-facing export.
+   - One-click multi-page PDF export (single file, not separate pages).
+   - Auto-place uploaded signatures on the correct locations (with ability for Julie to remove/replace them).
+   - Carry forward “Previously Billed” and remaining budget from the last approved invoice for that Work Plan.
+
+5. **Progress Reports**
+   - Simple upload per job/billing period (preferred for now).
+   - Keep the door open for future email-to-upload or SharePoint, but do not implement email automation yet.
+
+6. **Validation & Safety**
+   - Flag possible OT rule violations, budget overruns, missing hours, and large changes since last refresh.
+   - Keep an activity / audit log.
+   - Julie remains the final approver before any client export.
+
+7. **Technical**
+   - Use whatever modern stack Replit recommends.
+   - Make authentication credentials configurable via Replit Secrets / environment variables (never hard-code).
+   - The system must remain usable with file uploads even if the Procas API is not yet fully mapped.
+
+Deliverables:
+- Working Procas OData connection with live status indicator
+- Job-first dashboard organization
+- Accurate Labor Journal hour pull (when available)
+- Clean multi-tab Excel + single multi-page PDF generation
+- Clear Column Definitions / Reference Data transparency section
+- File upload fallback that still works with the two Procas exports Julie already provided
+
+Upload the Procas Connection Guide and Data Dictionary into the project and use them. If any field names or authentication method are unclear, create clear TODO comments and a short “Procas Mapping Notes” section in the UI so we can refine quickly.
