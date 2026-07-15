@@ -74,6 +74,7 @@ export default function InvoiceDetail() {
 
   const [importSource, setImportSource] = useState<TimeImportUploadSource>('procas');
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
 
@@ -112,6 +113,7 @@ export default function InvoiceDetail() {
         data: { source: importSource, file: importFile }
       });
       queryClient.invalidateQueries();
+      setImportWarnings(result.warnings ?? []);
       const replaced = result.replacedCount ?? 0;
       toast({
         title: "Time data imported",
@@ -643,6 +645,19 @@ export default function InvoiceDetail() {
               <Button onClick={handleImport} disabled={!importFile || importTime.isPending} className="bg-[#CFAF42] text-white">
                 {importTime.isPending ? "Importing..." : "Upload & Import"}
               </Button>
+              {importWarnings.length > 0 && (
+                <Alert className="border-yellow-200 bg-yellow-50" data-testid="import-warnings">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                  <AlertTitle className="text-yellow-800">Import warnings</AlertTitle>
+                  <AlertDescription className="text-yellow-700">
+                    <ul className="list-disc pl-4">
+                      {importWarnings.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

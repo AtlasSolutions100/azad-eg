@@ -3,3 +3,4 @@
 - [Excel export repair warning](excel-export-defined-names.md) — templates carry broken external/`#REF!` named ranges; strip them before write or Excel shows a "Removed Records: Named range" repair prompt.
 - [Multi-employee package contributors](multi-employee-packages.md) — key contributors by employeeId (name only as legacy fallback); name-only grouping merges people who share a name.
 - [Procas OData test mocks](procas-odata-testing.md) — decode `+` to spaces before matching $filter text in fetch mocks, or every assertion silently misses.
+- [Playwright e2e on NixOS with Clerk](playwright-e2e-nixos-clerk.md) — bundled Chromium won't launch; use Nix chromium executablePath, Clerk test-mode email_code sign-in.
