@@ -1355,6 +1355,7 @@ components:
         classification: { type: string }
         homeRate: { type: number }
         fieldRate: { type: ["number", "null"] }
+        payRate: { type: ["number", "null"] }
         defaultTaskNo: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string }
@@ -1827,16 +1828,18 @@ components:
         mode:
           type: string
           enum: [live, upload]
-        baseUrl: { type: ["string", "null"] }
+        companyCode: { type: ["string", "null"] }
+        username: { type: ["string", "null"] }
         lastSyncAt: { type: ["string", "null"] }
         message: { type: string }
 
     ProcasConnectInput:
       type: object
-      required: [baseUrl, apiKey]
+      required: [companyCode, username, password]
       properties:
-        baseUrl: { type: string }
-        apiKey: { type: string }
+        companyCode: { type: string, minLength: 1 }
+        username: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1 }
 
     ProcasSchedulerStatus:
       type: object
@@ -1958,6 +1961,7 @@ components:
         invoiceNumber: { type: ["string", "null"] }
         invoiceDate: { type: ["string", "null"] }
         previouslyBilled: { type: number }
+        previouslyBilledSource: { type: ["string", "null"] }
         otherDirectCosts: { type: number }
         signatureId: { type: ["integer", "null"] }
         preparedBy: { type: ["string", "null"] }

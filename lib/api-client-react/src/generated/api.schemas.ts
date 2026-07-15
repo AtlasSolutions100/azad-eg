@@ -126,6 +126,8 @@ export interface Employee {
   /** @nullable */
   fieldRate?: number | null;
   /** @nullable */
+  payRate?: number | null;
+  /** @nullable */
   defaultTaskNo?: string | null;
   active: boolean;
   createdAt: string;
@@ -648,15 +650,21 @@ export interface ProcasStatus {
   connected: boolean;
   mode: ProcasStatusMode;
   /** @nullable */
-  baseUrl?: string | null;
+  companyCode?: string | null;
+  /** @nullable */
+  username?: string | null;
   /** @nullable */
   lastSyncAt?: string | null;
   message: string;
 }
 
 export interface ProcasConnectInput {
-  baseUrl: string;
-  apiKey: string;
+  /** @minLength 1 */
+  companyCode: string;
+  /** @minLength 1 */
+  username: string;
+  /** @minLength 1 */
+  password: string;
 }
 
 export interface ProcasSchedulerStatus {
@@ -753,6 +761,8 @@ export interface PackageSummary {
   /** @nullable */
   invoiceDate?: string | null;
   previouslyBilled: number;
+  /** @nullable */
+  previouslyBilledSource?: string | null;
   otherDirectCosts: number;
   /** @nullable */
   signatureId?: number | null;

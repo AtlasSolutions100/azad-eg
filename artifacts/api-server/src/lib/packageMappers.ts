@@ -164,6 +164,7 @@ export function toApiPackageSummary(
     invoiceNumber: pkg.invoiceNumber,
     invoiceDate: pkg.invoiceDate,
     previouslyBilled: pkg.previouslyBilled,
+    previouslyBilledSource: pkg.previouslyBilledSource,
     otherDirectCosts: pkg.otherDirectCosts,
     signatureId: pkg.signatureId,
     preparedBy: pkg.preparedBy,

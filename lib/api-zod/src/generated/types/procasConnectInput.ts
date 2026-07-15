@@ -7,6 +7,10 @@
  */
 
 export interface ProcasConnectInput {
-  baseUrl: string;
-  apiKey: string;
+  /** @minLength 1 */
+  companyCode: string;
+  /** @minLength 1 */
+  username: string;
+  /** @minLength 1 */
+  password: string;
 }

@@ -14,6 +14,8 @@ export interface Employee {
   /** @nullable */
   fieldRate?: number | null;
   /** @nullable */
+  payRate?: number | null;
+  /** @nullable */
   defaultTaskNo?: string | null;
   active: boolean;
   createdAt: string;

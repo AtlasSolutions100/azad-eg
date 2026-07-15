@@ -1,7 +1,7 @@
 import { db, pool, invoicesTable, procasSchedulerTable, type ProcasSchedulerRow } from "@workspace/db";
 import { inArray, eq } from "drizzle-orm";
-import { getProcasConnection } from "./procas";
-import { syncInvoiceFromProcas } from "./procasSync";
+import { getProcasConnection, credsFromConnection } from "./procas";
+import { syncInvoiceFromProcas, syncReferenceFromProcas } from "./procasSync";
 import { logger } from "./logger";
 
 // A fixed 64-bit key identifying the Procas sync cycle advisory lock. Any
@@ -131,8 +131,17 @@ async function recordCycleResult(result: {
 // failure does not abort the rest of the batch.
 export async function runProcasSyncCycle(): Promise<{ skipped: boolean; synced: number; failed: number }> {
   const conn = await getProcasConnection();
-  if (!conn || !conn.connected || !conn.baseUrl || !conn.apiKey) {
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!conn || !creds) {
     return { skipped: true, synced: 0, failed: 0 };
+  }
+
+  // Refresh reference data (employees, work plan rates) once per cycle before
+  // per-invoice labor pulls so new personnel and rates are in place.
+  try {
+    await syncReferenceFromProcas(creds);
+  } catch (e) {
+    logger.warn({ err: e }, "Procas reference data sync failed; continuing with invoice sync");
   }
 
   const openInvoices = await db

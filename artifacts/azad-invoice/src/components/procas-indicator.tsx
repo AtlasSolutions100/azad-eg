@@ -49,8 +49,9 @@ export default function ProcasIndicator() {
   const refreshNow = useRefreshProcasNow();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const [companyCode, setCompanyCode] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [intervalMinutes, setIntervalMinutes] = useState("");
 
   const schedulerMinutes = scheduler ? Math.round(scheduler.intervalMs / 60000) : null;
@@ -67,8 +68,8 @@ export default function ProcasIndicator() {
   const detail = connected
     ? lastSync
       ? `Last synced ${formatDistanceToNow(lastSync, { addSuffix: true })}`
-      : "Connected to Procas API"
-    : "Not connected to Procas API";
+      : "Connected to the Procas Web API"
+    : "Not connected to the Procas Web API";
 
   const refreshStatus = () =>
     Promise.all([
@@ -126,15 +127,17 @@ export default function ProcasIndicator() {
   };
 
   const handleConnect = async () => {
-    if (!baseUrl.trim() || !apiKey.trim()) return;
+    if (!companyCode.trim() || !username.trim() || !password) return;
     try {
-      await connectProcas.mutateAsync({ data: { baseUrl: baseUrl.trim(), apiKey: apiKey.trim() } });
+      await connectProcas.mutateAsync({
+        data: { companyCode: companyCode.trim(), username: username.trim(), password },
+      });
       await refreshStatus();
       setDialogOpen(false);
-      setApiKey("");
+      setPassword("");
       toast({
         title: "Procas connected",
-        description: "Timesheets can now be pulled live from Procas.",
+        description: "Invoicing data can now be pulled live from Procas (daily 6 AM snapshot).",
       });
     } catch (e) {
       toast({
@@ -224,11 +227,16 @@ export default function ProcasIndicator() {
             </p>
             {connected ? (
               <div className="space-y-3">
-                {status?.baseUrl && (
+                {status?.companyCode && (
                   <p className="truncate text-xs text-[#5F5F5F]">
-                    <span className="font-medium text-[#333333]">Endpoint:</span> {status.baseUrl}
+                    <span className="font-medium text-[#333333]">Company code:</span>{" "}
+                    {status.companyCode}
                   </p>
                 )}
+                <p className="text-[11px] leading-relaxed text-[#8A8A8A]">
+                  Procas serves a copy of your data refreshed daily at 6 AM Eastern, so today's
+                  entries appear tomorrow morning.
+                </p>
 
                 <div className="space-y-2 rounded-md border border-[#EDE6CF] bg-[#FBF8EF] p-3">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-[#333333]">
@@ -358,28 +366,39 @@ export default function ProcasIndicator() {
           <DialogHeader>
             <DialogTitle>Connect to Procas</DialogTitle>
             <DialogDescription>
-              Enter your Procas API endpoint and key. We'll verify the connection before saving so
-              timesheets can be pulled automatically.
+              Enter your Procas company code and your PROCAS username and password. We'll verify
+              the connection before saving. Data comes from a copy refreshed daily at 6 AM Eastern.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="procas-base-url">API Base URL</Label>
+              <Label htmlFor="procas-company-code">Company Code</Label>
               <Input
-                id="procas-base-url"
-                placeholder="https://api.procas.example.com/v1"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
+                id="procas-company-code"
+                placeholder="e.g. AZAD (case-sensitive)"
+                value={companyCode}
+                onChange={(e) => setCompanyCode(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="procas-api-key">API Key</Label>
+              <Label htmlFor="procas-username">PROCAS Username</Label>
               <Input
-                id="procas-api-key"
+                id="procas-username"
+                autoComplete="off"
+                placeholder="Your PROCAS username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="procas-password">PROCAS Password</Label>
+              <Input
+                id="procas-password"
                 type="password"
-                placeholder="Your Procas API key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                autoComplete="new-password"
+                placeholder="Your PROCAS password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
           </div>
@@ -389,7 +408,7 @@ export default function ProcasIndicator() {
             </Button>
             <Button
               className="bg-[#CFAF42] text-white hover:bg-[#bd9e36]"
-              disabled={!baseUrl.trim() || !apiKey.trim() || connectProcas.isPending}
+              disabled={!companyCode.trim() || !username.trim() || !password || connectProcas.isPending}
               onClick={handleConnect}
             >
               {connectProcas.isPending ? "Connecting..." : "Connect"}

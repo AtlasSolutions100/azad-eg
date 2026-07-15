@@ -232,6 +232,7 @@ export const ListEmployeesResponseItem = zod.object({
   "classification": zod.string(),
   "homeRate": zod.number(),
   "fieldRate": zod.number().nullish(),
+  "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.string()
@@ -261,6 +262,7 @@ export const CreateEmployeeResponse = zod.object({
   "classification": zod.string(),
   "homeRate": zod.number(),
   "fieldRate": zod.number().nullish(),
+  "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.string()
@@ -280,6 +282,7 @@ export const GetEmployeeResponse = zod.object({
   "classification": zod.string(),
   "homeRate": zod.number(),
   "fieldRate": zod.number().nullish(),
+  "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.string()
@@ -312,6 +315,7 @@ export const UpdateEmployeeResponse = zod.object({
   "classification": zod.string(),
   "homeRate": zod.number(),
   "fieldRate": zod.number().nullish(),
+  "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.string()
@@ -1153,7 +1157,8 @@ export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
 export const GetProcasStatusResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
-  "baseUrl": zod.string().nullish(),
+  "companyCode": zod.string().nullish(),
+  "username": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),
   "message": zod.string()
 })
@@ -1162,15 +1167,22 @@ export const GetProcasStatusResponse = zod.object({
 /**
  * @summary Connect the live Procas API (validates and stores credentials)
  */
+
+
+
+
+
 export const ConnectProcasBody = zod.object({
-  "baseUrl": zod.string(),
-  "apiKey": zod.string()
+  "companyCode": zod.string().min(1),
+  "username": zod.string().min(1),
+  "password": zod.string().min(1)
 })
 
 export const ConnectProcasResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
-  "baseUrl": zod.string().nullish(),
+  "companyCode": zod.string().nullish(),
+  "username": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),
   "message": zod.string()
 })
@@ -1182,7 +1194,8 @@ export const ConnectProcasResponse = zod.object({
 export const DisconnectProcasResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
-  "baseUrl": zod.string().nullish(),
+  "companyCode": zod.string().nullish(),
+  "username": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),
   "message": zod.string()
 })
@@ -1259,6 +1272,7 @@ export const ListPackagesResponseItem = zod.object({
   "invoiceNumber": zod.string().nullish(),
   "invoiceDate": zod.string().nullish(),
   "previouslyBilled": zod.number(),
+  "previouslyBilledSource": zod.string().nullish(),
   "otherDirectCosts": zod.number(),
   "signatureId": zod.number().nullish(),
   "preparedBy": zod.string().nullish(),
@@ -1306,6 +1320,7 @@ export const CreatePackageResponse = zod.object({
   "invoiceNumber": zod.string().nullish(),
   "invoiceDate": zod.string().nullish(),
   "previouslyBilled": zod.number(),
+  "previouslyBilledSource": zod.string().nullish(),
   "otherDirectCosts": zod.number(),
   "signatureId": zod.number().nullish(),
   "preparedBy": zod.string().nullish(),
@@ -1348,6 +1363,7 @@ export const ListPackagesGroupedResponseItem = zod.object({
   "invoiceNumber": zod.string().nullish(),
   "invoiceDate": zod.string().nullish(),
   "previouslyBilled": zod.number(),
+  "previouslyBilledSource": zod.string().nullish(),
   "otherDirectCosts": zod.number(),
   "signatureId": zod.number().nullish(),
   "preparedBy": zod.string().nullish(),
@@ -1390,6 +1406,7 @@ export const GetPackageResponse = zod.object({
   "invoiceNumber": zod.string().nullish(),
   "invoiceDate": zod.string().nullish(),
   "previouslyBilled": zod.number(),
+  "previouslyBilledSource": zod.string().nullish(),
   "otherDirectCosts": zod.number(),
   "signatureId": zod.number().nullish(),
   "preparedBy": zod.string().nullish(),
@@ -1533,6 +1550,7 @@ export const UpdatePackageResponse = zod.object({
   "invoiceNumber": zod.string().nullish(),
   "invoiceDate": zod.string().nullish(),
   "previouslyBilled": zod.number(),
+  "previouslyBilledSource": zod.string().nullish(),
   "otherDirectCosts": zod.number(),
   "signatureId": zod.number().nullish(),
   "preparedBy": zod.string().nullish(),

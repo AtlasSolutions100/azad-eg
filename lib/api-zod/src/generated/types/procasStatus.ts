@@ -11,7 +11,9 @@ export interface ProcasStatus {
   connected: boolean;
   mode: ProcasStatusMode;
   /** @nullable */
-  baseUrl?: string | null;
+  companyCode?: string | null;
+  /** @nullable */
+  username?: string | null;
   /** @nullable */
   lastSyncAt?: string | null;
   message: string;

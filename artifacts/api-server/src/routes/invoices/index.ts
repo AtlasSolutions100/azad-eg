@@ -385,7 +385,7 @@ router.post("/invoices/:id/procas-sync", async (req, res): Promise<void> => {
   }
 
   const conn = await getProcasConnection();
-  if (!conn || !conn.connected || !conn.baseUrl || !conn.apiKey) {
+  if (!conn || !conn.connected || !conn.companyCode || !conn.username || !conn.password) {
     res.status(409).json({ error: "Procas is not connected. Connect it first or use file upload." });
     return;
   }

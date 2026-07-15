@@ -19,6 +19,9 @@ export const packagesTable = pgTable(
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date", { mode: "string" }),
   previouslyBilled: doublePrecision("previously_billed").notNull().default(0),
+  // Where the previouslyBilled value came from: "procas" when defaulted from
+  // Procas BillingHistory, "manual" once a user edits it, null when neither.
+  previouslyBilledSource: text("previously_billed_source"),
   otherDirectCosts: doublePrecision("other_direct_costs").notNull().default(0),
   signatureId: integer("signature_id"),
   preparedBy: text("prepared_by"),

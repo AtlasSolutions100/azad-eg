@@ -57,11 +57,41 @@ afterAll(async () => {
   await resetConnection();
 });
 
-function mockFetch(handler: (url: string, init?: RequestInit) => Response): void {
-  vi.spyOn(globalThis, "fetch").mockImplementation(
-    async (input: string | URL | Request, init?: RequestInit) =>
-      handler(String(input), init),
-  );
+type Row = Record<string, unknown>;
+
+function odataResponse(rows: Row[]): Response {
+  return new Response(JSON.stringify({ value: rows }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function tableFromUrl(url: string): string {
+  // .../ProcasData/v1/{COMPANY}/{Table}?...
+  const path = url.split("?")[0];
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+// Installs a fetch mock that speaks OData. The handler receives the table name
+// and the DECODED url (so filters like "TransDate ge 2026-01-01T00:00:00Z" can
+// be matched as plain text) and returns either rows or a full Response.
+// Unhandled approved tables default to an empty feed.
+function mockOData(handler: (table: string, url: string) => Row[] | Response | undefined): void {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input: string | URL | Request) => {
+    const rawUrl = String(input);
+    const url = decodeURIComponent(rawUrl.replace(/\+/g, " "));
+    const table = tableFromUrl(url);
+    const out = handler(table, url);
+    if (out instanceof Response) return out;
+    return odataResponse(out ?? []);
+  });
+}
+
+const GOOD_CREDS = { companyCode: "AZAD", username: "julie", password: "secret-pass" };
+
+async function connectProcas(): Promise<void> {
+  await request(app).post("/api/procas/connect").send(GOOD_CREDS).expect(200);
 }
 
 describe("procas integration", () => {
@@ -72,40 +102,53 @@ describe("procas integration", () => {
     expect(res.body.mode).toBe("upload");
   });
 
-  it("rejects connect when the API key is unauthorized", async () => {
-    mockFetch((url) => {
-      expect(url).toContain("/health");
+  it("rejects connect when the credentials are unauthorized", async () => {
+    mockOData((table) => {
+      expect(table).toBe("Item"); // ping validates against a small approved table
       return new Response(null, { status: 401 });
     });
-    const res = await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "bad" });
+    const res = await request(app).post("/api/procas/connect").send(GOOD_CREDS);
     expect(res.status).toBe(502);
-    expect(res.body.error).toMatch(/unauthorized/i);
+    expect(res.body.error).toMatch(/unauthorized|username or password/i);
 
     const status = await request(app).get("/api/procas/status");
     expect(status.body.connected).toBe(false);
   });
 
+  it("rejects connect when the company code is unknown (404)", async () => {
+    mockOData(() => new Response(null, { status: 404 }));
+    const res = await request(app).post("/api/procas/connect").send(GOOD_CREDS);
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/company code/i);
+  });
+
   it("connects when credentials validate, then disconnects", async () => {
-    mockFetch(() => new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    const connect = await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com/v1/", apiKey: "good" });
+    let sawBasicAuth = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (typeof headers.Authorization === "string" && headers.Authorization.startsWith("Basic ")) {
+        sawBasicAuth = true;
+      }
+      expect(String(input)).toContain("/AZAD/Item");
+      return odataResponse([{ LCItem: "ENG" }]);
+    });
+    const connect = await request(app).post("/api/procas/connect").send(GOOD_CREDS);
     expect(connect.status).toBe(200);
     expect(connect.body.connected).toBe(true);
     expect(connect.body.mode).toBe("live");
-    expect(connect.body.baseUrl).toBe("https://procas.example.com/v1");
+    expect(connect.body.companyCode).toBe("AZAD");
+    expect(connect.body.username).toBe("julie");
+    expect(sawBasicAuth).toBe(true);
 
-    // The API key must be encrypted at rest, never readable plaintext in the DB.
+    // The password must be encrypted at rest, never readable plaintext in the DB.
     const [stored] = await db
       .select()
       .from(procasConnectionTable)
       .where(eq(procasConnectionTable.id, 1));
-    expect(stored?.apiKey).toBeTruthy();
-    expect(stored?.apiKey).not.toBe("good");
-    expect(stored?.apiKey).not.toContain("good");
-    expect(stored?.apiKey?.startsWith("enc:")).toBe(true);
+    expect(stored?.password).toBeTruthy();
+    expect(stored?.password).not.toBe(GOOD_CREDS.password);
+    expect(stored?.password).not.toContain(GOOD_CREDS.password);
+    expect(stored?.password?.startsWith("enc:")).toBe(true);
 
     const disconnect = await request(app).post("/api/procas/disconnect");
     expect(disconnect.status).toBe(200);
@@ -113,7 +156,7 @@ describe("procas integration", () => {
     expect(disconnect.body.mode).toBe("upload");
   });
 
-  it("pulls timesheets live and imports them as line items", async () => {
+  it("pulls finalized Labor Journal hours and imports them as line items with Procas billing rates", async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [emp] = await db
       .insert(employeesTable)
@@ -144,43 +187,91 @@ describe("procas integration", () => {
       .returning();
     createdInvoiceIds.push(inv.id);
 
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        expect(url).toContain("start=2026-01-01");
-        expect(url).toContain("end=2026-01-15");
-        return new Response(
-          JSON.stringify({
-            timesheets: [
-              { Employee: emp.name, Hours: "40", Rate: "150", Category: "Regular", Location: "Home" },
-              { Employee: emp.name, Hours: "5", Category: "Overtime", Location: "Field" },
-            ],
-          }),
-          { status: 200 },
-        );
+    mockOData((table, url) => {
+      if (table === "GLDetail") {
+        // Period bounds and project must be part of the OData filter.
+        expect(url).toContain("TransDate ge 2026-01-01T00:00:00Z");
+        expect(url).toContain("TransDate le 2026-01-15T23:59:59Z");
+        expect(url).toContain("Project eq 'JOB'");
+        return [
+          // Two regular days aggregate into one line.
+          { TransDate: "2026-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", Organization: "E1", OrganizationDesc: emp.name, PayCode: "REG", PayCodeDesc: "Regular", GLQty: 8 },
+          { TransDate: "2026-01-06T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", Organization: "E1", OrganizationDesc: emp.name, PayCode: "REG", PayCodeDesc: "Regular", GLQty: 32 },
+          // OT has no BillingItem rate → falls back to the employee's local rate.
+          { TransDate: "2026-01-07T00:00:00Z", Project: "JOB", LCItem: "ENG-OT", LCItemDesc: "Engineer OT", Organization: "E1", OrganizationDesc: emp.name, PayCode: "OT", PayCodeDesc: "Overtime", GLQty: 5 },
+        ];
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return [
+          { Project: "JOB", LCItem: "ENG", BillingRate: 155, BillingDateBeginning: "2025-01-01T00:00:00Z", BillingDateEnding: null },
+        ];
+      }
+      if (table === "BillingHistory") return [];
+      return [];
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
     const sync = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
     expect(sync.status).toBe(200);
     expect(sync.body.source).toBe("procas");
-    expect(sync.body.importedCount).toBe(2);
+    expect(sync.body.importedCount).toBe(2); // aggregated per person/LC/category
 
     const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, inv.id));
     expect(items).toHaveLength(2);
-    // OT row had no rate in the feed → falls back to the employee's field rate.
+    const regRow = items.find((i) => i.category === "regular");
+    expect(regRow?.hours).toBe(40); // 8 + 32 aggregated
+    expect(regRow?.rate).toBe(155); // Billing Setup rate wins over local rate
     const otRow = items.find((i) => i.category === "ot");
-    expect(otRow?.rate).toBe(175);
-    expect(otRow?.location).toBe("field");
+    expect(otRow?.hours).toBe(5);
+    expect(otRow?.rate).toBe(150); // no Procas rate → local home rate fallback
+    // A warning surfaces the missing Procas rate.
+    expect(sync.body.warnings.some((w: string) => /No Procas billing rate/i.test(w))).toBe(true);
 
     const status = await request(app).get("/api/procas/status");
     expect(status.body.lastSyncAt).toBeTruthy();
+  });
+
+  it("falls back to raw Timesheet hours with a warning when the Labor Journal is empty", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `TS Emp ${suffix}`, classification: "Engineer", homeRate: 100 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({ code: `TS-WP-${suffix}`, title: "TS WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+    const [inv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `TS-INV-${suffix}`,
+        invoiceDate: "2026-02-01",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-01-15",
+      })
+      .returning();
+    createdInvoiceIds.push(inv.id);
+
+    mockOData((table, url) => {
+      if (table === "GLDetail") return [];
+      if (table === "Timesheet") {
+        expect(url).toContain("WorkDate ge 2026-01-01T00:00:00Z");
+        return [
+          { Personnel: "E9", PersonnelName: emp.name, Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", PayCode: "REG", PayCodeDesc: "Regular", WorkDate: "2026-01-05T00:00:00Z", HoursWorked: 8 },
+        ];
+      }
+      return [];
+    });
+
+    await connectProcas();
+    const sync = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
+    expect(sync.status).toBe(200);
+    expect(sync.body.importedCount).toBe(1);
+    expect(sync.body.warnings.some((w: string) => /Timesheet hours/i.test(w))).toBe(true);
   });
 
   it("re-syncing the same period replaces line items instead of duplicating them", async () => {
@@ -192,14 +283,7 @@ describe("procas integration", () => {
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `RESYNC-WP-${suffix}`,
-        title: "Resync WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `RESYNC-WP-${suffix}`, title: "Resync WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
     const [inv] = await db
@@ -214,43 +298,34 @@ describe("procas integration", () => {
       .returning();
     createdInvoiceIds.push(inv.id);
 
-    // The same period returns the same two rows on every pull.
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        return new Response(
-          JSON.stringify({
-            timesheets: [
-              { Employee: emp.name, Hours: "40", Rate: "150", Category: "Regular", Location: "Home" },
-              { Employee: emp.name, Hours: "5", Rate: "175", Category: "Overtime", Location: "Field" },
-            ],
-          }),
-          { status: 200 },
-        );
+    // The same period returns the same two categories on every pull.
+    mockOData((table) => {
+      if (table === "GLDetail") {
+        return [
+          { TransDate: "2026-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 40 },
+          { TransDate: "2026-01-06T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Overtime", GLQty: 5 },
+        ];
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return [{ Project: "JOB", LCItem: "ENG", BillingRate: 150, BillingDateBeginning: null, BillingDateEnding: null }];
+      }
+      return [];
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
-    // First sync imports both rows; nothing existed to replace.
     const first = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
     expect(first.status).toBe(200);
     expect(first.body.importedCount).toBe(2);
     expect(first.body.replacedCount).toBe(0);
 
-    // Second sync of the same period must replace, not stack: the prior two
-    // auto-imported rows are cleared and re-inserted, and replacedCount reports it.
+    // Second sync of the same period must replace, not stack.
     const second = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
     expect(second.status).toBe(200);
     expect(second.body.importedCount).toBe(2);
     expect(second.body.replacedCount).toBe(2);
     expect(second.body.warnings.some((w: string) => /Replaced 2 previously imported/i.test(w))).toBe(true);
 
-    // Only the freshly pulled rows remain — no duplicate labor accumulated.
     const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, inv.id));
     expect(items).toHaveLength(2);
     expect(items.every((i) => i.source === "procas")).toBe(true);
@@ -265,14 +340,7 @@ describe("procas integration", () => {
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `RESYNC-MIX-WP-${suffix}`,
-        title: "Resync Mixed WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `RESYNC-MIX-WP-${suffix}`, title: "Resync Mixed WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
     const [inv] = await db
@@ -287,23 +355,19 @@ describe("procas integration", () => {
       .returning();
     createdInvoiceIds.push(inv.id);
 
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        return new Response(
-          JSON.stringify({
-            timesheets: [{ Employee: emp.name, Hours: "8", Rate: "100", Category: "Regular", Location: "Home" }],
-          }),
-          { status: 200 },
-        );
+    mockOData((table) => {
+      if (table === "GLDetail") {
+        return [
+          { TransDate: "2026-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 8 },
+        ];
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return [{ Project: "JOB", LCItem: "ENG", BillingRate: 100, BillingDateBeginning: null, BillingDateEnding: null }];
+      }
+      return [];
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
     // A hand-entered row should survive every re-sync.
     const manual = await request(app)
@@ -318,8 +382,6 @@ describe("procas integration", () => {
       });
     expect(manual.status).toBe(201);
 
-    // Two syncs of the same period: the imported row is replaced each time, the
-    // manual row is never touched.
     await request(app).post(`/api/invoices/${inv.id}/procas-sync`).expect(200);
     const second = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
     expect(second.status).toBe(200);
@@ -331,6 +393,139 @@ describe("procas integration", () => {
     const importedRow = items.find((i) => i.source === "procas");
     expect(manualRow?.employeeName).toBe("Hand Entered");
     expect(importedRow).toBeDefined();
+  });
+
+  it("defaults an invoice's Previously Billed from BillingHistory but never overrides a manual value", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [emp] = await db
+      .insert(employeesTable)
+      .values({ name: `PB Emp ${suffix}`, classification: "Engineer", homeRate: 100 })
+      .returning();
+    createdEmployeeIds.push(emp.id);
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({ code: `PB-WP-${suffix}`, title: "PB WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+    const [inv] = await db
+      .insert(invoicesTable)
+      .values({
+        workPlanId: wp.id,
+        invoiceNumber: `PB-INV-${suffix}`,
+        invoiceDate: "2026-02-01",
+        periodStart: "2026-01-01",
+        periodEnd: "2026-01-15",
+      })
+      .returning();
+    createdInvoiceIds.push(inv.id);
+
+    mockOData((table, url) => {
+      if (table === "GLDetail") {
+        return [
+          { TransDate: "2026-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 8 },
+        ];
+      }
+      if (table === "BillingItem") {
+        return [{ Project: "JOB", LCItem: "ENG", BillingRate: 100, BillingDateBeginning: null, BillingDateEnding: null }];
+      }
+      if (table === "BillingHistory") {
+        expect(url).toContain("IsVoided eq false");
+        expect(url).toContain("InvoiceDate lt 2026-01-01T00:00:00Z");
+        return [
+          { Project: "JOB", InvoiceNumber: "OLD-1", InvoiceDate: "2025-11-01T00:00:00Z", TotalBillingAmount: 1200.5, IsVoided: false },
+          { Project: "JOB", InvoiceNumber: "OLD-2", InvoiceDate: "2025-12-01T00:00:00Z", TotalBillingAmount: 800, IsVoided: false },
+        ];
+      }
+      return [];
+    });
+
+    await connectProcas();
+    const sync = await request(app).post(`/api/invoices/${inv.id}/procas-sync`);
+    expect(sync.status).toBe(200);
+
+    const [after] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, inv.id));
+    expect(after?.previouslyBilled).toBeCloseTo(2000.5, 2);
+    expect(sync.body.warnings.some((w: string) => /Previously Billed set to \$2000\.50/i.test(w))).toBe(true);
+
+    // Now the user sets a manual value; a re-sync must not clobber it.
+    await db
+      .update(invoicesTable)
+      .set({ previouslyBilled: 9999, carryOverManual: true })
+      .where(eq(invoicesTable.id, inv.id));
+    await request(app).post(`/api/invoices/${inv.id}/procas-sync`).expect(200);
+    const [afterManual] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, inv.id));
+    expect(afterManual?.previouslyBilled).toBe(9999);
+  });
+
+  it("reference sync creates and updates employees from Personnel with approved fields only", async () => {
+    const { syncReferenceFromProcas } = await import("../lib/procasSync");
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const newName = `Ref New Emp ${suffix}`;
+    const existingName = `Ref Existing Emp ${suffix}`;
+    const [existing] = await db
+      .insert(employeesTable)
+      .values({ name: existingName, classification: "Old Class", homeRate: 90, active: true })
+      .returning();
+    createdEmployeeIds.push(existing.id);
+
+    mockOData((table) => {
+      if (table === "Personnel") {
+        return [
+          { Personnel: "P1", PersonnelName: newName, PersonnelLaborCategory: "ENG", PersonnelLaborCategoryDesc: "Engineer II", PersonnelJobTitle: "Engineer", IsActivePersonnel: true },
+          { Personnel: "P2", PersonnelName: existingName, PersonnelLaborCategory: "SR", PersonnelLaborCategoryDesc: "Senior Engineer", PersonnelJobTitle: "Sr Engineer", IsActivePersonnel: false },
+        ];
+      }
+      if (table === "PayRateInfo") {
+        return [
+          { Personnel: "P1", EffectiveDate: "2026-01-01T00:00:00Z", PayRate: 62.5, IsActivePayRateInfo: true },
+        ];
+      }
+      if (table === "Item") {
+        return [{ LCItem: "ENG", LCItemDesc: "Engineer II", DefaultBillingRate: 145, IsActiveLCItem: true, IsLaborCategory: true }];
+      }
+      return [];
+    });
+
+    const result = await syncReferenceFromProcas(GOOD_CREDS);
+    expect(result.employeesCreated).toBe(1);
+    expect(result.employeesUpdated).toBe(1);
+
+    const created = await db.select().from(employeesTable).where(eq(employeesTable.name, newName));
+    expect(created).toHaveLength(1);
+    createdEmployeeIds.push(created[0].id);
+    expect(created[0].classification).toBe("Engineer II");
+    expect(created[0].homeRate).toBe(145); // Item default billing rate
+    expect(created[0].payRate).toBe(62.5);
+
+    const [updated] = await db.select().from(employeesTable).where(eq(employeesTable.id, existing.id));
+    expect(updated.classification).toBe("Senior Engineer");
+    expect(updated.active).toBe(false);
+  });
+
+  it("reference sync refreshes work plan rates from BillingAccount by job number", async () => {
+    const { syncReferenceFromProcas } = await import("../lib/procasSync");
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const job = `RATE-JOB-${suffix}`;
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({ code: `RATE-WP-${suffix}`, title: "Rate WP", client: "Client", jobNumber: job, poNumber: "PO", totalBudget: 50000, fringeRate: 100 })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+
+    mockOData((table) => {
+      if (table === "Project") return [{ Project: job, ProjectDesc: "Rate Project", ContractNumber: "CN-1" }];
+      if (table === "BillingAccount") {
+        return [{ Project: job, FringePercent: 120.58, OverheadPercent: 15.5, FeePercent: 8 }];
+      }
+      return [];
+    });
+
+    const result = await syncReferenceFromProcas(GOOD_CREDS);
+    expect(result.workPlansUpdated).toBe(1);
+    const [after] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, wp.id));
+    expect(after.fringeRate).toBeCloseTo(120.58, 2);
+    expect(after.overheadRate).toBeCloseTo(15.5, 2);
+    expect(after.fixedFeeRate).toBeCloseTo(8, 2);
   });
 
   it("scheduled cycle skips entirely when Procas is in upload mode", async () => {
@@ -352,23 +547,13 @@ describe("procas integration", () => {
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `SCHED-WP-${suffix}`,
-        title: "Sched WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `SCHED-WP-${suffix}`, title: "Sched WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
-    // Use a far-future period unique to this test so the global scheduled cycle
-    // (which pulls every open invoice in the DB, including seed data) only
-    // imports rows for THIS invoice — other open invoices fall on other periods
-    // and get an empty feed.
+    // A far-future period unique to this test: the global cycle pulls every
+    // open invoice, but only this period's filter returns rows.
     const periodStart = "2099-01-01";
-    const periodEnd = "2099-01-15";
 
     const [draftInv] = await db
       .insert(invoicesTable)
@@ -377,7 +562,7 @@ describe("procas integration", () => {
         invoiceNumber: `SCHED-DRAFT-${suffix}`,
         invoiceDate: "2099-02-01",
         periodStart,
-        periodEnd,
+        periodEnd: "2099-01-15",
         status: "draft",
       })
       .returning();
@@ -390,27 +575,25 @@ describe("procas integration", () => {
         invoiceNumber: `SCHED-APPROVED-${suffix}`,
         invoiceDate: "2099-02-01",
         periodStart,
-        periodEnd,
+        periodEnd: "2099-01-15",
         status: "approved",
       })
       .returning();
     createdInvoiceIds.push(approvedInv.id);
 
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        const rows = url.includes(`start=${periodStart}`)
-          ? [{ Employee: emp.name, Hours: "8", Rate: "120", Category: "Regular", Location: "Home" }]
-          : [];
-        return new Response(JSON.stringify({ timesheets: rows }), { status: 200 });
+    mockOData((table, url) => {
+      if (table === "GLDetail" && url.includes(`TransDate ge ${periodStart}T00:00:00Z`)) {
+        return [
+          { TransDate: "2099-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 8 },
+        ];
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return [{ Project: "JOB", LCItem: "ENG", BillingRate: 120, BillingDateBeginning: null, BillingDateEnding: null }];
+      }
+      return [];
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
     const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(false);
@@ -422,7 +605,6 @@ describe("procas integration", () => {
     const approvedItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, approvedInv.id));
     expect(approvedItems).toHaveLength(0);
 
-    // Last-synced reflects the scheduled pull.
     const status = await request(app).get("/api/procas/status");
     expect(status.body.lastSyncAt).toBeTruthy();
   });
@@ -446,13 +628,9 @@ describe("procas integration", () => {
     const persisted = await request(app).get("/api/procas/scheduler");
     expect(persisted.body.intervalMs).toBe(5 * 60 * 1000);
 
-    // Too small (< 1 minute) is rejected.
-    const tooSmall = await request(app)
-      .put("/api/procas/scheduler")
-      .send({ intervalMs: 1000 });
+    const tooSmall = await request(app).put("/api/procas/scheduler").send({ intervalMs: 1000 });
     expect(tooSmall.status).toBe(400);
 
-    // Too large (> 24 hours) is rejected.
     const tooLarge = await request(app)
       .put("/api/procas/scheduler")
       .send({ intervalMs: 48 * 60 * 60 * 1000 });
@@ -476,19 +654,11 @@ describe("procas integration", () => {
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `REFRESH-WP-${suffix}`,
-        title: "Refresh WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `REFRESH-WP-${suffix}`, title: "Refresh WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
     const periodStart = "2098-01-01";
-    const periodEnd = "2098-01-15";
     const [draftInv] = await db
       .insert(invoicesTable)
       .values({
@@ -496,27 +666,25 @@ describe("procas integration", () => {
         invoiceNumber: `REFRESH-DRAFT-${suffix}`,
         invoiceDate: "2098-02-01",
         periodStart,
-        periodEnd,
+        periodEnd: "2098-01-15",
         status: "draft",
       })
       .returning();
     createdInvoiceIds.push(draftInv.id);
 
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        const rows = url.includes(`start=${periodStart}`)
-          ? [{ Employee: emp.name, Hours: "8", Rate: "120", Category: "Regular", Location: "Home" }]
-          : [];
-        return new Response(JSON.stringify({ timesheets: rows }), { status: 200 });
+    mockOData((table, url) => {
+      if (table === "GLDetail" && url.includes(`TransDate ge ${periodStart}T00:00:00Z`)) {
+        return [
+          { TransDate: "2098-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 8 },
+        ];
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return [{ Project: "JOB", LCItem: "ENG", BillingRate: 120, BillingDateBeginning: null, BillingDateEnding: null }];
+      }
+      return [];
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
     const res = await request(app).post("/api/procas/refresh");
     expect(res.status).toBe(200);
@@ -528,7 +696,6 @@ describe("procas integration", () => {
     const items = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, draftInv.id));
     expect(items).toHaveLength(1);
 
-    // The scheduler status endpoint reflects the recorded cycle.
     const status = await request(app).get("/api/procas/scheduler");
     expect(status.body.lastSynced).toBeGreaterThanOrEqual(1);
     expect(status.body.lastRunAt).toBeTruthy();
@@ -544,19 +711,10 @@ describe("procas integration", () => {
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `FAIL-WP-${suffix}`,
-        title: "Fail WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `FAIL-WP-${suffix}`, title: "Fail WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
-    // Two open invoices on distinct far-future periods so the global cycle's
-    // feed can be branched per-invoice: one period errors, the other succeeds.
     const badStart = "2097-01-01";
     const goodStart = "2096-01-01";
 
@@ -586,38 +744,30 @@ describe("procas integration", () => {
       .returning();
     createdInvoiceIds.push(goodInv.id);
 
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        // The bad invoice's pull returns a 502 → fetch_failed for that invoice.
-        if (url.includes(`start=${badStart}`)) return new Response(null, { status: 502 });
-        // The good invoice's pull returns valid rows → it still syncs.
-        if (url.includes(`start=${goodStart}`)) {
-          return new Response(
-            JSON.stringify({
-              timesheets: [{ Employee: emp.name, Hours: "8", Rate: "110", Category: "Regular", Location: "Home" }],
-            }),
-            { status: 200 },
-          );
+    mockOData((table, url) => {
+      if (table === "GLDetail") {
+        // The bad invoice's period returns a 502 → fetch_failed for that invoice.
+        if (url.includes(`TransDate ge ${badStart}T00:00:00Z`)) return new Response(null, { status: 502 });
+        if (url.includes(`TransDate ge ${goodStart}T00:00:00Z`)) {
+          return [
+            { TransDate: "2096-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 8 },
+          ];
         }
-        // Every other open invoice in the DB falls on some other period → empty feed.
-        return new Response(JSON.stringify({ timesheets: [] }), { status: 200 });
+        return [];
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return [{ Project: "JOB", LCItem: "ENG", BillingRate: 110, BillingDateBeginning: null, BillingDateEnding: null }];
+      }
+      return [];
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
     const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(false);
-    // Exactly one invoice errored, exactly one synced; empty feeds are no-ops.
     expect(result.failed).toBe(1);
     expect(result.synced).toBe(1);
 
-    // The failed invoice imported nothing; the healthy one still got its row.
     const badItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, badInv.id));
     expect(badItems).toHaveLength(0);
     const goodItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, goodInv.id));
@@ -629,46 +779,30 @@ describe("procas integration", () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `EMPTY-WP-${suffix}`,
-        title: "Empty WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `EMPTY-WP-${suffix}`, title: "Empty WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
-    const periodStart = "2095-01-01";
     const [inv] = await db
       .insert(invoicesTable)
       .values({
         workPlanId: wp.id,
         invoiceNumber: `EMPTY-DRAFT-${suffix}`,
         invoiceDate: "2095-02-01",
-        periodStart,
+        periodStart: "2095-01-01",
         periodEnd: "2095-01-15",
         status: "draft",
       })
       .returning();
     createdInvoiceIds.push(inv.id);
 
-    // All invoices (including ours) get an empty feed for this cycle.
-    mockFetch((url) => {
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) return new Response(JSON.stringify({ timesheets: [] }), { status: 200 });
-      return new Response(null, { status: 404 });
-    });
+    // Every table (GLDetail, Timesheet, reference tables) returns empty.
+    mockOData(() => []);
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
     const result = await runProcasSyncCycle();
     expect(result.skipped).toBe(false);
-    // Empty feeds are not failures and produce no imports.
     expect(result.failed).toBe(0);
     expect(result.synced).toBe(0);
 
@@ -681,19 +815,10 @@ describe("procas integration", () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `OVL-WP-${suffix}`,
-        title: "Overlap WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `OVL-WP-${suffix}`, title: "Overlap WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
-    // Guarantee at least one open invoice so the cycle actually enters its loop
-    // (and therefore reaches the gated fetch below).
     const [inv] = await db
       .insert(invoicesTable)
       .values({
@@ -707,43 +832,34 @@ describe("procas integration", () => {
       .returning();
     createdInvoiceIds.push(inv.id);
 
-    // The first /timesheets fetch parks on this gate, holding the cycle open so
-    // a second tick arrives mid-flight. All feeds resolve empty (no imports).
+    // The first GLDetail fetch parks on this gate, holding the cycle open so a
+    // second tick arrives mid-flight. All feeds resolve empty (no imports).
     let releaseGate: () => void = () => {};
     const gate = new Promise<void>((res) => {
       releaseGate = res;
     });
-    let timesheetCalls = 0;
+    let glCalls = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        timesheetCalls += 1;
+      const url = decodeURIComponent(String(input).replace(/\+/g, " "));
+      if (tableFromUrl(url) === "GLDetail") {
+        glCalls += 1;
         await gate;
-        return new Response(JSON.stringify({ timesheets: [] }), { status: 200 });
       }
-      return new Response(null, { status: 404 });
+      return odataResponse([]);
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
-    // Start the first cycle (do not await) — it will park on the gate.
     const first = tick();
-    // Wait until the in-flight cycle has actually issued its first fetch.
-    for (let i = 0; i < 100 && timesheetCalls < 1; i += 1) {
+    for (let i = 0; i < 100 && glCalls < 1; i += 1) {
       await new Promise((r) => setTimeout(r, 5));
     }
-    expect(timesheetCalls).toBe(1);
+    expect(glCalls).toBe(1);
 
-    // A second tick while the first is still running must be a no-op: the guard
-    // returns immediately and issues no additional fetch.
+    // A second tick while the first is running must be a no-op.
     await tick();
-    expect(timesheetCalls).toBe(1);
+    expect(glCalls).toBe(1);
 
-    // Let the first cycle drain to completion so the running flag resets.
     releaseGate();
     await first;
   });
@@ -752,14 +868,7 @@ describe("procas integration", () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `PC-WP2-${suffix}`,
-        title: "Procas WP2",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `PC-WP2-${suffix}`, title: "Procas WP2", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
     const [inv] = await db
@@ -786,25 +895,16 @@ describe("procas integration", () => {
 
     const errorSpy = vi.spyOn(logger, "error").mockImplementation((() => logger) as never);
 
-    // Force the whole cycle to blow up the way a database hiccup would: the
-    // open-invoices read (reached right after the connection check) rejects.
-    // This is an unexpected, top-level error — not a per-invoice Procas error.
     const connSpy = vi
       .spyOn(procasModule, "getProcasConnection")
       .mockRejectedValueOnce(new Error("database hiccup while loading open invoices"));
 
-    // The top-level safety net must swallow the throw — tick resolves, it never
-    // rejects, so a single bad cycle can't take the background loop down.
     await expect(scheduler.tick()).resolves.toBeUndefined();
-    // ...and the failure is logged, not lost silently.
     expect(errorSpy).toHaveBeenCalled();
 
-    // The in-instance running guard is reset afterward so the loop isn't wedged.
     const afterThrow = await scheduler.getSchedulerState();
     expect(afterThrow.running).toBe(false);
 
-    // A later tick runs normally (here it skips cleanly because Procas is not
-    // connected) instead of being permanently blocked by a stuck guard.
     connSpy.mockRestore();
     await expect(scheduler.tick()).resolves.toBeUndefined();
   });
@@ -812,8 +912,7 @@ describe("procas integration", () => {
   it("skips a concurrent cycle cleanly when another instance holds the cross-instance sync lock", async () => {
     const { tick, getSchedulerState } = await import("../lib/procasScheduler");
     const { pool } = await import("@workspace/db");
-    // Must match SYNC_LOCK_KEY in procasScheduler.ts. A regression that changes
-    // or removes this key would let two instances run a cycle at once.
+    // Must match SYNC_LOCK_KEY in procasScheduler.ts.
     const SYNC_LOCK_KEY = 0x70726373; // "prcs"
 
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -824,21 +923,11 @@ describe("procas integration", () => {
     createdEmployeeIds.push(emp.id);
     const [wp] = await db
       .insert(workPlansTable)
-      .values({
-        code: `LOCK-WP-${suffix}`,
-        title: "Lock WP",
-        client: "Client",
-        jobNumber: "JOB",
-        poNumber: "PO",
-        totalBudget: 100000,
-      })
+      .values({ code: `LOCK-WP-${suffix}`, title: "Lock WP", client: "Client", jobNumber: "JOB", poNumber: "PO", totalBudget: 100000 })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
-    // Far-future period unique to this test so the global cycle only imports
-    // rows for THIS invoice when it does run.
     const periodStart = "2093-01-01";
-    const periodEnd = "2093-01-15";
     const [draftInv] = await db
       .insert(invoicesTable)
       .values({
@@ -846,33 +935,33 @@ describe("procas integration", () => {
         invoiceNumber: `LOCK-DRAFT-${suffix}`,
         invoiceDate: "2093-02-01",
         periodStart,
-        periodEnd,
+        periodEnd: "2093-01-15",
         status: "draft",
       })
       .returning();
     createdInvoiceIds.push(draftInv.id);
 
-    let timesheetCalls = 0;
+    let glCalls = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.includes("/health")) return new Response(null, { status: 200 });
-      if (url.includes("/timesheets")) {
-        timesheetCalls += 1;
-        const rows = url.includes(`start=${periodStart}`)
-          ? [{ Employee: emp.name, Hours: "8", Rate: "120", Category: "Regular", Location: "Home" }]
-          : [];
-        return new Response(JSON.stringify({ timesheets: rows }), { status: 200 });
+      const url = decodeURIComponent(String(input).replace(/\+/g, " "));
+      const table = tableFromUrl(url);
+      if (table === "GLDetail") {
+        glCalls += 1;
+        if (url.includes(`TransDate ge ${periodStart}T00:00:00Z`)) {
+          return odataResponse([
+            { TransDate: "2093-01-05T00:00:00Z", Project: "JOB", LCItem: "ENG", LCItemDesc: "Engineer", OrganizationDesc: emp.name, PayCodeDesc: "Regular", GLQty: 8 },
+          ]);
+        }
+        return odataResponse([]);
       }
-      return new Response(null, { status: 404 });
+      if (table === "BillingItem") {
+        return odataResponse([{ Project: "JOB", LCItem: "ENG", BillingRate: 120, BillingDateBeginning: null, BillingDateEnding: null }]);
+      }
+      return odataResponse([]);
     });
 
-    await request(app)
-      .post("/api/procas/connect")
-      .send({ baseUrl: "https://procas.example.com", apiKey: "good" })
-      .expect(200);
+    await connectProcas();
 
-    // Simulate a second autoscale instance already mid-cycle by holding the
-    // cross-instance advisory lock on a separate pooled session.
     const holder = await pool.connect();
     try {
       const held = await holder.query<{ locked: boolean }>(
@@ -881,10 +970,8 @@ describe("procas integration", () => {
       );
       expect(held.rows[0]?.locked).toBe(true);
 
-      // A tick on THIS instance cannot acquire the lock, so it must skip cleanly:
-      // the cycle body never runs (no timesheets fetch), no rows imported, no error.
       await tick();
-      expect(timesheetCalls).toBe(0);
+      expect(glCalls).toBe(0);
 
       const itemsWhileLocked = await db
         .select()
@@ -892,21 +979,17 @@ describe("procas integration", () => {
         .where(eq(lineItemsTable.invoiceId, draftInv.id));
       expect(itemsWhileLocked).toHaveLength(0);
 
-      // Persisted state is untouched (no cycle result recorded) and no error raised.
       const state = await getSchedulerState();
       expect(state.lastRunAt).toBeNull();
       expect(state.lastError).toBeNull();
       expect(state.lastSynced).toBe(0);
     } finally {
-      // Release the lock so it does not leak into other specs.
       await holder.query("SELECT pg_advisory_unlock($1)", [SYNC_LOCK_KEY]);
       holder.release();
     }
 
-    // Once the lock is free, a later tick acquires it and runs normally — proving
-    // the earlier skip was caused purely by the held lock, not a broken cycle.
     await tick();
-    expect(timesheetCalls).toBeGreaterThanOrEqual(1);
+    expect(glCalls).toBeGreaterThanOrEqual(1);
     const itemsAfterRelease = await db
       .select()
       .from(lineItemsTable)
@@ -921,17 +1004,13 @@ describe("procas integration", () => {
     const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
 
     try {
-      // A valid env interval is honored. No UI-configured row exists (beforeEach
-      // clears the scheduler table), so the env value is what takes effect.
       process.env["PROCAS_SYNC_INTERVAL_MS"] = String(5 * 60 * 1000);
       await startProcasScheduler();
-      // Calling it again is a no-op: a single timer stays active.
       await startProcasScheduler();
       expect(setIntervalSpy).toHaveBeenCalledTimes(1);
       expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(5 * 60 * 1000);
       stopProcasScheduler();
 
-      // An invalid (non-numeric) env value falls back to the built-in default.
       setIntervalSpy.mockClear();
       process.env["PROCAS_SYNC_INTERVAL_MS"] = "not-a-number";
       await startProcasScheduler();
@@ -939,7 +1018,6 @@ describe("procas integration", () => {
       expect(setIntervalSpy.mock.calls[0]?.[1]).toBe(DEFAULT_INTERVAL_MS);
       stopProcasScheduler();
 
-      // An unset env value also falls back to the default.
       setIntervalSpy.mockClear();
       delete process.env["PROCAS_SYNC_INTERVAL_MS"];
       await startProcasScheduler();

@@ -6,6 +6,9 @@ export const employeesTable = pgTable("employees", {
   classification: text("classification").notNull(),
   homeRate: doublePrecision("home_rate").notNull(),
   fieldRate: doublePrecision("field_rate"),
+  // Payroll pay rate synced from the Procas PayRateInfo table (informational;
+  // invoices bill at billing rates, not payroll rates).
+  payRate: doublePrecision("pay_rate"),
   defaultTaskNo: text("default_task_no"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

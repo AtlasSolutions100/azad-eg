@@ -70,6 +70,11 @@ export async function seedDatabase(): Promise<void> {
       { sheet: "Invoice", column: "% Expended", field: "percentExpended", source: "Computed", formula: "Total To Date ÷ Budget × 100", description: "Percentage of work plan budget expended." },
       { sheet: "Master File", column: "C3", field: "invoiceNumber", source: "Input", formula: null, description: "Invoice number drives the workbook header." },
       { sheet: "Master File", column: "D6 / G6", field: "period", source: "Input", formula: null, description: "Service period start and end dates." },
+      { sheet: "Procas Mapping", column: "Hours", field: "hours", source: "Procas", formula: "GLDetail.GLQty (finalized Labor Journal), Timesheet.HoursWorked as fallback", description: "Labor hours per person and labor category for the billing period, from the daily 6 AM Procas snapshot." },
+      { sheet: "Procas Mapping", column: "Billing Rate", field: "rate", source: "Procas", formula: "BillingItem.BillingRate effective for the period (Item.DefaultBillingRate for new employees)", description: "Contract billing rate from Procas Billing Setup for the job's labor category." },
+      { sheet: "Procas Mapping", column: "Employee", field: "employeeName", source: "Procas", formula: "Personnel.PersonnelName + labor category / title / active flag", description: "Approved fields only — no addresses, SSNs, or other PII are ever pulled." },
+      { sheet: "Procas Mapping", column: "Fringe / Overhead / Fee %", field: "workPlanRates", source: "Procas", formula: "BillingAccount.FringePercent / OverheadPercent / FeePercent by job number", description: "Work plan rates refreshed from Procas Billing Setup. FCCM is not mapped from Procas — pending confirmation of the source field." },
+      { sheet: "Procas Mapping", column: "Previously Billed", field: "previouslyBilled", source: "Procas", formula: "Σ BillingHistory.TotalBillingAmount (non-voided, invoiced before period start)", description: "Defaulted from Procas billing history; a manual edit always wins and is never overwritten." },
     ]);
     logger.info("Seeded column definitions");
   }

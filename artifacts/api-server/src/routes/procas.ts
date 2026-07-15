@@ -45,10 +45,11 @@ function statusPayload(conn: Awaited<ReturnType<typeof getProcasConnection>>) {
   return {
     connected,
     mode: connected ? ("live" as const) : ("upload" as const),
-    baseUrl: conn?.baseUrl ?? null,
+    companyCode: conn?.companyCode ?? null,
+    username: conn?.username ?? null,
     lastSyncAt: conn?.lastSyncAt ? conn.lastSyncAt.toISOString() : null,
     message: connected
-      ? "Timesheet data is pulled live from the Procas API."
+      ? "Live pull active — Procas serves a copy of your data refreshed daily at 6 AM Eastern."
       : "Procas is not connected. Import timesheet data via CSV/Excel upload.",
   };
 }
@@ -68,9 +69,9 @@ router.post("/procas/connect", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { baseUrl, apiKey } = parsed.data;
+  const { companyCode, username, password } = parsed.data;
 
-  const ping = await pingProcas({ baseUrl, apiKey });
+  const ping = await pingProcas({ companyCode, username, password });
   if (!ping.ok) {
     res.status(502).json({ error: ping.error ?? "Could not connect to Procas." });
     return;
@@ -78,14 +79,15 @@ router.post("/procas/connect", async (req, res): Promise<void> => {
 
   const conn = await saveProcasConnection({
     connected: true,
-    baseUrl: baseUrl.trim().replace(/\/+$/, ""),
-    apiKey,
+    companyCode: companyCode.trim(),
+    username: username.trim(),
+    password,
     lastSyncAt: null,
   });
   await recordAudit({
     action: "connected Procas",
     entityType: "integration",
-    description: `Live Procas connection established (${conn.baseUrl})`,
+    description: `Live Procas OData connection established (company ${conn.companyCode})`,
   });
   res.json(ConnectProcasResponse.parse(statusPayload(conn)));
 });
@@ -94,8 +96,9 @@ router.post("/procas/connect", async (req, res): Promise<void> => {
 router.post("/procas/disconnect", async (_req, res): Promise<void> => {
   const conn = await saveProcasConnection({
     connected: false,
-    baseUrl: null,
-    apiKey: null,
+    companyCode: null,
+    username: null,
+    password: null,
     lastSyncAt: null,
   });
   await recordAudit({

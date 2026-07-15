@@ -56,6 +56,37 @@ export default function ColumnDefinitions() {
           </TableBody>
         </Table>
       </div>
+
+      <div className="rounded-md border border-[#EDE6CF] bg-[#FBF8EF] p-4">
+        <h2 className="text-sm font-semibold text-[#333333]">Procas Mapping Notes</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[#5F5F5F]">
+          <li>
+            Procas serves a copy of your data refreshed daily at 6 AM Eastern — hours entered today
+            appear in pulls tomorrow morning.
+          </li>
+          <li>
+            Hours come from the finalized Labor Journal (GLDetail). If payroll hasn't finalized a
+            period yet, raw Timesheet hours are used and flagged with a warning.
+          </li>
+          <li>
+            Billing rates come from the job's Billing Setup (BillingItem), the authoritative
+            contract rate source; new employees fall back to the labor category default rate.
+          </li>
+          <li>
+            Only approved data is pulled. Personnel is limited to name, labor category, job title,
+            and active status — never addresses, SSNs, or other personal information.
+          </li>
+          <li>
+            Previously Billed defaults from Procas billing history (non-voided invoices before the
+            period start). Editing it by hand marks it manual, and Procas never overwrites it after
+            that.
+          </li>
+          <li>
+            FCCM rates are not mapped from Procas yet — the source field needs confirmation, so
+            work plan FCCM values remain manually maintained.
+          </li>
+        </ul>
+      </div>
     </div>
   );
 }

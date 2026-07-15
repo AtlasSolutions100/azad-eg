@@ -61,6 +61,8 @@ import {
 } from "../lib/packageDocs";
 import { resolveSignaturePath } from "../lib/excel";
 import { evaluateBudgetStatus } from "../lib/financials";
+import { getProcasConnection, credsFromConnection } from "../lib/procas";
+import { fetchPreviouslyBilledFromProcas } from "../lib/procasSync";
 import { recordAudit } from "../lib/audit";
 import fs from "node:fs";
 import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
@@ -185,6 +187,31 @@ router.post("/packages", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Work plan not found" });
     return;
   }
+  // Previously Billed default: an explicit value from the caller is a manual
+  // entry; otherwise, when Procas is connected, default it from BillingHistory
+  // (what Procas has already invoiced for this job before the period start).
+  let previouslyBilled = parsed.data.previouslyBilled ?? 0;
+  let previouslyBilledSource: string | null = parsed.data.previouslyBilled != null ? "manual" : null;
+  if (parsed.data.previouslyBilled == null) {
+    try {
+      const conn = await getProcasConnection();
+      const creds = conn?.connected ? credsFromConnection(conn) : null;
+      if (creds) {
+        const fromProcas = await fetchPreviouslyBilledFromProcas(
+          creds,
+          wp.jobNumber.trim(),
+          parsed.data.payPeriodStart,
+        );
+        if (fromProcas > 0) {
+          previouslyBilled = fromProcas;
+          previouslyBilledSource = "procas";
+        }
+      }
+    } catch {
+      // Procas being unreachable must never block package creation.
+    }
+  }
+
   const [row] = await db
     .insert(packagesTable)
     .values({
@@ -194,7 +221,8 @@ router.post("/packages", async (req, res): Promise<void> => {
       payPeriodEnd: parsed.data.payPeriodEnd,
       invoiceNumber: parsed.data.invoiceNumber,
       invoiceDate: parsed.data.invoiceDate,
-      previouslyBilled: parsed.data.previouslyBilled ?? 0,
+      previouslyBilled,
+      previouslyBilledSource,
       otherDirectCosts: parsed.data.otherDirectCosts ?? 0,
       preparedBy: parsed.data.preparedBy,
     })
@@ -320,6 +348,11 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
   // columns — pull them out so they never reach the db update.
   const { budgetOverride, budgetOverrideReason, ...updateFields } = parsed.data;
 
+  // Editing Previously Billed by hand marks it as a manual override so future
+  // Procas pulls never clobber Julie's value.
+  const manualPrevBilled =
+    updateFields.previouslyBilled != null && updateFields.previouslyBilled !== existing.previouslyBilled;
+
   // A package becomes "billed" the moment its status flips to approved. If that
   // transition pushes (or leaves) the package over its work plan budget, block
   // it unless the biller explicitly overrides, and record the override.
@@ -350,7 +383,11 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
     }
   }
 
-  const [row] = await db.update(packagesTable).set(updateFields).where(eq(packagesTable.id, id)).returning();
+  const [row] = await db
+    .update(packagesTable)
+    .set(manualPrevBilled ? { ...updateFields, previouslyBilledSource: "manual" } : updateFields)
+    .where(eq(packagesTable.id, id))
+    .returning();
   const { emp, wp } = await loadContext(row);
   if (!emp || !wp) {
     res.status(404).json({ error: "Package references missing employee or work plan" });

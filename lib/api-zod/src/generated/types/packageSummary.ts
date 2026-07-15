@@ -23,6 +23,8 @@ export interface PackageSummary {
   /** @nullable */
   invoiceDate?: string | null;
   previouslyBilled: number;
+  /** @nullable */
+  previouslyBilledSource?: string | null;
   otherDirectCosts: number;
   /** @nullable */
   signatureId?: number | null;
