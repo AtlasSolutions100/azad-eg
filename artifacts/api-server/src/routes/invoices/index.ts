@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import {
   db,
@@ -332,7 +333,25 @@ router.get("/invoices/:id/validations", async (req, res): Promise<void> => {
   );
 });
 
-router.post("/invoices/:id/time-import", upload.single("file"), async (req, res): Promise<void> => {
+router.post(
+  "/invoices/:id/time-import",
+  (req, res, next) => {
+    upload.single("file")(req, res, (err: unknown) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          res.status(400).json({
+            error: "File is too large. The maximum size is 25 MB.",
+            code: "FILE_TOO_LARGE",
+          });
+          return;
+        }
+        next(err);
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res): Promise<void> => {
   const id = pid(req);
   const ctx = await loadContext(id);
   if (!ctx) {
@@ -405,7 +424,8 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
       lineItems: inserted.map(toApiLineItem),
     }),
   );
-});
+  },
+);
 
 // Live Procas pull: fetch timesheet records for this invoice's billing period
 // directly from the connected Procas API and import them as line items.

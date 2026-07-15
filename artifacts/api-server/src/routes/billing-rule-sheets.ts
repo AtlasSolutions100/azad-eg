@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -43,7 +44,25 @@ router.get("/billing-rule-sheets", async (_req, res): Promise<void> => {
   res.json(ListBillingRuleSheetsResponse.parse(rows.map(toApi)));
 });
 
-router.post("/billing-rule-sheets", upload.single("file"), async (req, res): Promise<void> => {
+router.post(
+  "/billing-rule-sheets",
+  (req, res, next) => {
+    upload.single("file")(req, res, (err: unknown) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          res.status(400).json({
+            error: "File is too large. The maximum size is 25 MB.",
+            code: "FILE_TOO_LARGE",
+          });
+          return;
+        }
+        next(err);
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res): Promise<void> => {
   ensureDirs();
   const file = (req as unknown as { file?: { buffer: Buffer; originalname: string } }).file;
   const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
@@ -112,7 +131,8 @@ router.post("/billing-rule-sheets", upload.single("file"), async (req, res): Pro
   });
 
   res.status(201).json(UploadBillingRuleSheetResponse.parse(toApi(row)));
-});
+  },
+);
 
 router.delete("/billing-rule-sheets/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
