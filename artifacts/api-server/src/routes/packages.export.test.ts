@@ -114,6 +114,103 @@ async function seedPackage(status = "approved"): Promise<number> {
 }
 
 /**
+ * Seeds a package whose timesheet entries come from two different employees
+ * that share the exact same name (distinct employeeId). Person A works 40h at
+ * $100 (home) and person B works 8h at $120 (field), so their contributions
+ * are distinguishable by hours/cost even though the names are identical.
+ */
+async function seedSharedNamePackage(): Promise<{
+  pkgId: number;
+  sharedName: string;
+  empAId: number;
+  empBId: number;
+}> {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const sharedName = `Jordan Same ${suffix}`;
+  const [empA] = await db
+    .insert(employeesTable)
+    .values({ name: sharedName, classification: "Engineer", homeRate: 100, fieldRate: 120 })
+    .returning();
+  const [empB] = await db
+    .insert(employeesTable)
+    .values({ name: sharedName, classification: "Inspector", homeRate: 110, fieldRate: 120 })
+    .returning();
+  createdEmployeeIds.push(empA.id, empB.id);
+
+  const [wp] = await db
+    .insert(workPlansTable)
+    .values({
+      code: `TEST-WP-${suffix}`,
+      title: "Shared Name Work Plan",
+      client: "Test Client",
+      jobNumber: "TEST-JOB",
+      poNumber: "PO-123",
+      totalBudget: 500000,
+    })
+    .returning();
+  createdWorkPlanIds.push(wp.id);
+
+  const invoiceNumber = `TEST-PKG-${suffix}`;
+  const [pkg] = await db
+    .insert(packagesTable)
+    .values({
+      employeeId: empA.id,
+      workPlanId: wp.id,
+      payPeriodStart: "2026-01-05",
+      payPeriodEnd: "2026-01-18",
+      invoiceNumber,
+      invoiceDate: "2026-01-20",
+      status: "draft",
+    })
+    .returning();
+  createdPackageIds.push(pkg.id);
+  createdFilePrefixes.push(invoiceNumber);
+
+  const [week] = await db
+    .insert(packageWeeksTable)
+    .values({
+      packageId: pkg.id,
+      label: "Week 1",
+      weekStart: "2026-01-05",
+      weekEnd: "2026-01-11",
+      sortOrder: 0,
+    })
+    .returning();
+
+  await db.insert(timesheetEntriesTable).values([
+    {
+      packageId: pkg.id,
+      weekId: week.id,
+      employeeId: empA.id,
+      employeeName: sharedName,
+      classification: "Engineer",
+      category: "regular",
+      location: "home",
+      hoursMon: 8,
+      hoursTue: 8,
+      hoursWed: 8,
+      hoursThu: 8,
+      hoursFri: 8,
+      rate: 100,
+    },
+    {
+      packageId: pkg.id,
+      weekId: week.id,
+      employeeId: empB.id,
+      employeeName: sharedName,
+      classification: "Inspector",
+      category: "regular",
+      location: "field",
+      hoursMon: 4,
+      hoursTue: 4,
+      rate: 120,
+    },
+  ]);
+
+  return { pkgId: pkg.id, sharedName, empAId: empA.id, empBId: empB.id };
+}
+
+/**
  * Reads the authoritative entry count from the ZIP End Of Central Directory
  * record (signature PK\x05\x06; total-entries is a uint16 LE at offset +10).
  * Scanning local-header signatures is unreliable because compressed payloads
@@ -406,6 +503,73 @@ describe("exported workbooks carry no repair-triggering defined names", () => {
       }
     },
     120000,
+  );
+});
+
+describe("two contributors sharing a name stay separate", () => {
+  it("lists both people in PackageSummary.employees[] keyed by employeeId", async () => {
+    const { pkgId, sharedName, empAId, empBId } = await seedSharedNamePackage();
+
+    const res = await request(app).get(`/api/packages/${pkgId}`);
+    expect(res.status).toBe(200);
+
+    const employees = res.body.package.employees as {
+      employeeId: number | null;
+      employeeName: string;
+      hours: number;
+      laborCost: number;
+    }[];
+    expect(employees).toHaveLength(2);
+    expect(employees.map((e) => e.employeeId).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual(
+      [empAId, empBId].sort((a, b) => a - b),
+    );
+    for (const e of employees) expect(e.employeeName).toBe(sharedName);
+
+    const byId = new Map(employees.map((e) => [e.employeeId, e]));
+    expect(byId.get(empAId)).toMatchObject({ hours: 40, laborCost: 4000 });
+    expect(byId.get(empBId)).toMatchObject({ hours: 8, laborCost: 960 });
+
+    // Sorted by descending labor cost, so the 40h person leads and the
+    // contributor label reflects two distinct people.
+    expect(employees[0].employeeId).toBe(empAId);
+    expect(res.body.package.employeeName).toBe(`${sharedName} +1 more`);
+  });
+
+  it(
+    "exports a separate weekly timesheet sheet per person",
+    async () => {
+      const ExcelJS = (await import("exceljs")).default;
+      const { pkgId, sharedName } = await seedSharedNamePackage();
+
+      const res = await request(app)
+        .post(`/api/packages/${pkgId}/documents/timesheets/generate`)
+        .send({ format: "xlsx" });
+      expect(res.status).toBe(200);
+
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.readFile(path.resolve(generatedDir, res.body.filename));
+
+      // One week × two contributors → exactly two sheets, with unique names.
+      expect(wb.worksheets).toHaveLength(2);
+      const names = wb.worksheets.map((ws) => ws.name);
+      expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(2);
+
+      // Each sheet carries exactly one person's hours: 40h regular (Mon-Fri
+      // 8s) for person A, 8h regular (Mon+Tue 4s) for person B — never merged.
+      const cell = (ws: import("exceljs").Worksheet, addr: string): number => {
+        const v = ws.getCell(addr).value as unknown;
+        return typeof v === "number" ? v : Number((v as { result?: number })?.result ?? 0) || 0;
+      };
+      const weekTotals = wb.worksheets.map((ws) => {
+        expect(String(ws.getCell("C5").value ?? "")).toBe(sharedName);
+        return (
+          cell(ws, "I9") + cell(ws, "J9") + cell(ws, "K9") + cell(ws, "L9") + cell(ws, "M9") +
+          cell(ws, "G9") + cell(ws, "H9")
+        );
+      });
+      expect(weekTotals.sort((a, b) => a - b)).toEqual([8, 40]);
+    },
+    60000,
   );
 });
 
