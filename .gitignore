@@ -47,3 +47,5 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+artifacts/azad-invoice/test-results/
+artifacts/azad-invoice/playwright-report/
