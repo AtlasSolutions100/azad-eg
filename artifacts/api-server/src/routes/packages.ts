@@ -65,6 +65,7 @@ import { evaluateBudgetStatus } from "../lib/financials";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import { fetchPreviouslyBilledFromProcas } from "../lib/procasSync";
 import { recordAudit } from "../lib/audit";
+import { resolveEmployeeIdByName } from "../lib/employeeResolve";
 import fs from "node:fs";
 import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
 import { uploadsDir, ensureDirs, deleteUploadedFile } from "../lib/paths";
@@ -559,12 +560,16 @@ router.post("/packages/:id/entries", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Week does not belong to this package" });
     return;
   }
+  // Resolve the employee ID from the name when the client didn't supply one,
+  // so legacy name-only rows don't merge two people who share a name.
+  const employeeId =
+    parsed.data.employeeId ?? (await resolveEmployeeIdByName(parsed.data.employeeName));
   const [row] = await db
     .insert(timesheetEntriesTable)
     .values({
       packageId: id,
       weekId: parsed.data.weekId,
-      employeeId: parsed.data.employeeId,
+      employeeId,
       employeeName: parsed.data.employeeName,
       classification: parsed.data.classification,
       category: parsed.data.category,
@@ -607,9 +612,21 @@ router.patch("/packages/:id/entries/:entryId", async (req, res): Promise<void> =
       return;
     }
   }
+  const updates: Omit<typeof parsed.data, "employeeId"> & { employeeId?: number | null } = {
+    ...parsed.data,
+  };
+  if (
+    updates.employeeId === undefined &&
+    typeof updates.employeeName === "string" &&
+    updates.employeeName.trim().toLowerCase() !== existing.employeeName.trim().toLowerCase()
+  ) {
+    // Renaming an entry re-resolves its employee link so the old ID doesn't
+    // stick to the wrong person (null when unknown or ambiguous).
+    updates.employeeId = await resolveEmployeeIdByName(updates.employeeName);
+  }
   const [row] = await db
     .update(timesheetEntriesTable)
-    .set(parsed.data)
+    .set(updates)
     .where(and(eq(timesheetEntriesTable.id, entryId), eq(timesheetEntriesTable.packageId, id)))
     .returning();
   res.json(UpdateTimesheetEntryResponse.parse(toApiTimesheetEntry(row)));

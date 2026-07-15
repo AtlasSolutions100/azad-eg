@@ -4,6 +4,7 @@ import { ensureDirs } from "./lib/paths";
 import { seedDatabase } from "./lib/seed";
 import { startProcasScheduler } from "./lib/procasScheduler";
 import { reencryptProcasConnectionIfNeeded } from "./lib/procas";
+import { backfillTimesheetEmployeeIds } from "./lib/employeeResolve";
 
 const rawPort = process.env["PORT"];
 
@@ -40,6 +41,17 @@ app.listen(port, async (err) => {
     }
   } catch (rotateErr) {
     logger.error({ err: rotateErr }, "Failed to re-encrypt stored Procas credential");
+  }
+
+  try {
+    // Legacy timesheet rows created before employee IDs were stored are
+    // linked by name here; ambiguous names are left alone.
+    const backfilled = await backfillTimesheetEmployeeIds();
+    if (backfilled > 0) {
+      logger.info({ backfilled }, "Backfilled employeeId on legacy timesheet entries");
+    }
+  } catch (backfillErr) {
+    logger.error({ err: backfillErr }, "Timesheet employeeId backfill failed");
   }
 
   try {
