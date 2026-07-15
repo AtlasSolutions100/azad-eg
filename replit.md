@@ -38,7 +38,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Rotating the Procas encryption master key: set `PROCAS_ENC_KEY_OLD` to the previous key value, set `PROCAS_ENC_KEY` to the new value, restart the API server. It re-seals the stored credential under the new key automatically (logged at startup); then remove `PROCAS_ENC_KEY_OLD`. Full procedure documented in `artifacts/api-server/src/lib/crypto.ts`.
 
 ## Pointers
 

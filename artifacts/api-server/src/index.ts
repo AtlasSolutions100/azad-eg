@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { ensureDirs } from "./lib/paths";
 import { seedDatabase } from "./lib/seed";
 import { startProcasScheduler } from "./lib/procasScheduler";
+import { reencryptProcasConnectionIfNeeded } from "./lib/procas";
 
 const rawPort = process.env["PORT"];
 
@@ -29,6 +30,16 @@ app.listen(port, async (err) => {
     await seedDatabase();
   } catch (seedErr) {
     logger.error({ err: seedErr }, "Database seed failed");
+  }
+
+  try {
+    // Re-seals the stored Procas credential under the current master key when
+    // PROCAS_ENC_KEY was rotated (previous key kept in PROCAS_ENC_KEY_OLD).
+    if (await reencryptProcasConnectionIfNeeded()) {
+      logger.info("Re-encrypted stored Procas credential under the current master key");
+    }
+  } catch (rotateErr) {
+    logger.error({ err: rotateErr }, "Failed to re-encrypt stored Procas credential");
   }
 
   try {

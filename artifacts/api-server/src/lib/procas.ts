@@ -1,6 +1,6 @@
 import { db, procasConnectionTable, type ProcasConnectionRow } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { encryptSecret, decryptSecret } from "./crypto";
+import { encryptSecret, decryptSecret, isSealedWithCurrentKey } from "./crypto";
 
 const CONNECTION_ID = 1;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -224,7 +224,37 @@ export async function getProcasConnection(): Promise<ProcasConnectionRow | null>
     .from(procasConnectionTable)
     .where(eq(procasConnectionTable.id, CONNECTION_ID));
   if (!row) return null;
+  if (row.password && !isSealedWithCurrentKey(row.password)) {
+    // The stored credential predates the current master key (plaintext,
+    // legacy salt, or a rotated-out PROCAS_ENC_KEY). Re-seal it under the
+    // current key so old keys can eventually be retired.
+    const plaintext = decryptSecret(row.password);
+    await db
+      .update(procasConnectionTable)
+      .set({ password: encryptSecret(plaintext) })
+      .where(eq(procasConnectionTable.id, CONNECTION_ID));
+    return { ...row, password: plaintext };
+  }
   return { ...row, password: row.password ? decryptSecret(row.password) : row.password };
+}
+
+// One-shot rotation routine, run at server startup. If the stored Procas
+// credential is not sealed under the current master key (e.g. after
+// PROCAS_ENC_KEY was rotated with the previous value kept in
+// PROCAS_ENC_KEY_OLD), decrypt it with the available fallback keys and
+// re-encrypt it under the current key. Returns whether a re-seal happened.
+export async function reencryptProcasConnectionIfNeeded(): Promise<boolean> {
+  const [row] = await db
+    .select()
+    .from(procasConnectionTable)
+    .where(eq(procasConnectionTable.id, CONNECTION_ID));
+  if (!row?.password || isSealedWithCurrentKey(row.password)) return false;
+  const plaintext = decryptSecret(row.password);
+  await db
+    .update(procasConnectionTable)
+    .set({ password: encryptSecret(plaintext) })
+    .where(eq(procasConnectionTable.id, CONNECTION_ID));
+  return true;
 }
 
 export function credsFromConnection(
