@@ -12,6 +12,7 @@ import {
   useGetProcasStatus,
   useSaveProgressReport,
   useApproveInvoice,
+  useUnpinInvoiceCarryOver,
   useGenerateInvoiceFile,
   useCreateLineItem,
   useUpdateLineItem,
@@ -85,6 +86,7 @@ export default function InvoiceDetail() {
   const { data: procasStatus } = useGetProcasStatus();
   const saveProgress = useSaveProgressReport();
   const approveInvoice = useApproveInvoice();
+  const unpinCarryOver = useUnpinInvoiceCarryOver();
   const generateFile = useGenerateInvoiceFile();
   const createLineItem = useCreateLineItem();
   const updateLineItem = useUpdateLineItem();
@@ -322,6 +324,20 @@ export default function InvoiceDetail() {
     }
   };
 
+  // Removes a manually-set "previously billed" pin so the amount re-derives
+  // from the preceding billed invoice and cascades to later invoices.
+  const handleUnpinCarryOver = async () => {
+    if (!confirm("Remove the manually-set previously-billed amount? It will be recalculated from the prior billed invoice, and later invoices will update too.")) return;
+    try {
+      await unpinCarryOver.mutateAsync({ id: invoiceId });
+      queryClient.invalidateQueries();
+      toast({ title: "Carry-over unpinned", description: "Previously billed now follows the invoice chain again." });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Could not unpin carry-over", description: err instanceof Error ? err.message : "Something went wrong.", variant: "destructive" });
+    }
+  };
+
   const handleLiDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this line item?")) return;
     try {
@@ -431,8 +447,31 @@ export default function InvoiceDetail() {
           <CardContent><div className="text-2xl font-bold">${invoice.totalThisPeriod.toLocaleString()}</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-[#5F5F5F]">Previously Billed</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold">${invoice.previouslyBilled.toLocaleString()}</div></CardContent>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-[#5F5F5F] flex items-center gap-2">
+              Previously Billed
+              {invoice.carryOverManual && (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100" data-testid="badge-carryover-pinned">
+                  Manually set
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-previously-billed">${invoice.previouslyBilled.toLocaleString()}</div>
+            {invoice.carryOverManual && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 mt-1 text-xs text-blue-600"
+                onClick={handleUnpinCarryOver}
+                disabled={unpinCarryOver.isPending}
+                data-testid="button-unpin-carryover"
+              >
+                {unpinCarryOver.isPending ? "Unpinning..." : "Unpin & recalculate from prior invoices"}
+              </Button>
+            )}
+          </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-[#5F5F5F]">Total to Date</CardTitle></CardHeader>

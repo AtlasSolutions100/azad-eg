@@ -540,6 +540,89 @@ describe("carry-over recompute across multi-invoice chains", () => {
     expect(apr.body.totalToDate).toBe(13800);
   });
 
+  it("unpins a manually-set carry-over, re-derives it from the chain, and cascades downstream", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    // January: approved, this period 2200 → total-to-date 2200.
+    const janId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+      previouslyBilled: 0,
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    // February pinned at 5000 (chain would derive 2200), total-to-date 7200.
+    const febId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-02-01",
+      periodEnd: "2026-02-28",
+      previouslyBilled: 5000,
+      carryOverManual: true,
+    });
+    await addLineItem(febId, { hours: 10, rate: 100 });
+
+    // March follows February's (pinned) total-to-date.
+    const marId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-03-01",
+      periodEnd: "2026-03-31",
+      previouslyBilled: 7200,
+    });
+    await addLineItem(marId, { hours: 10, rate: 100 });
+
+    // The invoice should report itself as pinned before the unpin.
+    const before = await request(app).get(`/api/invoices/${febId}`);
+    expect(before.body.carryOverManual).toBe(true);
+
+    const res = await request(app).delete(`/api/invoices/${febId}/carry-over-pin`);
+    expect(res.status).toBe(200);
+    // February now re-derives from January (2200) and is no longer manual.
+    expect(res.body.carryOverManual).toBe(false);
+    expect(res.body.previouslyBilled).toBe(2200);
+    expect(res.body.totalToDate).toBe(4400);
+
+    // The change cascades to March.
+    const mar = await request(app).get(`/api/invoices/${marId}`);
+    expect(mar.body.previouslyBilled).toBe(4400);
+    expect(mar.body.totalToDate).toBe(6600);
+
+    // The unpin is recorded in February's audit trail.
+    const febAudit = await db
+      .select()
+      .from(auditLogsTable)
+      .where(inArray(auditLogsTable.entityId, [febId]));
+    const unpinEntry = febAudit.find((a) => a.action === "carry-over unpinned");
+    expect(unpinEntry).toBeDefined();
+    expect(unpinEntry!.description).toContain("5,000.00");
+    expect(unpinEntry!.description).toContain("2,200.00");
+
+    // March's automatic shift is audited too.
+    const marAudit = await db
+      .select()
+      .from(auditLogsTable)
+      .where(inArray(auditLogsTable.entityId, [marId]));
+    expect(marAudit.some((a) => a.action === "carry-over recalculated")).toBe(true);
+
+    // A later edit to January now flows through February again.
+    await request(app)
+      .post(`/api/invoices/${janId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    expect(feb.body.previouslyBilled).toBe(4400);
+  });
+
+  it("rejects unpinning an invoice whose carry-over is not manually pinned", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+    const invId = await createInvoice(wpId, "draft", { previouslyBilled: 0 });
+
+    const res = await request(app).delete(`/api/invoices/${invId}/carry-over-pin`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/not manually pinned/i);
+  });
+
+  it("returns 404 when unpinning a nonexistent invoice", async () => {
+    const res = await request(app).delete(`/api/invoices/999999999/carry-over-pin`);
+    expect(res.status).toBe(404);
+  });
+
   it("re-derives the rest of the chain after a middle invoice is deleted", async () => {
     const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
     const [janId, febId, marId, aprId] = await buildApprovedChain(wpId, MONTHS);

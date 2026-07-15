@@ -380,6 +380,29 @@ paths:
       responses:
         "204":
           description: Deleted
+  /invoices/{id}/carry-over-pin:
+    delete:
+      operationId: unpinInvoiceCarryOver
+      tags: [invoices]
+      summary: Clear a manually-pinned carry-over so it re-derives from the chain
+      description: >-
+        Removes the manual "previously billed" pin from an invoice. Its
+        carry-over is immediately re-derived from the preceding billed invoice
+        on the work plan and the change cascades to downstream invoices. The
+        unpin is recorded in the invoice's audit trail.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Unpinned; returns the invoice with re-derived carry-over
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The invoice's carry-over is not manually pinned
   /invoices/{id}/approve:
     post:
       operationId: approveInvoice
@@ -1463,6 +1486,7 @@ components:
         - otherDirectCosts
         - totalThisPeriod
         - previouslyBilled
+        - carryOverManual
         - totalToDate
         - remainingBalance
         - percentExpended
@@ -1489,6 +1513,11 @@ components:
         otherDirectCosts: { type: number }
         totalThisPeriod: { type: number }
         previouslyBilled: { type: number }
+        carryOverManual:
+          type: boolean
+          description: >-
+            True when "previously billed" was supplied manually and is pinned;
+            false when it auto-derives from the preceding billed invoice.
         totalToDate: { type: number }
         remainingBalance: { type: number }
         percentExpended: { type: number }

@@ -249,6 +249,8 @@ export interface Invoice {
   otherDirectCosts: number;
   totalThisPeriod: number;
   previouslyBilled: number;
+  /** True when "previously billed" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice. */
+  carryOverManual: boolean;
   totalToDate: number;
   remainingBalance: number;
   percentExpended: number;

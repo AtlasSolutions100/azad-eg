@@ -65,6 +65,7 @@ export function buildInvoice(invoice: InvoiceRow, workPlan: WorkPlan, lineItems:
       otherDirectCosts: f.otherDirectCosts,
       totalThisPeriod: f.totalThisPeriod,
       previouslyBilled: f.previouslyBilled,
+      carryOverManual: invoice.carryOverManual,
       totalToDate: f.totalToDate,
       remainingBalance: f.remainingBalance,
       percentExpended: f.percentExpended,

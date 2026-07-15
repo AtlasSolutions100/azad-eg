@@ -447,6 +447,7 @@ export const ListInvoicesResponseItem = zod.object({
   "otherDirectCosts": zod.number(),
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
@@ -495,6 +496,7 @@ export const CreateInvoiceResponse = zod.object({
   "otherDirectCosts": zod.number(),
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
@@ -532,6 +534,7 @@ export const GetInvoiceResponse = zod.object({
   "otherDirectCosts": zod.number(),
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
@@ -583,6 +586,7 @@ export const UpdateInvoiceResponse = zod.object({
   "otherDirectCosts": zod.number(),
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
@@ -602,6 +606,44 @@ export const DeleteInvoiceParams = zod.object({
 })
 
 export const DeleteInvoiceResponse = zod.void()
+
+
+/**
+ * Removes the manual "previously billed" pin from an invoice. Its carry-over is immediately re-derived from the preceding billed invoice on the work plan and the change cascades to downstream invoices. The unpin is recorded in the invoice's audit trail.
+ * @summary Clear a manually-pinned carry-over so it re-derives from the chain
+ */
+export const UnpinInvoiceCarryOverParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UnpinInvoiceCarryOverResponse = zod.object({
+  "id": zod.number(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "client": zod.string(),
+  "invoiceNumber": zod.string(),
+  "invoiceDate": zod.string(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "laborTotal": zod.number(),
+  "fringeTotal": zod.number(),
+  "overheadTotal": zod.number(),
+  "fixedFee": zod.number(),
+  "fccm": zod.number(),
+  "otdtPremium": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
+  "totalToDate": zod.number(),
+  "remainingBalance": zod.number(),
+  "percentExpended": zod.number(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
 
 
 /**
@@ -640,6 +682,7 @@ export const ApproveInvoiceResponse = zod.object({
   "otherDirectCosts": zod.number(),
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
@@ -678,6 +721,7 @@ export const GetInvoicePreviewResponse = zod.object({
   "otherDirectCosts": zod.number(),
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),

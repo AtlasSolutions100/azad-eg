@@ -1743,6 +1743,77 @@ export const useDeleteInvoice = <TError = ErrorType<unknown>,
       return useMutation(getDeleteInvoiceMutationOptions(options));
     }
 
+export const getUnpinInvoiceCarryOverUrl = (id: number,) => {
+
+
+
+
+  return `/api/invoices/${id}/carry-over-pin`
+}
+
+/**
+ * Removes the manual "previously billed" pin from an invoice. Its carry-over is immediately re-derived from the preceding billed invoice on the work plan and the change cascades to downstream invoices. The unpin is recorded in the invoice's audit trail.
+ * @summary Clear a manually-pinned carry-over so it re-derives from the chain
+ */
+export const unpinInvoiceCarryOver = async (id: number, options?: RequestInit): Promise<Invoice> => {
+
+  return customFetch<Invoice>(getUnpinInvoiceCarryOverUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnpinInvoiceCarryOverMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unpinInvoiceCarryOver>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unpinInvoiceCarryOver>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['unpinInvoiceCarryOver'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unpinInvoiceCarryOver>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  unpinInvoiceCarryOver(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnpinInvoiceCarryOverMutationResult = NonNullable<Awaited<ReturnType<typeof unpinInvoiceCarryOver>>>
+
+    export type UnpinInvoiceCarryOverMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Clear a manually-pinned carry-over so it re-derives from the chain
+ */
+export const useUnpinInvoiceCarryOver = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unpinInvoiceCarryOver>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unpinInvoiceCarryOver>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getUnpinInvoiceCarryOverMutationOptions(options));
+    }
+
 export const getApproveInvoiceUrl = (id: number,) => {
 
 

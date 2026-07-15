@@ -198,6 +198,43 @@ router.delete("/invoices/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
+// Clears a manually-pinned carry-over so "previously billed" re-derives from
+// the chain again. The recompute cascades to downstream invoices and the unpin
+// itself is recorded in the invoice's audit trail.
+router.delete("/invoices/:id/carry-over-pin", async (req, res): Promise<void> => {
+  const id = pid(req);
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+  if (!invoice.carryOverManual) {
+    res.status(409).json({ error: "This invoice's carry-over is not manually pinned." });
+    return;
+  }
+  const previousValue = invoice.previouslyBilled;
+  await db.update(invoicesTable).set({ carryOverManual: false }).where(eq(invoicesTable.id, id));
+  // Re-derive this invoice's carry-over from the chain and cascade downstream.
+  await recomputeCarryOverWithAudit(invoice.workPlanId, {
+    invoiceId: id,
+    invoiceNumber: invoice.invoiceNumber,
+    reason: "the carry-over unpin of",
+  });
+  const [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
+  const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
+  await recordAudit({
+    action: "carry-over unpinned",
+    entityType: "invoice",
+    entityId: id,
+    description:
+      `Manual previously-billed pin of $${previousValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
+      `removed from invoice ${invoice.invoiceNumber}; previously billed now $${row.previouslyBilled.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, ` +
+      `re-derived from the invoice chain.`,
+  });
+  res.json(GetInvoiceResponse.parse(buildInvoice(row, wp, lineItems).api));
+});
+
 router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
   const id = pid(req);
   const parsed = ApproveInvoiceBody.safeParse(req.body);
