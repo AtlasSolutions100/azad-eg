@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { eq } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +28,25 @@ router.get("/signatures", async (_req, res): Promise<void> => {
   res.json(ListSignaturesResponse.parse(rows.map(toApi)));
 });
 
-router.post("/signatures", imageUpload.single("file"), async (req, res): Promise<void> => {
+router.post(
+  "/signatures",
+  (req, res, next) => {
+    imageUpload.single("file")(req, res, (err: unknown) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          res.status(400).json({
+            error: "Image is too large. The maximum size is 25 MB.",
+            code: "FILE_TOO_LARGE",
+          });
+          return;
+        }
+        next(err);
+        return;
+      }
+      next();
+    });
+  },
+  async (req, res): Promise<void> => {
   ensureDirs();
   const file = (req as unknown as { file?: { buffer: Buffer; originalname: string } }).file;
   const name = typeof req.body?.name === "string" ? req.body.name : "";
@@ -63,7 +82,8 @@ router.post("/signatures", imageUpload.single("file"), async (req, res): Promise
   await recordAudit({ action: "uploaded signature", entityType: "signature", entityId: row.id, description: `${row.name}.${notice}` });
 
   res.status(201).json(UploadSignatureResponse.parse(toApi(row)));
-});
+  },
+);
 
 router.delete("/signatures/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
