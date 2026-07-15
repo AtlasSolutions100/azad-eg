@@ -165,4 +165,58 @@ describe("GET /audit-logs filtering", () => {
       );
     }
   });
+
+  it("pages through older entries with limit/offset", async () => {
+    // Seed 5 entries for a dedicated entity type so paging assertions are
+    // exact regardless of other rows in the shared dev DB.
+    const pagingEntityType = `paging-${suffix}`;
+    const total = 5;
+    const values = Array.from({ length: total }, (_, i) => ({
+      userName: `Pager ${i}`,
+      action: "update",
+      entityType: pagingEntityType,
+      entityId: targetInvoiceId,
+      description: `paging entry ${i}`,
+      createdAt: new Date(`2031-01-01T10:0${i}:00.000Z`),
+    }));
+    const inserted = await db.insert(auditLogsTable).values(values).returning();
+    for (const row of inserted) createdIds.push(row.id);
+
+    const pageSize = 2;
+    const seen: { id: number; description: string; createdAt: string }[] = [];
+    for (let offset = 0; offset < total; offset += pageSize) {
+      const res = await request(app)
+        .get("/api/audit-logs")
+        .query({ entityType: pagingEntityType, limit: pageSize, offset });
+      expect(res.status).toBe(200);
+      const expectedLen = Math.min(pageSize, total - offset);
+      expect(res.body).toHaveLength(expectedLen);
+      seen.push(...res.body);
+    }
+
+    // All 5 rows retrieved across 3 pages, no duplicates, newest first.
+    expect(seen).toHaveLength(total);
+    expect(new Set(seen.map((r) => r.id)).size).toBe(total);
+    expect(seen.map((r) => r.description)).toEqual([
+      "paging entry 4",
+      "paging entry 3",
+      "paging entry 2",
+      "paging entry 1",
+      "paging entry 0",
+    ]);
+
+    // Past the end returns an empty page.
+    const past = await request(app)
+      .get("/api/audit-logs")
+      .query({ entityType: pagingEntityType, limit: pageSize, offset: total });
+    expect(past.status).toBe(200);
+    expect(past.body).toHaveLength(0);
+
+    // Oversized limits are clamped to the 200-row cap rather than erroring.
+    const clamped = await request(app)
+      .get("/api/audit-logs")
+      .query({ entityType: pagingEntityType, limit: 9999 });
+    expect(clamped.status).toBe(200);
+    expect(clamped.body).toHaveLength(total);
+  });
 });

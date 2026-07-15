@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { DateRange } from "react-day-picker";
-import { useListAuditLogs } from "@workspace/api-client-react";
+import { usePagedAuditLogs } from "@/hooks/use-paged-audit-logs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, CalendarIcon, ExternalLink, Search, X } from "lucide-react";
+import { AlertTriangle, CalendarIcon, ExternalLink, Loader2, Search, X } from "lucide-react";
 import { endOfDay, format, startOfDay } from "date-fns";
 
 const OVERRIDE_ACTION = "approved over budget";
@@ -25,7 +25,8 @@ function entityLink(entityType: string, entityId: number | null | undefined): st
 }
 
 export default function AuditLog() {
-  const { data: logs, isLoading } = useListAuditLogs();
+  const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    usePagedAuditLogs();
   const [overridesOnly, setOverridesOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -220,6 +221,26 @@ export default function AuditLog() {
           </TableBody>
         </Table>
       </div>
+
+      {hasNextPage ? (
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            data-testid="button-load-more-audit"
+          >
+            {isFetchingNextPage ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading…
+              </>
+            ) : (
+              "Load older entries"
+            )}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1133,9 +1133,19 @@ export const DeleteBillingRuleSheetResponse = zod.void()
 /**
  * @summary List audit log entries
  */
+export const listAuditLogsQueryLimitDefault = 200;
+export const listAuditLogsQueryLimitMax = 200;
+
+export const listAuditLogsQueryOffsetDefault = 0;
+export const listAuditLogsQueryOffsetMin = 0;
+
+
+
 export const ListAuditLogsQueryParams = zod.object({
   "entityType": zod.coerce.string().optional(),
-  "entityId": zod.coerce.number().optional()
+  "entityId": zod.coerce.number().optional(),
+  "limit": zod.coerce.number().min(1).max(listAuditLogsQueryLimitMax).default(listAuditLogsQueryLimitDefault).describe('Max rows to return (1-200, default 200)'),
+  "offset": zod.coerce.number().min(listAuditLogsQueryOffsetMin).default(listAuditLogsQueryOffsetDefault).describe('Number of rows to skip (default 0)')
 })
 
 export const ListAuditLogsResponseItem = zod.object({

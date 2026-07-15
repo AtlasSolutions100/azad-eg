@@ -1125,6 +1125,17 @@ workPlanId?: number;
 export type ListAuditLogsParams = {
 entityType?: string;
 entityId?: number;
+/**
+ * Max rows to return (1-200, default 200)
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+/**
+ * Number of rows to skip (default 0)
+ * @minimum 0
+ */
+offset?: number;
 };
 
 export type ListPackagesParams = {

@@ -31,12 +31,19 @@ router.get("/audit-logs", async (req, res): Promise<void> => {
     conditions.push(eq(auditLogsTable.entityId, entityId));
   }
 
+  const rawLimit = Number(req.query.limit);
+  const limit =
+    Number.isInteger(rawLimit) && rawLimit >= 1 ? Math.min(rawLimit, 200) : 200;
+  const rawOffset = Number(req.query.offset);
+  const offset = Number.isInteger(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+
   const rows = await db
     .select()
     .from(auditLogsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(auditLogsTable.createdAt))
-    .limit(200);
+    .orderBy(desc(auditLogsTable.createdAt), desc(auditLogsTable.id))
+    .limit(limit)
+    .offset(offset);
   res.json(ListAuditLogsResponse.parse(rows.map(toApiAudit)));
 });
 

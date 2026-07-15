@@ -17,7 +17,6 @@ import {
   useUpdateLineItem,
   useDeleteLineItem,
   useListEmployees,
-  useListAuditLogs,
   TimeImportUploadSource,
   GenerateInputFormat,
   ProgressReportInput,
@@ -39,6 +38,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import BudgetOverrideHistory from "@/components/budget-override-history";
+import { usePagedAuditLogs } from "@/hooks/use-paged-audit-logs";
+import { Loader2 } from "lucide-react";
 
 function sourceBadge(source?: string) {
   if (source === "manual" || !source) {
@@ -64,7 +65,12 @@ export default function InvoiceDetail() {
   const { data: progressReport } = useGetProgressReport(invoiceId);
   const { data: signatures } = useListSignatures();
   const { data: employees } = useListEmployees();
-  const { data: auditLogs } = useListAuditLogs({ entityType: "invoice", entityId: invoiceId });
+  const {
+    logs: auditLogs,
+    hasNextPage: hasMoreAuditLogs,
+    isFetchingNextPage: isFetchingMoreAuditLogs,
+    fetchNextPage: fetchMoreAuditLogs,
+  } = usePagedAuditLogs({ entityType: "invoice", entityId: invoiceId });
 
   // Surface when this invoice's carry-over ("previously billed") was
   // automatically recalculated because an upstream invoice on the same work
@@ -792,6 +798,25 @@ export default function InvoiceDetail() {
               ) : (
                 <p className="text-muted-foreground">No activity recorded for this invoice yet.</p>
               )}
+              {hasMoreAuditLogs ? (
+                <div className="mt-4 flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => fetchMoreAuditLogs()}
+                    disabled={isFetchingMoreAuditLogs}
+                    data-testid="button-load-more-activity"
+                  >
+                    {isFetchingMoreAuditLogs ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      "Load older entries"
+                    )}
+                  </Button>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
