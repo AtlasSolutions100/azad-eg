@@ -1,0 +1,72 @@
+Make only these changes and only these changes, do not make any other changes except for the ones below.   GOAL of this dashboard: 
+- Contractors enter time weekly in Procas
+- The dashboard pulls that time automatically from Procas 
+- Julie can generate one monthly client package per Job / Work Plan / billing period
+- The package contains exactly two files:
+  1. One multi-tab Excel
+  2. One single multi-page PDF
+- Both files must be client-ready (clean, professional, see attached example)
+
+PRIMARY ORGANIZATION (already done but confirm) 
+- Organize primarily by Job / Work Plan / Invoice (not by person)
+- Support multiple people under one job
+- Example data set to use going forward: Travis Johnson (use any uploaded Excel + PDF for Travis Johnson as the new reference)
+
+DOCUMENT GENERATION RULES (CRITICAL)
+
+1. Excel Export
+- Generate exactly one Excel file per billing period / job
+- The Excel must contain these tabs in the export 
+  - Overview
+  - Invoice (Professional Service Agreement Invoice)
+  - Sub Calc (Invoice Detail Attachment)
+  - Progress Report
+  - Labor Attachment
+  - Timesheets (weekly timesheets that make up the monthly package)
+- The Excel must be completely clean:
+  - No yellow highlights
+  - No internal notes, comments, or border text
+  - Exact same structure, formatting, and formulas as the clean client-ready version Julie provides
+- “Previously Billed”, Amount to Date, and remaining balances must be stored and automatically carried forward per Work Plan from the last approved invoice - Julie must be able to click one button and download one ready-to-email multi-page excel (this should happen in the Export Button) 
+
+2. PDF Export
+- Generate exactly one single multi-page PDF per monthly/ job
+- The PDF must contain every page in this order:
+  1. Professional Service Agreement Invoice
+  2. Invoice Detail Attachment / Sub Calc
+  3. Labor Attachment
+  4. Progress Report
+  5. Any weekly timesheets that belong to that monthly package
+- Do NOT create separate PDF files per page or per tab
+- Julie must be able to click one button and download one ready-to-email multi-page PDF (this should happen in the Export Button) 
+
+3. Package Export
+- Keep the “Export Package ZIP” button
+- The ZIP should contain only the two files above:
+  - The multi-tab Excel
+  - The single multi-page PDF
+- Out puts look exactly like the updated example 
+
+UI CHANGES
+- Remove / hide the current “Documents — status & individual downloads” section for now
+- Keep the individual tabs (Overview, Invoice, Sub Calc, Progress Report, Labor Attachment, Timesheets) visible so Julie can review or manually override any of them before exporting
+- Show clear status of whether the package is ready to export
+- Keep the live Procas connection indicator (green when healthy)
+
+PROCAS INTEGRATION (keep existing + strengthen)
+- Procas is a read-only OData API
+- Prefer Labor Journal hours for final invoicing numbers (timesheet hours can still change)
+- Support both live API pull and file-upload fallback
+- Weekly timesheets come from Procas and roll up into the monthly package that is billed to BART
+
+SUCCESS CRITERIA
+When Julie selects a Job + billing period and clicks export she should receive:
+1. One clean multi-tab Excel (ready for client)
+2. One single multi-page PDF (ready for client)
+3. Optionally a ZIP containing only those two files
+
+She should never have to:
+- Merge multiple PDFs
+- Manually look up last month’s “Previously Billed” numbers
+
+Use Travis Johnson as the primary example data set for testing and UI.  
