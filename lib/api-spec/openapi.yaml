@@ -2256,6 +2256,7 @@ components:
         - totalToDate
         - remainingBalance
         - percentExpended
+        - budgetStatus
       properties:
         laborLines:
           type: array
@@ -2278,6 +2279,8 @@ components:
         totalToDate: { type: number }
         remainingBalance: { type: number }
         percentExpended: { type: number }
+        budgetStatus:
+          $ref: "#/components/schemas/BudgetStatus"
 
     PackageDetail:
       type: object

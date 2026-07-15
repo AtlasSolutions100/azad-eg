@@ -25,10 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/package-ui";
 import DocDownload from "./doc-download";
 import BudgetOverrideHistory from "@/components/budget-override-history";
@@ -49,8 +49,10 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
     signatureId: pkg.signatureId ?? undefined,
   });
 
-  // Over-budget approval requires an explicit, audited override.
-  const overBudget = rollup.remainingBalance < 0;
+  // Shared budget signal (same evaluateBudgetStatus thresholds as the
+  // per-invoice workspace). Over-budget approval requires an audited override.
+  const budgetStatus = rollup.budgetStatus;
+  const overBudget = budgetStatus.overBudget;
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
 
@@ -135,6 +137,33 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
       />
 
       <BudgetOverrideHistory entityType="package" entityId={pkg.id} />
+
+      {budgetStatus.level !== "ok" && (
+        <Alert
+          variant={budgetStatus.level === "over" ? "destructive" : "default"}
+          className={
+            budgetStatus.level === "over"
+              ? "border-red-300 bg-red-50"
+              : "border-yellow-200 bg-yellow-50"
+          }
+          data-testid="alert-package-budget"
+        >
+          {budgetStatus.level === "over" ? (
+            <AlertTriangle className="h-4 w-4" />
+          ) : (
+            <Info className="h-4 w-4 text-yellow-600" />
+          )}
+          <AlertTitle className={budgetStatus.level === "over" ? "" : "text-yellow-800"}>
+            {budgetStatus.level === "over" ? "Over budget" : "Approaching budget limit"}
+          </AlertTitle>
+          <AlertDescription className={budgetStatus.level === "over" ? "" : "text-yellow-700"}>
+            {budgetStatus.message} Remaining balance:{" "}
+            {formatCurrency(budgetStatus.remainingBalance)}.
+            {budgetStatus.level === "over" &&
+              " Approving this package will require a recorded budget override."}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -301,17 +330,23 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
           <CardContent>
             <Table>
               <TableBody>
-                {summary.map((row) => (
-                  <TableRow
-                    key={row.label}
-                    className={row.emphasis ? "bg-[#CFAF42]/5 font-semibold" : ""}
-                  >
-                    <TableCell>{row.label}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(row.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {summary.map((row) => {
+                  const highlight = row.label === "Remaining Balance" && overBudget;
+                  return (
+                    <TableRow
+                      key={row.label}
+                      className={row.emphasis ? "bg-[#CFAF42]/5 font-semibold" : ""}
+                    >
+                      <TableCell>{row.label}</TableCell>
+                      <TableCell
+                        className={`text-right tabular-nums ${highlight ? "font-semibold text-red-600" : ""}`}
+                        data-testid={highlight ? "text-remaining-balance-over" : undefined}
+                      >
+                        {formatCurrency(row.amount)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             <p className="mt-3 text-xs text-[#5F5F5F]">

@@ -1059,6 +1059,7 @@ export interface PackageRollup {
   totalToDate: number;
   remainingBalance: number;
   percentExpended: number;
+  budgetStatus: BudgetStatus;
 }
 
 export interface PackageDetail {

@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { BudgetStatus } from './budgetStatus';
 import type { FinancialLine } from './financialLine';
 import type { PackageLaborLine } from './packageLaborLine';
 
@@ -24,4 +25,5 @@ export interface PackageRollup {
   totalToDate: number;
   remainingBalance: number;
   percentExpended: number;
+  budgetStatus: BudgetStatus;
 }

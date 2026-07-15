@@ -8,7 +8,7 @@ import type {
   Employee,
   LineItemRow,
 } from "@workspace/db";
-import { computeFinancials } from "./financials";
+import { computeFinancials, evaluateBudgetStatus } from "./financials";
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -137,6 +137,9 @@ export function buildPackageRollup(
     totalToDate: f.totalToDate,
     remainingBalance: f.remainingBalance,
     percentExpended: f.percentExpended,
+    // Shared budget signal so package-level UI stays in sync with the
+    // per-invoice workspace (same evaluateBudgetStatus thresholds).
+    budgetStatus: evaluateBudgetStatus(f),
   };
 }
 

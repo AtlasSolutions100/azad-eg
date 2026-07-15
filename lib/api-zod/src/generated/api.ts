@@ -1528,7 +1528,14 @@ export const GetPackageResponse = zod.object({
   "previouslyBilled": zod.number(),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
-  "percentExpended": zod.number()
+  "percentExpended": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+})
 })
 })
 
@@ -1983,7 +1990,14 @@ export const GetPackageRollupResponse = zod.object({
   "previouslyBilled": zod.number(),
   "totalToDate": zod.number(),
   "remainingBalance": zod.number(),
-  "percentExpended": zod.number()
+  "percentExpended": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+})
 })
 
 
