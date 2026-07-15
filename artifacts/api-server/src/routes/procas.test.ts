@@ -1027,6 +1027,66 @@ describe("procas integration", () => {
     expect(itemsAfterRelease).toHaveLength(1);
   });
 
+  it("tick skips cleanly with a warning when the pool connection for the sync lock times out", async () => {
+    const scheduler = await import("../lib/procasScheduler");
+    const { pool } = await import("@workspace/db");
+    const { logger } = await import("../lib/logger");
+
+    const prev = process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"];
+    process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"] = "50";
+
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation((() => logger) as never);
+    // Simulate an exhausted pool for the FIRST checkout only (the dedicated
+    // lock connection); later checkouts (drizzle queries) work normally.
+    let resolveLate: ((client: unknown) => void) | undefined;
+    const released: unknown[] = [];
+    const hungConnect = new Promise((resolve) => {
+      resolveLate = resolve;
+    });
+    const realConnect = pool.connect.bind(pool);
+    let firstCall = true;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(((...args: unknown[]) => {
+      if (firstCall && args.length === 0) {
+        firstCall = false;
+        return hungConnect;
+      }
+      return (realConnect as (...a: unknown[]) => unknown)(...args);
+    }) as never);
+
+    try {
+      await expect(scheduler.tick()).resolves.toBeUndefined();
+
+      // The tick must have given up on the lock connection and logged a warning.
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ timeoutMs: 50 }),
+        expect.stringMatching(/timed out waiting for a database connection/i),
+      );
+
+      // No cycle ran, so the persisted scheduler state stays untouched.
+      connectSpy.mockRestore();
+      const state = await scheduler.getSchedulerState();
+      expect(state.running).toBe(false);
+      expect(state.lastRunAt).toBeNull();
+      expect(state.lastError).toBeNull();
+
+      // If the checkout completes after the timeout, the client is handed
+      // straight back to the pool rather than leaked.
+      resolveLate?.({ release: () => released.push("released") });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(released).toEqual(["released"]);
+
+      // The loop stays healthy: a later tick with a working pool proceeds
+      // normally (no connection, so the cycle records a clean skip).
+      await expect(scheduler.tick()).resolves.toBeUndefined();
+      const after = await scheduler.getSchedulerState();
+      expect(after.lastRunAt).not.toBeNull();
+      expect(after.lastSkipped).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"];
+      else process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"] = prev;
+    }
+  });
+
   it("startProcasScheduler is idempotent and honors PROCAS_SYNC_INTERVAL_MS with a default fallback", async () => {
     const { startProcasScheduler, stopProcasScheduler } = await import("../lib/procasScheduler");
     const prev = process.env["PROCAS_SYNC_INTERVAL_MS"];

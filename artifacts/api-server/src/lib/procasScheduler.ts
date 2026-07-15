@@ -1,4 +1,4 @@
-import { db, pool, invoicesTable, procasSchedulerTable, type ProcasSchedulerRow } from "@workspace/db";
+import { db, pool, invoicesTable, procasSchedulerTable, type ProcasSchedulerRow, type PoolClient } from "@workspace/db";
 import { inArray, eq } from "drizzle-orm";
 import { getProcasConnection, credsFromConnection } from "./procas";
 import { syncInvoiceFromProcas, syncReferenceFromProcas } from "./procasSync";
@@ -188,15 +188,65 @@ export async function runProcasSyncCycle(): Promise<{ skipped: boolean; synced: 
   return { skipped: false, synced, failed };
 }
 
+// Upper bound on how long a tick may wait to check out the dedicated
+// advisory-lock connection. If the pool is exhausted (many autoscale
+// instances, a traffic spike), `pool.connect()` can otherwise hang
+// indefinitely and the refresh loop silently stalls. Overridable via env for
+// tests and unusual deployments.
+export const DEFAULT_LOCK_CONNECT_TIMEOUT_MS = 10_000;
+
+export function lockConnectTimeoutMs(): number {
+  const raw = process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"];
+  if (!raw) return DEFAULT_LOCK_CONNECT_TIMEOUT_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_LOCK_CONNECT_TIMEOUT_MS;
+}
+
+// Checks out a pooled client with a bounded wait. Returns `null` when the
+// checkout does not complete within `timeoutMs`. If the checkout completes
+// late (after we gave up), the client is released straight back to the pool
+// so it is not leaked.
+async function connectWithTimeout(timeoutMs: number): Promise<PoolClient | null> {
+  const connectPromise: Promise<PoolClient> = pool.connect();
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
+  });
+  try {
+    const client = await Promise.race([connectPromise, timedOut]);
+    if (client) return client;
+    // Timed out: if the checkout eventually succeeds, hand the client back.
+    connectPromise
+      .then((late) => late.release())
+      .catch(() => {
+        // Checkout failed after the timeout; nothing to release.
+      });
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // Runs `fn` only if this instance can acquire the cross-instance advisory lock.
 // Returns `{ acquired: false }` without running `fn` when another instance
-// already holds the lock (i.e. is mid-cycle). The lock is session-scoped and
-// held on a dedicated pooled client so it survives for the whole cycle and is
-// always released in `finally`, even on error.
+// already holds the lock (i.e. is mid-cycle), or when the pool is so busy that
+// the lock connection cannot be checked out within a bounded timeout — in that
+// case the tick logs a warning and skips cleanly instead of hanging. The lock
+// is session-scoped and held on a dedicated pooled client so it survives for
+// the whole cycle and is always released in `finally`, even on error.
 async function withSyncLock<T>(
   fn: () => Promise<T>,
 ): Promise<{ acquired: true; value: T } | { acquired: false }> {
-  const client = await pool.connect();
+  const timeoutMs = lockConnectTimeoutMs();
+  const client = await connectWithTimeout(timeoutMs);
+  if (!client) {
+    logger.warn(
+      { timeoutMs },
+      "Procas sync skipped: timed out waiting for a database connection to acquire the sync lock",
+    );
+    return { acquired: false };
+  }
   let locked = false;
   try {
     const res = await client.query<{ locked: boolean }>(
