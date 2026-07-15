@@ -7,8 +7,7 @@
  */
 import type { PackageJobGroup } from './packageJobGroup';
 
-export interface PackageEmployeeGroup {
-  employeeId: number;
-  employeeName: string;
+export interface PackageClientGroup {
+  client: string;
   jobs: PackageJobGroup[];
 }

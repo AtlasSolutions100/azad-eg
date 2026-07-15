@@ -93,7 +93,7 @@ export default function PackageWorkspace() {
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight text-[#333333]">
-              {pkg.employeeName}
+              {pkg.employeeName ?? `Job ${pkg.jobNumber}`}
             </h1>
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize ${statusStyle}`}

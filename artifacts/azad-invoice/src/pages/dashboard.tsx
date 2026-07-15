@@ -6,7 +6,7 @@ import {
   useListEmployees,
   useListWorkPlans,
   type PackageSummary,
-  type PackageEmployeeGroup,
+  type PackageClientGroup,
   type PackageInput,
 } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
@@ -37,7 +37,6 @@ import {
 } from "@/components/ui/accordion";
 import {
   Search,
-  Users,
   Briefcase,
   CalendarRange,
   Clock,
@@ -119,6 +118,22 @@ function PackageTile({
         <p className="mt-1 text-xs text-[#5F5F5F]">Invoice {pkg.invoiceNumber}</p>
       )}
 
+      {(pkg.employees.length > 0 || pkg.employeeName) && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {(pkg.employees.length > 0
+            ? pkg.employees.map((e) => e.employeeName)
+            : [pkg.employeeName as string]
+          ).map((name) => (
+            <span
+              key={name}
+              className="inline-flex items-center rounded-full bg-[#CFAF42]/10 px-2 py-0.5 text-[11px] font-medium text-[#8a7326]"
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-[#9a9a9a]">Weeks</p>
@@ -164,13 +179,7 @@ export default function Dashboard() {
 
   const handleCreatePackage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !form.employeeId ||
-      !form.workPlanId ||
-      !form.payPeriodStart ||
-      !form.payPeriodEnd
-    )
-      return;
+    if (!form.workPlanId || !form.payPeriodStart || !form.payPeriodEnd) return;
     try {
       const res = await createPackage.mutateAsync({ data: form as PackageInput });
       setCreateOpen(false);
@@ -194,15 +203,16 @@ export default function Dashboard() {
     }
   };
 
-  const filtered = useMemo<PackageEmployeeGroup[]>(() => {
+  const filtered = useMemo<PackageClientGroup[]>(() => {
     if (!groups) return [];
     const q = search.trim().toLowerCase();
 
-    const matchPkg = (pkg: PackageSummary, employeeName: string) => {
+    const matchPkg = (pkg: PackageSummary) => {
       if (statusFilter !== "all" && pkg.status !== statusFilter) return false;
       if (!q) return true;
       const haystack = [
-        employeeName,
+        pkg.employeeName ?? "",
+        ...pkg.employees.map((e) => e.employeeName),
         pkg.jobNumber,
         pkg.workPlanCode,
         pkg.client,
@@ -222,7 +232,7 @@ export default function Dashboard() {
         jobs: g.jobs
           .map((j) => ({
             ...j,
-            packages: j.packages.filter((p) => matchPkg(p, g.employeeName)),
+            packages: j.packages.filter((p) => matchPkg(p)),
           }))
           .filter((j) => j.packages.length > 0),
       }))
@@ -230,19 +240,19 @@ export default function Dashboard() {
   }, [groups, search, statusFilter]);
 
   const totals = useMemo(() => {
-    let employees = 0;
+    let jobs = 0;
     let packages = 0;
     let billed = 0;
     for (const g of filtered) {
-      employees += 1;
       for (const j of g.jobs) {
+        jobs += 1;
         for (const p of j.packages) {
           packages += 1;
           billed += p.totalThisPeriod;
         }
       }
     }
-    return { employees, packages, billed };
+    return { clients: filtered.length, jobs, packages, billed };
   }, [filtered]);
 
   const createDialog = (
@@ -259,28 +269,28 @@ export default function Dashboard() {
         </DialogHeader>
         <form onSubmit={handleCreatePackage} className="space-y-4">
           <div className="space-y-2">
-            <Label>Employee</Label>
+            <Label>Employee (optional)</Label>
             <Select
-              value={form.employeeId ? String(form.employeeId) : undefined}
+              value={form.employeeId ? String(form.employeeId) : "none"}
               onValueChange={(val) =>
-                setForm({ ...form, employeeId: Number(val) })
+                setForm({
+                  ...form,
+                  employeeId: val === "none" ? undefined : Number(val),
+                })
               }
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select an employee" />
+                <SelectValue placeholder="All employees (add per timesheet)" />
               </SelectTrigger>
               <SelectContent>
-                {employees && employees.length > 0 ? (
-                  employees.map((emp) => (
-                    <SelectItem key={emp.id} value={String(emp.id)}>
-                      {emp.name} — {emp.classification}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <div className="px-2 py-1.5 text-xs text-[#5F5F5F]">
-                    No employees yet. Add one on the Employees page first.
-                  </div>
-                )}
+                <SelectItem value="none">
+                  No primary employee — add people on timesheets
+                </SelectItem>
+                {employees?.map((emp) => (
+                  <SelectItem key={emp.id} value={String(emp.id)}>
+                    {emp.name} — {emp.classification}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -369,7 +379,6 @@ export default function Dashboard() {
             className="w-full bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
             disabled={
               createPackage.isPending ||
-              !form.employeeId ||
               !form.workPlanId ||
               !form.payPeriodStart ||
               !form.payPeriodEnd
@@ -390,7 +399,7 @@ export default function Dashboard() {
             Packages
           </h1>
           <p className="text-sm text-[#5F5F5F]">
-            Billing packages organized by employee, job number, and pay period.
+            Billing packages organized by client, job number, and pay period.
           </p>
         </div>
         {createDialog}
@@ -400,11 +409,11 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="flex items-center gap-3 p-4">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#CFAF42]/10 text-[#CFAF42]">
-            <Users className="h-5 w-5" />
+            <Briefcase className="h-5 w-5" />
           </span>
           <div>
-            <p className="text-xs text-[#5F5F5F]">Employees</p>
-            <p className="text-xl font-semibold text-[#333333]">{totals.employees}</p>
+            <p className="text-xs text-[#5F5F5F]">Jobs</p>
+            <p className="text-xl font-semibold text-[#333333]">{totals.jobs}</p>
           </div>
         </Card>
         <Card className="flex items-center gap-3 p-4">
@@ -436,7 +445,7 @@ export default function Dashboard() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employee, job number (A.04-02), or pay period…"
+            placeholder="Search client, employee, job number (A.04-02), or pay period…"
             className="pl-9"
           />
         </div>
@@ -489,7 +498,7 @@ export default function Dashboard() {
       ) : (
         <Accordion
           type="multiple"
-          defaultValue={filtered.map((g) => `emp-${g.employeeId}`)}
+          defaultValue={filtered.map((g) => `client-${g.client}`)}
           className="space-y-3"
         >
           {filtered.map((group) => {
@@ -499,15 +508,15 @@ export default function Dashboard() {
             );
             return (
               <AccordionItem
-                key={group.employeeId}
-                value={`emp-${group.employeeId}`}
+                key={group.client}
+                value={`client-${group.client}`}
                 className="overflow-hidden rounded-xl border border-border bg-white"
               >
                 <AccordionTrigger className="px-5 py-4 hover:no-underline">
                   <div className="flex flex-1 items-center justify-between pr-3">
                     <div className="flex items-center gap-3">
                       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#CFAF42]/15 text-sm font-semibold text-[#CFAF42]">
-                        {group.employeeName
+                        {group.client
                           .split(" ")
                           .map((n) => n[0])
                           .slice(0, 2)
@@ -515,7 +524,7 @@ export default function Dashboard() {
                       </span>
                       <div className="text-left">
                         <p className="text-base font-semibold text-[#333333]">
-                          {group.employeeName}
+                          {group.client}
                         </p>
                         <p className="text-xs text-[#5F5F5F]">
                           {group.jobs.length} job

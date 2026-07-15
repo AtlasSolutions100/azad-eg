@@ -83,9 +83,12 @@ const DOC_STATUS_COLUMN: Record<PackageDocKind, keyof typeof packagesTable.$infe
 async function buildDocContext(packageId: number): Promise<PackageDocContext | null> {
   const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, packageId));
   if (!pkg) return null;
-  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId));
+  const emp =
+    pkg.employeeId != null
+      ? await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId)).then((r) => r[0] ?? null)
+      : null;
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
-  if (!emp || !wp) return null;
+  if (!wp) return null;
   const [weeks, entries, progressRows, overrides] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, packageId)),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, packageId)),
@@ -101,7 +104,7 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
 
   return {
     pkg,
-    employee: { name: emp.name, classification: emp.classification },
+    employee: emp ? { name: emp.name, classification: emp.classification } : null,
     workPlan: wp,
     weeks,
     entries,
@@ -117,10 +120,16 @@ function parseId(raw: string | string[]): number {
   return parseInt(Array.isArray(raw) ? raw[0] : raw, 10);
 }
 
-/** Loads the employee + work plan a package references, or null if missing. */
-async function loadContext(pkg: { employeeId: number; workPlanId: number }) {
+/**
+ * Loads the work plan a package references (required) plus the legacy primary
+ * employee when one is set. `emp` is null for job-level packages whose
+ * contributors come solely from timesheet entries.
+ */
+async function loadContext(pkg: { employeeId: number | null; workPlanId: number }) {
   const [emp, wp] = await Promise.all([
-    db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId)).then((r) => r[0]),
+    pkg.employeeId == null
+      ? Promise.resolve(null)
+      : db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId)).then((r) => r[0] ?? null),
     db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0]),
   ]);
   return { emp, wp };
@@ -162,9 +171,9 @@ router.get("/packages", async (req, res): Promise<void> => {
 
   const summaries = pkgs
     .map((p) => {
-      const emp = empMap.get(p.employeeId);
+      const emp = p.employeeId != null ? empMap.get(p.employeeId) ?? null : null;
       const wp = wpMap.get(p.workPlanId);
-      if (!emp || !wp) return null;
+      if (!wp) return null;
       return toApiPackageSummary(p, emp, wp, weekCountMap.get(p.id) ?? 0, entriesMap.get(p.id) ?? []);
     })
     .filter((s): s is NonNullable<typeof s> => s !== null);
@@ -178,8 +187,11 @@ router.post("/packages", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { emp, wp } = await loadContext(parsed.data);
-  if (!emp) {
+  const { emp, wp } = await loadContext({
+    employeeId: parsed.data.employeeId ?? null,
+    workPlanId: parsed.data.workPlanId,
+  });
+  if (parsed.data.employeeId != null && !emp) {
     res.status(400).json({ error: "Employee not found" });
     return;
   }
@@ -214,7 +226,7 @@ router.post("/packages", async (req, res): Promise<void> => {
   const [row] = await db
     .insert(packagesTable)
     .values({
-      employeeId: parsed.data.employeeId,
+      employeeId: parsed.data.employeeId ?? null,
       workPlanId: parsed.data.workPlanId,
       payPeriodStart: parsed.data.payPeriodStart,
       payPeriodEnd: parsed.data.payPeriodEnd,
@@ -230,7 +242,7 @@ router.post("/packages", async (req, res): Promise<void> => {
     action: "created package",
     entityType: "package",
     entityId: row.id,
-    description: `${emp.name} — ${wp.code} (${row.payPeriodStart} → ${row.payPeriodEnd})`,
+    description: `${emp ? `${emp.name} — ` : ""}${wp.code} (${row.payPeriodStart} → ${row.payPeriodEnd})`,
   });
   res.status(201).json(CreatePackageResponse.parse(toApiPackageSummary(row, emp, wp, 0, [])));
 });
@@ -256,37 +268,38 @@ router.get("/packages/grouped", async (_req, res): Promise<void> => {
   }
 
   type Summary = ReturnType<typeof toApiPackageSummary>;
-  // employeeId -> workPlanId -> summaries
-  const grouped = new Map<number, Map<number, Summary[]>>();
+  // client -> workPlanId -> summaries (job-first: each package is one invoice
+  // for a job; contributing employees live inside the summary).
+  const grouped = new Map<string, Map<number, Summary[]>>();
   for (const p of pkgs) {
-    const emp = empMap.get(p.employeeId);
+    const emp = p.employeeId != null ? empMap.get(p.employeeId) ?? null : null;
     const wp = wpMap.get(p.workPlanId);
-    if (!emp || !wp) continue;
+    if (!wp) continue;
     const summary = toApiPackageSummary(p, emp, wp, weekCountMap.get(p.id) ?? 0, entriesMap.get(p.id) ?? []);
-    const byJob = grouped.get(p.employeeId) ?? new Map<number, Summary[]>();
+    const byJob = grouped.get(wp.client) ?? new Map<number, Summary[]>();
     const arr = byJob.get(p.workPlanId) ?? [];
     arr.push(summary);
     byJob.set(p.workPlanId, arr);
-    grouped.set(p.employeeId, byJob);
+    grouped.set(wp.client, byJob);
   }
 
-  const result = [...grouped.entries()].map(([employeeId, byJob]) => {
-    const emp = empMap.get(employeeId)!;
-    return {
-      employeeId,
-      employeeName: emp.name,
-      jobs: [...byJob.entries()].map(([workPlanId, summaries]) => {
-        const wp = wpMap.get(workPlanId)!;
-        return {
-          workPlanId,
-          workPlanCode: wp.code,
-          jobNumber: wp.jobNumber,
-          client: wp.client,
-          packages: summaries,
-        };
-      }),
-    };
-  });
+  const result = [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([client, byJob]) => ({
+      client,
+      jobs: [...byJob.entries()]
+        .map(([workPlanId, summaries]) => {
+          const wp = wpMap.get(workPlanId)!;
+          return {
+            workPlanId,
+            workPlanCode: wp.code,
+            jobNumber: wp.jobNumber,
+            client: wp.client,
+            packages: summaries,
+          };
+        })
+        .sort((a, b) => a.jobNumber.localeCompare(b.jobNumber)),
+    }));
 
   res.json(ListPackagesGroupedResponse.parse(result));
 });
@@ -303,8 +316,8 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
     return;
   }
   const { emp, wp } = await loadContext(pkg);
-  if (!emp || !wp) {
-    res.status(404).json({ error: "Package references missing employee or work plan" });
+  if (!wp) {
+    res.status(404).json({ error: "Package references a missing work plan" });
     return;
   }
   const [weeks, entries, progress, overrides] = await Promise.all([
@@ -388,8 +401,8 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
     .where(eq(packagesTable.id, id))
     .returning();
   const { emp, wp } = await loadContext(row);
-  if (!emp || !wp) {
-    res.status(404).json({ error: "Package references missing employee or work plan" });
+  if (!wp) {
+    res.status(404).json({ error: "Package references a missing work plan" });
     return;
   }
   const [weekCount, entries] = await Promise.all([

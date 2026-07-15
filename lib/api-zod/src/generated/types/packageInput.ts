@@ -7,7 +7,8 @@
  */
 
 export interface PackageInput {
-  employeeId: number;
+  /** Optional legacy primary employee; contributors come from timesheet entries. */
+  employeeId?: number;
   workPlanId: number;
   payPeriodStart: string;
   payPeriodEnd: string;

@@ -737,6 +737,15 @@ export const PackageSummaryStatus = {
   exported: 'exported',
 } as const;
 
+export interface PackageEmployeeContribution {
+  /** @nullable */
+  employeeId?: number | null;
+  employeeName: string;
+  hours: number;
+  /** Straight-time labor (hours x rate) before burden. */
+  laborCost: number;
+}
+
 export type DocStatus = typeof DocStatus[keyof typeof DocStatus];
 
 
@@ -748,8 +757,18 @@ export const DocStatus = {
 
 export interface PackageSummary {
   id: number;
-  employeeId: number;
-  employeeName: string;
+  /**
+     * Legacy primary employee; null for job-level packages.
+     * @nullable
+     */
+  employeeId?: number | null;
+  /**
+     * Display name — the single contributor's name, or a "Name +N more" style label when several employees contributed.
+     * @nullable
+     */
+  employeeName?: string | null;
+  /** Employees contributing to this invoice, from timesheet entries. */
+  employees: PackageEmployeeContribution[];
   workPlanId: number;
   workPlanCode: string;
   jobNumber: string;
@@ -784,7 +803,8 @@ export interface PackageSummary {
 }
 
 export interface PackageInput {
-  employeeId: number;
+  /** Optional legacy primary employee; contributors come from timesheet entries. */
+  employeeId?: number;
   workPlanId: number;
   payPeriodStart: string;
   payPeriodEnd: string;
@@ -1064,9 +1084,8 @@ export interface PackageJobGroup {
   packages: PackageSummary[];
 }
 
-export interface PackageEmployeeGroup {
-  employeeId: number;
-  employeeName: string;
+export interface PackageClientGroup {
+  client: string;
   jobs: PackageJobGroup[];
 }
 

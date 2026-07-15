@@ -872,7 +872,7 @@ paths:
     get:
       operationId: listPackagesGrouped
       tags: [packages]
-      summary: Packages grouped Employee -> Job Number -> Pay Period
+      summary: Packages grouped Client -> Job Number -> Invoice
       responses:
         "200":
           description: Grouped packages
@@ -881,7 +881,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/PackageEmployeeGroup"
+                  $ref: "#/components/schemas/PackageClientGroup"
   /packages/{id}:
     get:
       operationId: getPackage
@@ -1927,8 +1927,7 @@ components:
       type: object
       required:
         - id
-        - employeeId
-        - employeeName
+        - employees
         - workPlanId
         - workPlanCode
         - jobNumber
@@ -1950,8 +1949,19 @@ components:
         - updatedAt
       properties:
         id: { type: integer }
-        employeeId: { type: integer }
-        employeeName: { type: string }
+        employeeId:
+          type: ["integer", "null"]
+          description: Legacy primary employee; null for job-level packages.
+        employeeName:
+          type: ["string", "null"]
+          description: >-
+            Display name — the single contributor's name, or a "Name +N more"
+            style label when several employees contributed.
+        employees:
+          type: array
+          description: Employees contributing to this invoice, from timesheet entries.
+          items:
+            $ref: "#/components/schemas/PackageEmployeeContribution"
         workPlanId: { type: integer }
         workPlanCode: { type: string }
         jobNumber: { type: string }
@@ -1987,11 +1997,23 @@ components:
     DocStatus:
       type: string
       enum: [not_started, in_progress, ready]
+    PackageEmployeeContribution:
+      type: object
+      required: [employeeName, hours, laborCost]
+      properties:
+        employeeId: { type: ["integer", "null"] }
+        employeeName: { type: string }
+        hours: { type: number }
+        laborCost:
+          type: number
+          description: Straight-time labor (hours x rate) before burden.
     PackageInput:
       type: object
-      required: [employeeId, workPlanId, payPeriodStart, payPeriodEnd]
+      required: [workPlanId, payPeriodStart, payPeriodEnd]
       properties:
-        employeeId: { type: integer }
+        employeeId:
+          type: integer
+          description: Optional legacy primary employee; contributors come from timesheet entries.
         workPlanId: { type: integer }
         payPeriodStart: { type: string }
         payPeriodEnd: { type: string }
@@ -2304,12 +2326,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PackageSummary"
-    PackageEmployeeGroup:
+    PackageClientGroup:
       type: object
-      required: [employeeId, employeeName, jobs]
+      required: [client, jobs]
       properties:
-        employeeId: { type: integer }
-        employeeName: { type: string }
+        client: { type: string }
         jobs:
           type: array
           items:

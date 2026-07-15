@@ -140,9 +140,61 @@ export function buildPackageRollup(
   };
 }
 
+export interface EmployeeContribution {
+  employeeId: number | null;
+  employeeName: string;
+  hours: number;
+  laborCost: number;
+}
+
+export function contributorKey(entry: Pick<TimesheetEntryRow, "employeeId" | "employeeName">): string {
+  // Key by employee identity when known so two people sharing a name stay
+  // separate; fall back to normalized name for legacy rows without an ID.
+  return entry.employeeId != null ? `id:${entry.employeeId}` : `name:${entry.employeeName.trim().toLowerCase()}`;
+}
+
+/**
+ * Aggregates a package's timesheet entries into per-employee contributions
+ * (hours + straight-time labor cost), ordered by descending labor cost.
+ */
+export function buildEmployeeContributions(entries: TimesheetEntryRow[]): EmployeeContribution[] {
+  const byKey = new Map<string, EmployeeContribution>();
+  for (const e of entries) {
+    const key = contributorKey(e);
+    const acc = byKey.get(key) ?? {
+      employeeId: e.employeeId ?? null,
+      employeeName: e.employeeName.trim(),
+      hours: 0,
+      laborCost: 0,
+    };
+    const hours = entryTotalHours(e);
+    acc.hours += hours;
+    acc.laborCost += hours * e.rate;
+    byKey.set(key, acc);
+  }
+  return [...byKey.values()]
+    .map((c) => ({ ...c, hours: round2(c.hours), laborCost: round2(c.laborCost) }))
+    .sort((a, b) => b.laborCost - a.laborCost || a.employeeName.localeCompare(b.employeeName));
+}
+
+/**
+ * Display label for a package's contributors: single name, "A +N more" when
+ * several employees contributed, or the legacy employee's name as fallback.
+ */
+export function contributorsLabel(
+  contributions: EmployeeContribution[],
+  legacyEmployee: Pick<Employee, "name"> | null | undefined,
+): string | null {
+  if (contributions.length === 1) return contributions[0].employeeName;
+  if (contributions.length > 1) {
+    return `${contributions[0].employeeName} +${contributions.length - 1} more`;
+  }
+  return legacyEmployee?.name ?? null;
+}
+
 export function toApiPackageSummary(
   pkg: PackageRow,
-  employee: Pick<Employee, "name">,
+  employee: Pick<Employee, "name"> | null,
   workPlan: Pick<WorkPlan, "code" | "jobNumber" | "client" | "totalBudget" | "fringeRate" | "overheadRate" | "fixedFeeRate" | "fccmRate">,
   weekCount: number,
   entries: TimesheetEntryRow[],
@@ -151,10 +203,12 @@ export function toApiPackageSummary(
     previouslyBilled: pkg.previouslyBilled,
     otherDirectCosts: pkg.otherDirectCosts,
   });
+  const employees = buildEmployeeContributions(entries);
   return {
     id: pkg.id,
     employeeId: pkg.employeeId,
-    employeeName: employee.name,
+    employeeName: contributorsLabel(employees, employee),
+    employees,
     workPlanId: pkg.workPlanId,
     workPlanCode: workPlan.code,
     jobNumber: workPlan.jobNumber,

@@ -49,8 +49,8 @@ import type {
   ListInvoicesParams,
   ListPackagesParams,
   NotFoundResponse,
+  PackageClientGroup,
   PackageDetail,
-  PackageEmployeeGroup,
   PackageExport,
   PackageInput,
   PackageProgressReport,
@@ -3976,11 +3976,11 @@ export const getListPackagesGroupedUrl = () => {
 }
 
 /**
- * @summary Packages grouped Employee -> Job Number -> Pay Period
+ * @summary Packages grouped Client -> Job Number -> Invoice
  */
-export const listPackagesGrouped = async ( options?: RequestInit): Promise<PackageEmployeeGroup[]> => {
+export const listPackagesGrouped = async ( options?: RequestInit): Promise<PackageClientGroup[]> => {
 
-  return customFetch<PackageEmployeeGroup[]>(getListPackagesGroupedUrl(),
+  return customFetch<PackageClientGroup[]>(getListPackagesGroupedUrl(),
   {
     ...options,
     method: 'GET'
@@ -4023,7 +4023,7 @@ export type ListPackagesGroupedQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Packages grouped Employee -> Job Number -> Pay Period
+ * @summary Packages grouped Client -> Job Number -> Invoice
  */
 
 export function useListPackagesGrouped<TData = Awaited<ReturnType<typeof listPackagesGrouped>>, TError = ErrorType<unknown>>(

@@ -33,7 +33,9 @@ router.get("/search", async (req, res): Promise<void> => {
   for (const p of [...pkgs, ...pkgsByEmployee]) pkgMap.set(p.id, p);
 
   const empNameMap = new Map(emps.map((e) => [e.id, e.name]));
-  const missingEmpIds = [...pkgMap.values()].map((p) => p.employeeId).filter((eid) => !empNameMap.has(eid));
+  const missingEmpIds = [...pkgMap.values()]
+    .map((p) => p.employeeId)
+    .filter((eid): eid is number => eid != null && !empNameMap.has(eid));
   if (missingEmpIds.length) {
     const extraEmps = await db.select().from(employeesTable).where(inArray(employeesTable.id, missingEmpIds));
     for (const e of extraEmps) empNameMap.set(e.id, e.name);
@@ -46,7 +48,7 @@ router.get("/search", async (req, res): Promise<void> => {
     ...[...pkgMap.values()].map((p) => ({
       type: "package" as const,
       id: p.id,
-      label: `${empNameMap.get(p.employeeId) ?? "Package"} — ${p.invoiceNumber ?? "draft"}`,
+      label: `${(p.employeeId != null ? empNameMap.get(p.employeeId) : null) ?? "Package"} — ${p.invoiceNumber ?? "draft"}`,
       sublabel: `${p.payPeriodStart} → ${p.payPeriodEnd}`,
       route: `/packages/${p.id}`,
     })),

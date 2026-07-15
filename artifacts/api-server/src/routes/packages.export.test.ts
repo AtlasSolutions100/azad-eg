@@ -276,7 +276,7 @@ function sanitizeFilePart(value: string): string {
 // straight from the database, so the assertion tracks the real data.
 async function expectedFileBase(pkgId: number): Promise<string> {
   const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
-  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId));
+  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId!));
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
   const parts = [emp.name, wp.jobNumber].map((p) => sanitizeFilePart(p ?? "")).filter((p) => p.length > 0);
   return parts.join("_") || `Package-${pkgId}`;
@@ -327,7 +327,7 @@ describe("export filenames follow EmployeeName_Job#_DocumentName", () => {
       const pkgId = await seedPackage("draft");
       const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
       await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId));
-      const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId));
+      const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId!));
 
       const res = await request(app)
         .post(`/api/packages/${pkgId}/documents/invoice/generate`)
@@ -348,7 +348,10 @@ describe("export filenames follow EmployeeName_Job#_DocumentName", () => {
       const pkgId = await seedPackage("draft");
       const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
       await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId));
-      await db.update(employeesTable).set({ name: "" }).where(eq(employeesTable.id, pkg.employeeId));
+      await db.update(employeesTable).set({ name: "" }).where(eq(employeesTable.id, pkg.employeeId!));
+      // File names now derive contributor names from timesheet entries, so
+      // blank those out too to exercise the ultimate Package-<id> fallback.
+      await db.update(timesheetEntriesTable).set({ employeeName: "" }).where(eq(timesheetEntriesTable.packageId, pkgId));
 
       const res = await request(app)
         .post(`/api/packages/${pkgId}/documents/invoice/generate`)

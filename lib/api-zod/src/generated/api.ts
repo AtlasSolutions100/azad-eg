@@ -1261,8 +1261,14 @@ export const ListPackagesQueryParams = zod.object({
 
 export const ListPackagesResponseItem = zod.object({
   "id": zod.number(),
-  "employeeId": zod.number(),
+  "employeeId": zod.number().nullish().describe('Legacy primary employee; null for job-level packages.'),
+  "employeeName": zod.string().nullish().describe('Display name — the single contributor\'s name, or a \"Name +N more\" style label when several employees contributed.'),
+  "employees": zod.array(zod.object({
+  "employeeId": zod.number().nullish(),
   "employeeName": zod.string(),
+  "hours": zod.number(),
+  "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
+})).describe('Employees contributing to this invoice, from timesheet entries.'),
   "workPlanId": zod.number(),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
@@ -1296,7 +1302,7 @@ export const ListPackagesResponse = zod.array(ListPackagesResponseItem)
  * @summary Create a package
  */
 export const CreatePackageBody = zod.object({
-  "employeeId": zod.number(),
+  "employeeId": zod.number().optional().describe('Optional legacy primary employee; contributors come from timesheet entries.'),
   "workPlanId": zod.number(),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
@@ -1309,8 +1315,14 @@ export const CreatePackageBody = zod.object({
 
 export const CreatePackageResponse = zod.object({
   "id": zod.number(),
-  "employeeId": zod.number(),
+  "employeeId": zod.number().nullish().describe('Legacy primary employee; null for job-level packages.'),
+  "employeeName": zod.string().nullish().describe('Display name — the single contributor\'s name, or a \"Name +N more\" style label when several employees contributed.'),
+  "employees": zod.array(zod.object({
+  "employeeId": zod.number().nullish(),
   "employeeName": zod.string(),
+  "hours": zod.number(),
+  "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
+})).describe('Employees contributing to this invoice, from timesheet entries.'),
   "workPlanId": zod.number(),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
@@ -1340,11 +1352,10 @@ export const CreatePackageResponse = zod.object({
 
 
 /**
- * @summary Packages grouped Employee -> Job Number -> Pay Period
+ * @summary Packages grouped Client -> Job Number -> Invoice
  */
 export const ListPackagesGroupedResponseItem = zod.object({
-  "employeeId": zod.number(),
-  "employeeName": zod.string(),
+  "client": zod.string(),
   "jobs": zod.array(zod.object({
   "workPlanId": zod.number(),
   "workPlanCode": zod.string(),
@@ -1352,8 +1363,14 @@ export const ListPackagesGroupedResponseItem = zod.object({
   "client": zod.string(),
   "packages": zod.array(zod.object({
   "id": zod.number(),
-  "employeeId": zod.number(),
+  "employeeId": zod.number().nullish().describe('Legacy primary employee; null for job-level packages.'),
+  "employeeName": zod.string().nullish().describe('Display name — the single contributor\'s name, or a \"Name +N more\" style label when several employees contributed.'),
+  "employees": zod.array(zod.object({
+  "employeeId": zod.number().nullish(),
   "employeeName": zod.string(),
+  "hours": zod.number(),
+  "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
+})).describe('Employees contributing to this invoice, from timesheet entries.'),
   "workPlanId": zod.number(),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
@@ -1395,8 +1412,14 @@ export const GetPackageParams = zod.object({
 export const GetPackageResponse = zod.object({
   "package": zod.object({
   "id": zod.number(),
-  "employeeId": zod.number(),
+  "employeeId": zod.number().nullish().describe('Legacy primary employee; null for job-level packages.'),
+  "employeeName": zod.string().nullish().describe('Display name — the single contributor\'s name, or a \"Name +N more\" style label when several employees contributed.'),
+  "employees": zod.array(zod.object({
+  "employeeId": zod.number().nullish(),
   "employeeName": zod.string(),
+  "hours": zod.number(),
+  "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
+})).describe('Employees contributing to this invoice, from timesheet entries.'),
   "workPlanId": zod.number(),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
@@ -1539,8 +1562,14 @@ export const UpdatePackageBody = zod.object({
 
 export const UpdatePackageResponse = zod.object({
   "id": zod.number(),
-  "employeeId": zod.number(),
+  "employeeId": zod.number().nullish().describe('Legacy primary employee; null for job-level packages.'),
+  "employeeName": zod.string().nullish().describe('Display name — the single contributor\'s name, or a \"Name +N more\" style label when several employees contributed.'),
+  "employees": zod.array(zod.object({
+  "employeeId": zod.number().nullish(),
   "employeeName": zod.string(),
+  "hours": zod.number(),
+  "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
+})).describe('Employees contributing to this invoice, from timesheet entries.'),
   "workPlanId": zod.number(),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),

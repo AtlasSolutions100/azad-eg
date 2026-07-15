@@ -6,12 +6,23 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { DocStatus } from './docStatus';
+import type { PackageEmployeeContribution } from './packageEmployeeContribution';
 import type { PackageSummaryStatus } from './packageSummaryStatus';
 
 export interface PackageSummary {
   id: number;
-  employeeId: number;
-  employeeName: string;
+  /**
+     * Legacy primary employee; null for job-level packages.
+     * @nullable
+     */
+  employeeId?: number | null;
+  /**
+     * Display name — the single contributor's name, or a "Name +N more" style label when several employees contributed.
+     * @nullable
+     */
+  employeeName?: string | null;
+  /** Employees contributing to this invoice, from timesheet entries. */
+  employees: PackageEmployeeContribution[];
   workPlanId: number;
   workPlanCode: string;
   jobNumber: string;

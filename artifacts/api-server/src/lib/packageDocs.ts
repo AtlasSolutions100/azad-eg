@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { ZipArchive } from "archiver";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
 import { convertToPdf, stripBrokenDefinedNames } from "./excel";
-import { buildPackageRollup } from "./packageMappers";
+import { buildPackageRollup, contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type {
   PackageRow,
@@ -20,7 +20,8 @@ export type PackageDocKind = "invoice" | "subcalc" | "progress" | "labor" | "tim
 
 export interface PackageDocContext {
   pkg: PackageRow;
-  employee: Pick<Employee, "name" | "classification">;
+  /** Legacy primary employee, or null for job-level (multi-employee) packages. */
+  employee: Pick<Employee, "name" | "classification"> | null;
   workPlan: WorkPlan;
   weeks: PackageWeekRow[];
   entries: TimesheetEntryRow[];
@@ -93,13 +94,36 @@ function sanitizeFilePart(value: string): string {
     .trim();
 }
 
+export interface Contributor {
+  /** Identity key: `id:<employeeId>` or `name:<normalized>` for legacy rows. */
+  key: string;
+  name: string;
+}
+
+/** Distinct contributing employees from the package's timesheet entries. */
+export function packageContributors(ctx: Pick<PackageDocContext, "entries" | "employee">): Contributor[] {
+  const seen = new Map<string, string>();
+  for (const e of ctx.entries) {
+    const name = e.employeeName.trim();
+    if (!name) continue;
+    const key = contributorKey(e);
+    if (!seen.has(key)) seen.set(key, name);
+  }
+  if (seen.size === 0 && ctx.employee?.name) {
+    return [{ key: `name:${ctx.employee.name.trim().toLowerCase()}`, name: ctx.employee.name }];
+  }
+  return [...seen.entries()].map(([key, name]) => ({ key, name }));
+}
+
 /**
- * Builds the `EmployeeName_Job#` prefix shared by every exported document, so
- * files are identifiable and two packages never collide on `Invoice.xlsx`.
- * Falls back gracefully when the employee name or job number is missing.
+ * Builds the prefix shared by every exported document, so files are
+ * identifiable and two packages never collide on `Invoice.xlsx`. A single
+ * contributor keeps the legacy `EmployeeName_Job#` shape; multi-employee
+ * invoices use just the job number.
  */
 function docFileBase(ctx: PackageDocContext): string {
-  const parts = [ctx.employee.name, ctx.workPlan.jobNumber]
+  const contributors = packageContributors(ctx);
+  const parts = [contributors.length === 1 ? contributors[0].name : "", ctx.workPlan.jobNumber]
     .map((p) => sanitizeFilePart(p ?? ""))
     .filter((p) => p.length > 0);
   const base = parts.join("_");
@@ -461,8 +485,13 @@ interface DayAcc {
   M: number;
 }
 
-function fillWeek(ws: ExcelJS.Worksheet, week: PackageWeekRow, ctx: PackageDocContext): void {
-  setVal(ws, "C5", ctx.employee.name);
+function fillWeek(
+  ws: ExcelJS.Worksheet,
+  week: PackageWeekRow,
+  ctx: PackageDocContext,
+  contributor: Contributor,
+): void {
+  setVal(ws, "C5", contributor.name);
   // Header dates: Mon=I, Tue=J, Wed=K, Thu=L, Fri=M, Sat=G, Sun=H.
   setVal(ws, "I6", toDate(week.weekStart));
   setVal(ws, "J6", addDays(week.weekStart, 1));
@@ -478,7 +507,9 @@ function fillWeek(ws: ExcelJS.Worksheet, week: PackageWeekRow, ctx: PackageDocCo
   }
 
   const acc = new Map<number, DayAcc>();
-  for (const e of ctx.entries.filter((x) => x.weekId === week.id)) {
+  for (const e of ctx.entries.filter(
+    (x) => x.weekId === week.id && contributorKey(x) === contributor.key,
+  )) {
     const r = categoryRow(e.category);
     const a =
       acc.get(r) ?? { desc: null, G: 0, H: 0, I: 0, J: 0, K: 0, L: 0, M: 0 };
@@ -516,22 +547,38 @@ async function generateTimesheets(ctx: PackageDocContext): Promise<string> {
   // weeks can be cloned with the same styling/layout.
   const pristine = JSON.parse(JSON.stringify(template.model));
 
+  // One sheet per week per contributing employee, so a multi-employee invoice
+  // ships every person's weekly timesheet. Single-employee packages keep the
+  // legacy one-sheet-per-week layout (no name suffix).
+  const contributors = packageContributors(ctx);
+  const people: Contributor[] =
+    contributors.length > 0 ? contributors : [{ key: "name:", name: "" }];
+
   const usedNames = new Set<string>();
+  let sheetIndex = 0;
   weeks.forEach((week, i) => {
-    const name = uniqueSheetName(sheetName(week.label, `Week ${i + 1}`), usedNames);
-    let ws: ExcelJS.Worksheet;
-    if (i === 0) {
-      ws = template;
-      ws.name = name;
-    } else {
-      ws = wb.addWorksheet(name);
-      const cloned = JSON.parse(JSON.stringify(pristine));
-      cloned.name = name;
-      cloned.id = ws.id;
-      ws.model = cloned;
-      ws.name = name;
+    for (const person of people) {
+      const label = sheetName(week.label, `Week ${i + 1}`);
+      const base =
+        people.length > 1 && person.name
+          ? sheetName(`${label} - ${person.name}`, label)
+          : label;
+      const name = uniqueSheetName(base, usedNames);
+      let ws: ExcelJS.Worksheet;
+      if (sheetIndex === 0) {
+        ws = template;
+        ws.name = name;
+      } else {
+        ws = wb.addWorksheet(name);
+        const cloned = JSON.parse(JSON.stringify(pristine));
+        cloned.name = name;
+        cloned.id = ws.id;
+        ws.model = cloned;
+        ws.name = name;
+      }
+      sheetIndex += 1;
+      fillWeek(ws, week, ctx, person);
     }
-    fillWeek(ws, week, ctx);
   });
 
   return writeOut(wb, "timesheets", ctx);
