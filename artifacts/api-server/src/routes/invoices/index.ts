@@ -477,7 +477,10 @@ router.post(
   const inserted = await db.insert(lineItemsTable).values(toInsert).returning();
   // Persist the warnings so billers can review them after a reload; each new
   // import replaces the previous set.
-  await db.update(invoicesTable).set({ importWarnings: warnings }).where(eq(invoicesTable.id, id));
+  await db
+    .update(invoicesTable)
+    .set({ importWarnings: warnings, lastImportAt: new Date(), lastImportSource: "upload" })
+    .where(eq(invoicesTable.id, id));
   // New labor changes this invoice's total-to-date; refresh downstream carry-over.
   await recomputeCarryOverWithAudit(ctx.invoice.workPlanId, {
     invoiceId: id,

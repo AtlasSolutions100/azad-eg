@@ -1549,6 +1549,13 @@ components:
           type: ["array", "null"]
           items: { type: string }
           description: Warnings from the most recent time-data import; replaced on each new import.
+        lastImportAt:
+          type: ["string", "null"]
+          description: ISO timestamp of the most recent time-data import; replaced on each new import.
+        lastImportSource:
+          type: ["string", "null"]
+          enum: [upload, procas, procas-scheduled, null]
+          description: Source of the most recent time-data import.
         createdAt: { type: string }
         updatedAt: { type: string }
     InvoiceInput:

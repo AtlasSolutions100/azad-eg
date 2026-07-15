@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceLastImportSource } from './invoiceLastImportSource';
 import type { InvoiceStatus } from './invoiceStatus';
 
 export interface Invoice {
@@ -40,6 +41,16 @@ export interface Invoice {
      * @nullable
      */
   importWarnings?: string[] | null;
+  /**
+     * ISO timestamp of the most recent time-data import; replaced on each new import.
+     * @nullable
+     */
+  lastImportAt?: string | null;
+  /**
+     * Source of the most recent time-data import.
+     * @nullable
+     */
+  lastImportSource?: InvoiceLastImportSource;
   createdAt: string;
   updatedAt: string;
 }

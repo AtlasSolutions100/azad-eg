@@ -230,6 +230,19 @@ export const InvoiceStatus = {
   exported: 'exported',
 } as const;
 
+/**
+ * Source of the most recent time-data import.
+ * @nullable
+ */
+export type InvoiceLastImportSource = typeof InvoiceLastImportSource[keyof typeof InvoiceLastImportSource] | null;
+
+
+export const InvoiceLastImportSource = {
+  upload: 'upload',
+  procas: 'procas',
+  'procas-scheduled': 'procas-scheduled',
+} as const;
+
 export interface Invoice {
   id: number;
   workPlanId: number;
@@ -263,6 +276,16 @@ export interface Invoice {
      * @nullable
      */
   importWarnings?: string[] | null;
+  /**
+     * ISO timestamp of the most recent time-data import; replaced on each new import.
+     * @nullable
+     */
+  lastImportAt?: string | null;
+  /**
+     * Source of the most recent time-data import.
+     * @nullable
+     */
+  lastImportSource?: InvoiceLastImportSource;
   createdAt: string;
   updatedAt: string;
 }

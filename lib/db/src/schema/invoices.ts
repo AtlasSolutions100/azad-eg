@@ -19,6 +19,11 @@ export const invoicesTable = pgTable("invoices", {
   // sync). Persisted so billers can review why rows were skipped after a
   // reload; replaced wholesale on every new import.
   importWarnings: jsonb("import_warnings").$type<string[]>(),
+  // When the most recent time-data import ran and which source produced it
+  // ("upload", "procas", or "procas-scheduled"); replaced on each new import
+  // so billers can tell whether the stored warnings are still relevant.
+  lastImportAt: timestamp("last_import_at", { withTimezone: true }),
+  lastImportSource: text("last_import_source"),
   preparedBy: text("prepared_by"),
   approvedBy: text("approved_by"),
   signatureId: integer("signature_id"),

@@ -454,6 +454,8 @@ export const ListInvoicesResponseItem = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -503,6 +505,8 @@ export const CreateInvoiceResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -541,6 +545,8 @@ export const GetInvoiceResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -593,6 +599,8 @@ export const UpdateInvoiceResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -642,6 +650,8 @@ export const UnpinInvoiceCarryOverResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -690,6 +700,8 @@ export const ApproveInvoiceResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -729,6 +741,8 @@ export const GetInvoicePreviewResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }),
@@ -851,6 +865,8 @@ export const DismissImportWarningsResponse = zod.object({
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
+  "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })

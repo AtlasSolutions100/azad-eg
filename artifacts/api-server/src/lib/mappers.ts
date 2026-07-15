@@ -72,6 +72,8 @@ export function buildInvoice(invoice: InvoiceRow, workPlan: WorkPlan, lineItems:
       preparedBy: invoice.preparedBy,
       approvedBy: invoice.approvedBy,
       importWarnings: invoice.importWarnings,
+      lastImportAt: invoice.lastImportAt ? invoice.lastImportAt.toISOString() : null,
+      lastImportSource: invoice.lastImportSource,
       createdAt: invoice.createdAt.toISOString(),
       updatedAt: invoice.updatedAt.toISOString(),
     },

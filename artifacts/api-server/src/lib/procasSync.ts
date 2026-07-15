@@ -397,7 +397,10 @@ export async function syncInvoiceFromProcas(
 
   // Persist the warnings so billers can review them after a reload; each new
   // import replaces the previous set.
-  await db.update(invoicesTable).set({ importWarnings: warnings }).where(eq(invoicesTable.id, invoice.id));
+  await db
+    .update(invoicesTable)
+    .set({ importWarnings: warnings, lastImportAt: new Date(), lastImportSource: source })
+    .where(eq(invoicesTable.id, invoice.id));
 
   await markProcasSynced(new Date());
   await recordAudit({

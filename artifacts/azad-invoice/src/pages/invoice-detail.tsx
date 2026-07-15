@@ -103,7 +103,7 @@ export default function InvoiceDetail() {
   // they're kept in local state; successful imports persist their warnings on
   // the invoice server-side, where they survive navigation and reloads until a
   // new import replaces them or the biller dismisses them.
-  const [failedImportWarnings, setImportWarnings] = useState<string[]>([]);
+  const [failedImportWarnings, setFailedImportWarnings] = useState<string[]>([]);
   const persistedImportWarnings = invoice?.importWarnings ?? [];
   const importWarnings =
     failedImportWarnings.length > 0 ? failedImportWarnings : persistedImportWarnings;
@@ -145,7 +145,7 @@ export default function InvoiceDetail() {
       queryClient.invalidateQueries();
       // A successful import persists its warnings server-side; drop any local
       // warnings from a previously rejected upload so they don't mask them.
-      setImportWarnings([]);
+      setFailedImportWarnings([]);
       const replaced = result.replacedCount ?? 0;
       toast({
         title: "Time data imported",
@@ -170,6 +170,7 @@ export default function InvoiceDetail() {
           warnings = body.warnings.filter((w): w is string => typeof w === "string");
         }
       }
+      setFailedImportWarnings(warnings);
       if (warnings.length > 0) {
         description += ` ${warnings.length} warning(s) — see details below the import form.`;
       }
@@ -185,12 +186,12 @@ export default function InvoiceDetail() {
     // Warnings from a rejected upload only exist client-side; nothing was
     // persisted, so just clear the local state without an API call.
     if (persistedImportWarnings.length === 0) {
-      setImportWarnings([]);
+      setFailedImportWarnings([]);
       return;
     }
     try {
       await dismissWarnings.mutateAsync({ id: invoiceId });
-      setImportWarnings([]);
+      setFailedImportWarnings([]);
       queryClient.invalidateQueries();
       toast({
         title: "Warnings dismissed",
@@ -765,7 +766,20 @@ export default function InvoiceDetail() {
               {importWarnings.length > 0 && (
                 <Alert className="border-yellow-200 bg-yellow-50" data-testid="import-warnings">
                   <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                  <AlertTitle className="text-yellow-800">Import warnings</AlertTitle>
+                  <AlertTitle className="text-yellow-800">
+                    Import warnings
+                    {invoice?.lastImportAt && (
+                      <span className="ml-1 font-normal" data-testid="import-warnings-context">
+                        — from{" "}
+                        {invoice.lastImportSource === "procas"
+                          ? "Procas sync"
+                          : invoice.lastImportSource === "procas-scheduled"
+                            ? "scheduled Procas sync"
+                            : "file upload"}{" "}
+                        on {new Date(invoice.lastImportAt).toLocaleString()}
+                      </span>
+                    )}
+                  </AlertTitle>
                   <AlertDescription className="text-yellow-700">
                     <ul className="list-disc pl-4">
                       {importWarnings.map((w, i) => (

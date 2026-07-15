@@ -71,6 +71,9 @@ describe("import warnings persistence", () => {
     const get = await request(app).get(`/api/invoices/${id}`);
     expect(get.status).toBe(200);
     expect(get.body.importWarnings).toEqual(res.body.warnings);
+    expect(get.body.lastImportSource).toBe("upload");
+    expect(typeof get.body.lastImportAt).toBe("string");
+    expect(Number.isNaN(Date.parse(get.body.lastImportAt))).toBe(false);
   });
 
   it("replaces the stored warnings when a new import runs", async () => {

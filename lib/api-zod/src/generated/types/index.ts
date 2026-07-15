@@ -33,6 +33,7 @@ export * from './healthStatus';
 export * from './importResult';
 export * from './invoice';
 export * from './invoiceInput';
+export * from './invoiceLastImportSource';
 export * from './invoicePreview';
 export * from './invoiceStatus';
 export * from './invoiceUpdate';
