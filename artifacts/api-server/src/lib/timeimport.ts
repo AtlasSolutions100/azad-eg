@@ -143,18 +143,51 @@ export async function parseTimeFile(buffer: Buffer, filename: string): Promise<P
     });
   } else {
     await wb.xlsx.load(buffer as unknown as ArrayBuffer);
-    const ws = wb.worksheets[0];
-    if (!ws) return { lines: [], warnings: ["The workbook has no sheets."] };
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      const vals: string[] = [];
-      row.eachCell({ includeEmpty: true }, (cell) => {
-        const v = cell.value;
-        if (v == null) vals.push("");
-        else if (typeof v === "object" && "result" in v) vals.push(String((v as { result: unknown }).result ?? ""));
-        else vals.push(String(cell.text ?? v));
+    if (wb.worksheets.length === 0) {
+      return { lines: [], warnings: ["The workbook has no sheets."] };
+    }
+
+    const sheetRows = (ws: ExcelJS.Worksheet): string[][] => {
+      const out: string[][] = [];
+      ws.eachRow({ includeEmpty: false }, (row) => {
+        const vals: string[] = [];
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          const v = cell.value;
+          if (v == null) vals.push("");
+          else if (typeof v === "object" && "result" in v) vals.push(String((v as { result: unknown }).result ?? ""));
+          else vals.push(String(cell.text ?? v));
+        });
+        out.push(vals);
       });
-      rows.push(vals);
-    });
+      return out;
+    };
+
+    if (wb.worksheets.length === 1) {
+      return rowsToLines(sheetRows(wb.worksheets[0]));
+    }
+
+    // Multi-sheet workbook: parse each tab independently (header detection is
+    // per sheet, since tabs may have different column layouts) and aggregate.
+    const lines: ParsedLine[] = [];
+    const warnings: string[] = [];
+    let sheetsWithData = 0;
+    for (const ws of wb.worksheets) {
+      const result = rowsToLines(sheetRows(ws));
+      if (result.lines.length > 0) sheetsWithData++;
+      lines.push(...result.lines);
+      for (const w of result.warnings) {
+        if (w === "No valid line items were found in the file.") continue;
+        warnings.push(`Sheet "${ws.name}": ${w}`);
+      }
+    }
+    if (lines.length === 0) {
+      warnings.push("No valid line items were found in the file.");
+    } else if (sheetsWithData < wb.worksheets.length) {
+      warnings.push(
+        `${sheetsWithData} of ${wb.worksheets.length} sheets contained timesheet data.`,
+      );
+    }
+    return { lines, warnings };
   }
 
   return rowsToLines(rows);

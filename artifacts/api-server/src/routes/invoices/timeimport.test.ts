@@ -266,6 +266,59 @@ describe("parseTimeFile", () => {
     });
   });
 
+  it("aggregates line items across all worksheets with per-sheet header detection", async () => {
+    const wb = new ExcelJS.Workbook();
+    const week1 = wb.addWorksheet("Week 1");
+    week1.addRow(["Employee", "Category", "Location", "Hours", "Rate"]);
+    week1.addRow(["Jane Doe", "Regular", "Home", 40, 100]);
+    // Second sheet uses a different column layout and order.
+    const week2 = wb.addWorksheet("Week 2");
+    week2.addRow(["Some banner text"]);
+    week2.addRow(["Hrs", "Bill Rate", "Worker"]);
+    week2.addRow([8, 150, "John Roe"]);
+    const week3 = wb.addWorksheet("Week 3");
+    week3.addRow(["Name", "Hours", "Rate"]);
+    week3.addRow(["Sam Smith", 12, 125]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "multi-week.xlsx");
+
+    expect(result.lines).toHaveLength(3);
+    expect(result.lines[0]).toMatchObject({ employeeName: "Jane Doe", hours: 40, rate: 100 });
+    expect(result.lines[1]).toMatchObject({ employeeName: "John Roe", hours: 8, rate: 150 });
+    expect(result.lines[2]).toMatchObject({ employeeName: "Sam Smith", hours: 12, rate: 125 });
+  });
+
+  it("prefixes warnings with the sheet name and notes sheets without data", async () => {
+    const wb = new ExcelJS.Workbook();
+    const crew = wb.addWorksheet("Crew A");
+    crew.addRow(["Name", "Hours", "Rate"]);
+    crew.addRow(["Good Row", 5, 100]);
+    crew.addRow(["Zero Person", 0, 100]);
+    const notes = wb.addWorksheet("Notes");
+    notes.addRow(["Just some", "notes here"]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "multi.xlsx");
+
+    expect(result.lines).toHaveLength(1);
+    expect(result.warnings.some((w) => w.includes('Sheet "Crew A"') && w.includes("Zero Person"))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('Sheet "Notes"') && w.includes("Could not locate a header row"))).toBe(true);
+    expect(result.warnings.some((w) => w.includes("1 of 2 sheets contained timesheet data"))).toBe(true);
+  });
+
+  it("warns once when no sheet in a multi-sheet workbook has valid rows", async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("A").addRow(["Unrelated", "Stuff"]);
+    wb.addWorksheet("B").addRow(["More", "Junk"]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "junk.xlsx");
+
+    expect(result.lines).toHaveLength(0);
+    expect(result.warnings.filter((w) => w.includes("No valid line items"))).toHaveLength(1);
+  });
+
   it("warns when an .xlsx workbook has no sheets", async () => {
     const wb = new ExcelJS.Workbook();
     const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
