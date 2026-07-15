@@ -34,10 +34,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Trash2, Edit, AlertTriangle, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import BudgetOverrideHistory from "@/components/budget-override-history";
+
+function sourceBadge(source?: string) {
+  if (source === "manual" || !source) {
+    return <Badge variant="outline" className="border-slate-300 text-slate-700" data-testid={`badge-source-manual`}>Manual</Badge>;
+  }
+  if (source.startsWith("procas")) {
+    return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100" data-testid={`badge-source-procas`}>Procas</Badge>;
+  }
+  return <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-100" data-testid={`badge-source-timesheet`}>Timesheet</Badge>;
+}
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -564,6 +575,7 @@ export default function InvoiceDetail() {
                     <TableHead>Employee</TableHead>
                     <TableHead>Class</TableHead>
                     <TableHead>Category</TableHead>
+                    <TableHead>Source</TableHead>
                     <TableHead className="text-right">Hours</TableHead>
                     <TableHead className="text-right">Rate</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
@@ -579,6 +591,7 @@ export default function InvoiceDetail() {
                       </TableCell>
                       <TableCell>{item.classification}</TableCell>
                       <TableCell className="capitalize">{item.category} ({item.location})</TableCell>
+                      <TableCell>{sourceBadge(item.source)}</TableCell>
                       <TableCell className="text-right">{item.hours}</TableCell>
                       <TableCell className="text-right">${item.rate.toFixed(2)}</TableCell>
                       <TableCell className="text-right font-medium">${item.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</TableCell>
@@ -594,7 +607,7 @@ export default function InvoiceDetail() {
                   ))}
                   {(!lineItems || lineItems.length === 0) && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">No line items.</TableCell>
+                      <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">No line items.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -607,7 +620,10 @@ export default function InvoiceDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Import Time Data</CardTitle>
-              <CardDescription>Pull live from Procas, or upload Procas/Timesheet files to generate line items.</CardDescription>
+              <CardDescription>
+                Pull live from Procas, or upload Procas/Timesheet files to generate line items.
+                Re-importing replaces rows marked Procas or Timesheet; rows marked Manual are kept.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {procasStatus?.connected && (
