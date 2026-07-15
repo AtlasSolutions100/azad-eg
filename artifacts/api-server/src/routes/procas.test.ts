@@ -909,6 +909,36 @@ describe("procas integration", () => {
     await expect(scheduler.tick()).resolves.toBeUndefined();
   });
 
+  it("tick resolves without throwing when both the cycle and the result recording fail", async () => {
+    const scheduler = await import("../lib/procasScheduler");
+    const procasModule = await import("../lib/procas");
+    const { logger } = await import("../lib/logger");
+
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation((() => logger) as never);
+
+    const connSpy = vi
+      .spyOn(procasModule, "getProcasConnection")
+      .mockRejectedValue(new Error("database down during cycle"));
+    // Recording the failure also fails: every UPDATE against the scheduler row throws.
+    const updateSpy = vi.spyOn(db, "update").mockImplementation(() => {
+      throw new Error("database still down while persisting result");
+    });
+
+    try {
+      await expect(scheduler.tick()).resolves.toBeUndefined();
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      connSpy.mockRestore();
+      updateSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    // The running guard reset, so a subsequent tick runs normally.
+    const state = await scheduler.getSchedulerState();
+    expect(state.running).toBe(false);
+    await expect(scheduler.tick()).resolves.toBeUndefined();
+  });
+
   it("skips a concurrent cycle cleanly when another instance holds the cross-instance sync lock", async () => {
     const { tick, getSchedulerState } = await import("../lib/procasScheduler");
     const { pool } = await import("@workspace/db");

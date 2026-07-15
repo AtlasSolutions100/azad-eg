@@ -126,6 +126,22 @@ async function recordCycleResult(result: {
     .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
 }
 
+// Persists a cycle outcome without letting a failed write escape. If the
+// database is unhealthy enough that even recording the result fails, log it
+// and move on — the refresh loop must keep running for the next tick.
+async function safeRecordCycleResult(result: {
+  skipped: boolean;
+  synced: number;
+  failed: number;
+  error?: string | null;
+}): Promise<void> {
+  try {
+    await recordCycleResult(result);
+  } catch (e) {
+    logger.error({ err: e }, "Failed to persist Procas sync cycle result");
+  }
+}
+
 // Performs one scheduled refresh pass. Skips entirely when Procas is in upload
 // mode (not connected). Each open invoice is pulled independently so one
 // failure does not abort the rest of the batch.
@@ -224,7 +240,7 @@ export async function runAndRecordCycle(): Promise<ProcasSchedulerState> {
       return getSchedulerState();
     }
     const result = outcome.value;
-    await recordCycleResult(result);
+    await safeRecordCycleResult(result);
     if (!result.skipped) {
       logger.info(
         { synced: result.synced, failed: result.failed },
@@ -232,7 +248,7 @@ export async function runAndRecordCycle(): Promise<ProcasSchedulerState> {
       );
     }
   } catch (e) {
-    await recordCycleResult({
+    await safeRecordCycleResult({
       skipped: false,
       synced: 0,
       failed: 0,
@@ -247,7 +263,13 @@ export async function runAndRecordCycle(): Promise<ProcasSchedulerState> {
 
 // Exported for tests so the overlapping-run guard can be exercised directly.
 export async function tick(): Promise<void> {
-  await runAndRecordCycle();
+  try {
+    await runAndRecordCycle();
+  } catch (e) {
+    // Last line of defense: nothing may escape the scheduled timer callback,
+    // or every interval fires an unhandled promise rejection.
+    logger.error({ err: e }, "Procas scheduler tick failed");
+  }
 }
 
 // Starts the background refresh loop. Idempotent: calling it again is a no-op
