@@ -433,6 +433,113 @@ describe("carry-over recompute across multi-invoice chains", () => {
     expect(apr.body.previouslyBilled).toBe(8800);
   });
 
+  it("keeps a manually-pinned middle invoice fixed while later invoices follow its total", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    // January: approved, auto carry-over 0, this period 2200.
+    const janId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+      previouslyBilled: 0,
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    // February: approved with a manually-pinned carry-over of 5000 (not the
+    // 2200 the chain would derive). This period 2200 → total-to-date 7200.
+    const febId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-02-01",
+      periodEnd: "2026-02-28",
+      previouslyBilled: 5000,
+      carryOverManual: true,
+    });
+    await addLineItem(febId, { hours: 10, rate: 100 });
+
+    // March and April: approved, seeded from February's total-to-date.
+    const marId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-03-01",
+      periodEnd: "2026-03-31",
+      previouslyBilled: 7200,
+    });
+    await addLineItem(marId, { hours: 10, rate: 100 });
+    const aprId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-04-01",
+      periodEnd: "2026-04-30",
+      previouslyBilled: 9400,
+    });
+    await addLineItem(aprId, { hours: 10, rate: 100 });
+
+    // Edit January: add 10h @ 100 → January's total-to-date becomes 4400.
+    const addRes = await request(app)
+      .post(`/api/invoices/${janId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+    expect(addRes.status).toBe(201);
+
+    // February's pinned carry-over must NOT move with January's change, and
+    // since February's own total-to-date is unchanged (5000 + 2200 = 7200),
+    // March and April must also stay put.
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    const mar = await request(app).get(`/api/invoices/${marId}`);
+    const apr = await request(app).get(`/api/invoices/${aprId}`);
+    expect(feb.body.previouslyBilled).toBe(5000);
+    expect(feb.body.totalToDate).toBe(7200);
+    expect(mar.body.previouslyBilled).toBe(7200);
+    expect(mar.body.totalToDate).toBe(9400);
+    expect(apr.body.previouslyBilled).toBe(9400);
+    expect(apr.body.totalToDate).toBe(11600);
+  });
+
+  it("cascades a manual invoice's own edits to later invoices without unpinning it", async () => {
+    const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
+
+    const janId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+      previouslyBilled: 0,
+    });
+    await addLineItem(janId, { hours: 10, rate: 100 });
+
+    // February pinned at 5000, this period 2200 → total-to-date 7200.
+    const febId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-02-01",
+      periodEnd: "2026-02-28",
+      previouslyBilled: 5000,
+      carryOverManual: true,
+    });
+    await addLineItem(febId, { hours: 10, rate: 100 });
+
+    const marId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-03-01",
+      periodEnd: "2026-03-31",
+      previouslyBilled: 7200,
+    });
+    await addLineItem(marId, { hours: 10, rate: 100 });
+    const aprId = await createInvoice(wpId, "approved", {
+      periodStart: "2026-04-01",
+      periodEnd: "2026-04-30",
+      previouslyBilled: 9400,
+    });
+    await addLineItem(aprId, { hours: 10, rate: 100 });
+
+    // Edit February itself: add 10h @ 100 → this period 4400,
+    // total-to-date 5000 + 4400 = 9400.
+    const addRes = await request(app)
+      .post(`/api/invoices/${febId}/line-items`)
+      .send({ employeeName: "Extra", classification: "Engineer", category: "regular", location: "home", hours: 10, rate: 100 });
+    expect(addRes.status).toBe(201);
+
+    // February stays pinned at 5000, but its new total-to-date (9400) must
+    // flow into March, and March's new total into April.
+    const feb = await request(app).get(`/api/invoices/${febId}`);
+    const mar = await request(app).get(`/api/invoices/${marId}`);
+    const apr = await request(app).get(`/api/invoices/${aprId}`);
+    expect(feb.body.previouslyBilled).toBe(5000);
+    expect(feb.body.totalToDate).toBe(9400);
+    expect(mar.body.previouslyBilled).toBe(9400);
+    expect(mar.body.totalToDate).toBe(11600);
+    expect(apr.body.previouslyBilled).toBe(11600);
+    expect(apr.body.totalToDate).toBe(13800);
+  });
+
   it("re-derives the rest of the chain after a middle invoice is deleted", async () => {
     const wpId = await createWorkPlan({ overheadRate: null, fccmRate: null });
     const [janId, febId, marId, aprId] = await buildApprovedChain(wpId, MONTHS);
