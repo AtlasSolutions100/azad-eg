@@ -99,10 +99,11 @@ export default function InvoiceDetail() {
 
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
 
-  // Warnings from a rejected upload (HTTP 400) are only known client-side, so
-  // they're kept in local state; successful imports persist their warnings on
-  // the invoice server-side, where they survive navigation and reloads until a
-  // new import replaces them or the biller dismisses them.
+  // Warnings from a rejected upload or Procas sync (HTTP 4xx/502) are only
+  // known client-side, so they're kept in local state; successful imports
+  // persist their warnings on the invoice server-side, where they survive
+  // navigation and reloads until a new import replaces them or the biller
+  // dismisses them.
   const [failedImportWarnings, setFailedImportWarnings] = useState<string[]>([]);
   const persistedImportWarnings = invoice?.importWarnings ?? [];
   const importWarnings =
@@ -211,6 +212,9 @@ export default function InvoiceDetail() {
     try {
       const result = await syncProcas.mutateAsync({ id: invoiceId });
       queryClient.invalidateQueries();
+      // A successful sync persists its warnings server-side; drop any local
+      // warnings from a previously rejected import/sync so they don't mask them.
+      setFailedImportWarnings([]);
       const replaced = result.replacedCount ?? 0;
       toast({
         title: "Synced from Procas",
@@ -219,9 +223,29 @@ export default function InvoiceDetail() {
           (replaced > 0 ? ` Replaced ${replaced} previously imported row(s).` : ""),
       });
     } catch (e) {
+      console.error(e);
+      // A rejected sync (HTTP 400/409/502) carries { error, warnings? } in the
+      // body. Surface the API's reason (and any row-level warnings) so the
+      // user knows exactly why the sync failed, not just a generic failure.
+      let description =
+        e instanceof Error ? e.message : "Could not pull timesheets from Procas.";
+      let warnings: string[] = [];
+      if (e instanceof ApiError && e.data && typeof e.data === "object") {
+        const body = e.data as { error?: unknown; warnings?: unknown };
+        if (typeof body.error === "string" && body.error.trim()) {
+          description = body.error;
+        }
+        if (Array.isArray(body.warnings)) {
+          warnings = body.warnings.filter((w): w is string => typeof w === "string");
+        }
+      }
+      setFailedImportWarnings(warnings);
+      if (warnings.length > 0) {
+        description += ` ${warnings.length} warning(s) — see details below the import form.`;
+      }
       toast({
         title: "Procas sync failed",
-        description: e instanceof Error ? e.message : "Could not pull timesheets from Procas.",
+        description,
         variant: "destructive",
       });
     }
