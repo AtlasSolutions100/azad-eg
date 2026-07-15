@@ -161,7 +161,6 @@ export default function InvoiceDetail() {
           warnings = body.warnings.filter((w): w is string => typeof w === "string");
         }
       }
-      setImportWarnings(warnings);
       if (warnings.length > 0) {
         description += ` ${warnings.length} warning(s) — see details below the import form.`;
       }

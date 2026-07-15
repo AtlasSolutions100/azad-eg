@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Pin } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Invoices() {
@@ -141,7 +143,29 @@ export default function Invoices() {
             ) : (
               invoices?.map((invoice) => (
                 <TableRow key={invoice.id} className="cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setLocation(`/invoices/${invoice.id}`)}>
-                  <TableCell className="font-medium text-primary">{invoice.invoiceNumber}</TableCell>
+                  <TableCell className="font-medium text-primary">
+                    <span className="inline-flex items-center gap-1.5">
+                      {invoice.invoiceNumber}
+                      {invoice.carryOverManual && (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex text-amber-600"
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid={`icon-carryover-pinned-${invoice.id}`}
+                              >
+                                <Pin className="h-3.5 w-3.5" aria-label="Previously billed set manually" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              "Previously billed" was set manually
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell>{invoice.workPlanCode}</TableCell>
                   <TableCell>{invoice.client}</TableCell>
                   <TableCell>{format(new Date(invoice.periodStart), "MMM d")} - {format(new Date(invoice.periodEnd), "MMM d, yyyy")}</TableCell>
