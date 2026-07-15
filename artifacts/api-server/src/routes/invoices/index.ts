@@ -235,6 +235,37 @@ router.delete("/invoices/:id/carry-over-pin", async (req, res): Promise<void> =>
   res.json(GetInvoiceResponse.parse(buildInvoice(row, wp, lineItems).api));
 });
 
+// Dismisses the warnings persisted from the most recent time-data import
+// once the biller has manually resolved the flagged issues. The dismissal is
+// recorded in the invoice's audit trail so it's traceable who acknowledged
+// which warnings.
+router.delete("/invoices/:id/import-warnings", async (req, res): Promise<void> => {
+  const id = pid(req);
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+  const warnings = invoice.importWarnings ?? [];
+  if (warnings.length === 0) {
+    res.status(409).json({ error: "This invoice has no import warnings to dismiss." });
+    return;
+  }
+  await db.update(invoicesTable).set({ importWarnings: null }).where(eq(invoicesTable.id, id));
+  await recordAudit({
+    action: "dismissed import warnings",
+    entityType: "invoice",
+    entityId: id,
+    description:
+      `${warnings.length} import warning(s) dismissed on invoice ${invoice.invoiceNumber}: ` +
+      warnings.join("; "),
+  });
+  const [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id));
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, row.workPlanId));
+  const lineItems = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, id));
+  res.json(GetInvoiceResponse.parse(buildInvoice(row, wp, lineItems).api));
+});
+
 router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
   const id = pid(req);
   const parsed = ApproveInvoiceBody.safeParse(req.body);

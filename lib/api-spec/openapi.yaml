@@ -471,6 +471,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImportResult"
+  /invoices/{id}/import-warnings:
+    delete:
+      operationId: dismissImportWarnings
+      tags: [invoices]
+      summary: Dismiss persisted import warnings on an invoice
+      description: >-
+        Clears the warnings saved from the most recent time-data import once a
+        biller has resolved the flagged issues (e.g. entered a missing rate).
+        The dismissal is recorded in the invoice's audit trail.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Warnings cleared; returns the updated invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The invoice has no import warnings to dismiss
   /invoices/{id}/procas-sync:
     post:
       operationId: syncTimesheetsFromProcas

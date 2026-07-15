@@ -90,4 +90,39 @@ describe("import warnings persistence", () => {
     expect(get.body.importWarnings).toEqual(second.body.warnings);
     expect((get.body.importWarnings as string[]).some((w) => /no rate/i.test(w))).toBe(false);
   });
+
+  it("dismisses stored warnings and records the dismissal in the audit log", async () => {
+    const id = await makeInvoice();
+
+    const withWarnings = "Employee,Classification,Hours,Rate\nGhost Person,Engineer,10,\n";
+    const imported = await csvUpload(id, withWarnings);
+    expect(imported.status).toBe(200);
+    expect(imported.body.warnings.length).toBeGreaterThan(0);
+
+    const dismiss = await request(app).delete(`/api/invoices/${id}/import-warnings`);
+    expect(dismiss.status).toBe(200);
+    expect(dismiss.body.importWarnings ?? []).toEqual([]);
+
+    const get = await request(app).get(`/api/invoices/${id}`);
+    expect(get.status).toBe(200);
+    expect(get.body.importWarnings ?? []).toEqual([]);
+
+    const audit = await request(app).get(`/api/audit-logs?entityType=invoice&entityId=${id}`);
+    expect(audit.status).toBe(200);
+    const entries = Array.isArray(audit.body) ? audit.body : audit.body.logs ?? audit.body.items ?? [];
+    expect(
+      entries.some((e: { action: string }) => e.action === "dismissed import warnings"),
+    ).toBe(true);
+  });
+
+  it("returns 409 when there are no warnings to dismiss", async () => {
+    const id = await makeInvoice();
+    const dismiss = await request(app).delete(`/api/invoices/${id}/import-warnings`);
+    expect(dismiss.status).toBe(409);
+  });
+
+  it("returns 404 for a missing invoice", async () => {
+    const dismiss = await request(app).delete(`/api/invoices/999999999/import-warnings`);
+    expect(dismiss.status).toBe(404);
+  });
 });

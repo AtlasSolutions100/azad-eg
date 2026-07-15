@@ -641,6 +641,7 @@ export const UnpinInvoiceCarryOverResponse = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -813,6 +814,45 @@ export const ImportTimeDataResponse = zod.object({
   "notes": zod.string().nullish(),
   "source": zod.string().optional()
 }))
+})
+
+
+/**
+ * Clears the warnings saved from the most recent time-data import once a biller has resolved the flagged issues (e.g. entered a missing rate). The dismissal is recorded in the invoice's audit trail.
+ * @summary Dismiss persisted import warnings on an invoice
+ */
+export const DismissImportWarningsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DismissImportWarningsResponse = zod.object({
+  "id": zod.number(),
+  "workPlanId": zod.number(),
+  "workPlanCode": zod.string(),
+  "client": zod.string(),
+  "invoiceNumber": zod.string(),
+  "invoiceDate": zod.string(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "status": zod.enum(['draft', 'in_review', 'approved', 'exported']),
+  "laborTotal": zod.number(),
+  "fringeTotal": zod.number(),
+  "overheadTotal": zod.number(),
+  "fixedFee": zod.number(),
+  "fccm": zod.number(),
+  "otdtPremium": zod.number(),
+  "otherDirectCosts": zod.number(),
+  "totalThisPeriod": zod.number(),
+  "previouslyBilled": zod.number(),
+  "carryOverManual": zod.boolean().describe('True when \"previously billed\" was supplied manually and is pinned; false when it auto-derives from the preceding billed invoice.'),
+  "totalToDate": zod.number(),
+  "remainingBalance": zod.number(),
+  "percentExpended": zod.number(),
+  "preparedBy": zod.string().nullish(),
+  "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 

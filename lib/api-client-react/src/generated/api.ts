@@ -2115,6 +2115,77 @@ export const useImportTimeData = <TError = ErrorType<unknown>,
       return useMutation(getImportTimeDataMutationOptions(options));
     }
 
+export const getDismissImportWarningsUrl = (id: number,) => {
+
+
+
+
+  return `/api/invoices/${id}/import-warnings`
+}
+
+/**
+ * Clears the warnings saved from the most recent time-data import once a biller has resolved the flagged issues (e.g. entered a missing rate). The dismissal is recorded in the invoice's audit trail.
+ * @summary Dismiss persisted import warnings on an invoice
+ */
+export const dismissImportWarnings = async (id: number, options?: RequestInit): Promise<Invoice> => {
+
+  return customFetch<Invoice>(getDismissImportWarningsUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDismissImportWarningsMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissImportWarnings>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissImportWarnings>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['dismissImportWarnings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissImportWarnings>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  dismissImportWarnings(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissImportWarningsMutationResult = NonNullable<Awaited<ReturnType<typeof dismissImportWarnings>>>
+
+    export type DismissImportWarningsMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Dismiss persisted import warnings on an invoice
+ */
+export const useDismissImportWarnings = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissImportWarnings>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissImportWarnings>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDismissImportWarningsMutationOptions(options));
+    }
+
 export const getSyncTimesheetsFromProcasUrl = (id: number,) => {
 
 

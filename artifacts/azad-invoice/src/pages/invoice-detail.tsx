@@ -13,6 +13,7 @@ import {
   useSaveProgressReport,
   useApproveInvoice,
   useUnpinInvoiceCarryOver,
+  useDismissImportWarnings,
   useGenerateInvoiceFile,
   useCreateLineItem,
   useUpdateLineItem,
@@ -87,6 +88,7 @@ export default function InvoiceDetail() {
   const saveProgress = useSaveProgressReport();
   const approveInvoice = useApproveInvoice();
   const unpinCarryOver = useUnpinInvoiceCarryOver();
+  const dismissWarnings = useDismissImportWarnings();
   const generateFile = useGenerateInvoiceFile();
   const createLineItem = useCreateLineItem();
   const updateLineItem = useUpdateLineItem();
@@ -97,10 +99,14 @@ export default function InvoiceDetail() {
 
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
 
-  // Warnings from the most recent import are persisted server-side on the
-  // invoice, so they survive navigation and reloads until a new import
-  // replaces them.
-  const importWarnings = invoice?.importWarnings ?? [];
+  // Warnings from a rejected upload (HTTP 400) are only known client-side, so
+  // they're kept in local state; successful imports persist their warnings on
+  // the invoice server-side, where they survive navigation and reloads until a
+  // new import replaces them or the biller dismisses them.
+  const [failedImportWarnings, setImportWarnings] = useState<string[]>([]);
+  const persistedImportWarnings = invoice?.importWarnings ?? [];
+  const importWarnings =
+    failedImportWarnings.length > 0 ? failedImportWarnings : persistedImportWarnings;
 
   // Over-budget approval requires an explicit, audited override.
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -137,6 +143,9 @@ export default function InvoiceDetail() {
         data: { source: importSource, file: importFile }
       });
       queryClient.invalidateQueries();
+      // A successful import persists its warnings server-side; drop any local
+      // warnings from a previously rejected upload so they don't mask them.
+      setImportWarnings([]);
       const replaced = result.replacedCount ?? 0;
       toast({
         title: "Time data imported",
@@ -167,6 +176,31 @@ export default function InvoiceDetail() {
       toast({
         title: "Import failed",
         description,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDismissWarnings = async () => {
+    // Warnings from a rejected upload only exist client-side; nothing was
+    // persisted, so just clear the local state without an API call.
+    if (persistedImportWarnings.length === 0) {
+      setImportWarnings([]);
+      return;
+    }
+    try {
+      await dismissWarnings.mutateAsync({ id: invoiceId });
+      setImportWarnings([]);
+      queryClient.invalidateQueries();
+      toast({
+        title: "Warnings dismissed",
+        description: "The import warnings were cleared and the dismissal was recorded in the activity log.",
+      });
+    } catch (e) {
+      console.error(e);
+      toast({
+        title: "Could not dismiss warnings",
+        description: e instanceof Error ? e.message : "Please try again.",
         variant: "destructive",
       });
     }
@@ -738,6 +772,16 @@ export default function InvoiceDetail() {
                         <li key={i}>{w}</li>
                       ))}
                     </ul>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 border-yellow-300 bg-white text-yellow-800 hover:bg-yellow-100"
+                      onClick={handleDismissWarnings}
+                      disabled={dismissWarnings.isPending}
+                      data-testid="dismiss-import-warnings"
+                    >
+                      {dismissWarnings.isPending ? "Dismissing..." : "Dismiss"}
+                    </Button>
                   </AlertDescription>
                 </Alert>
               )}
