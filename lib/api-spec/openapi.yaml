@@ -1494,6 +1494,10 @@ components:
         percentExpended: { type: number }
         preparedBy: { type: ["string", "null"] }
         approvedBy: { type: ["string", "null"] }
+        importWarnings:
+          type: ["array", "null"]
+          items: { type: string }
+          description: Warnings from the most recent time-data import; replaced on each new import.
         createdAt: { type: string }
         updatedAt: { type: string }
     InvoiceInput:

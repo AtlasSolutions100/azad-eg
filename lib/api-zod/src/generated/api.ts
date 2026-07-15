@@ -452,6 +452,7 @@ export const ListInvoicesResponseItem = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -499,6 +500,7 @@ export const CreateInvoiceResponse = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -535,6 +537,7 @@ export const GetInvoiceResponse = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -585,6 +588,7 @@ export const UpdateInvoiceResponse = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -641,6 +645,7 @@ export const ApproveInvoiceResponse = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -678,6 +683,7 @@ export const GetInvoicePreviewResponse = zod.object({
   "percentExpended": zod.number(),
   "preparedBy": zod.string().nullish(),
   "approvedBy": zod.string().nullish(),
+  "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }),

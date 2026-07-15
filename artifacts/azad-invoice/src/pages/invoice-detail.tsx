@@ -92,9 +92,13 @@ export default function InvoiceDetail() {
 
   const [importSource, setImportSource] = useState<TimeImportUploadSource>('procas');
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
+
+  // Warnings from the most recent import are persisted server-side on the
+  // invoice, so they survive navigation and reloads until a new import
+  // replaces them.
+  const importWarnings = invoice?.importWarnings ?? [];
 
   // Over-budget approval requires an explicit, audited override.
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -131,7 +135,6 @@ export default function InvoiceDetail() {
         data: { source: importSource, file: importFile }
       });
       queryClient.invalidateQueries();
-      setImportWarnings(result.warnings ?? []);
       const replaced = result.replacedCount ?? 0;
       toast({
         title: "Time data imported",

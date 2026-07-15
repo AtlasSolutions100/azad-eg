@@ -70,6 +70,7 @@ export function buildInvoice(invoice: InvoiceRow, workPlan: WorkPlan, lineItems:
       percentExpended: f.percentExpended,
       preparedBy: invoice.preparedBy,
       approvedBy: invoice.approvedBy,
+      importWarnings: invoice.importWarnings,
       createdAt: invoice.createdAt.toISOString(),
       updatedAt: invoice.updatedAt.toISOString(),
     },

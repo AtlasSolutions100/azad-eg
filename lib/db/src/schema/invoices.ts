@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, doublePrecision, date, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, doublePrecision, date, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -15,6 +15,10 @@ export const invoicesTable = pgTable("invoices", {
   // invoice on the same work plan changes.
   carryOverManual: boolean("carry_over_manual").notNull().default(false),
   otherDirectCosts: doublePrecision("other_direct_costs").notNull().default(0),
+  // Warnings from the most recent time-data import (file upload or Procas
+  // sync). Persisted so billers can review why rows were skipped after a
+  // reload; replaced wholesale on every new import.
+  importWarnings: jsonb("import_warnings").$type<string[]>(),
   preparedBy: text("prepared_by"),
   approvedBy: text("approved_by"),
   signatureId: integer("signature_id"),

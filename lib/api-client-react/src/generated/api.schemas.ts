@@ -256,6 +256,11 @@ export interface Invoice {
   preparedBy?: string | null;
   /** @nullable */
   approvedBy?: string | null;
+  /**
+     * Warnings from the most recent time-data import; replaced on each new import.
+     * @nullable
+     */
+  importWarnings?: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
