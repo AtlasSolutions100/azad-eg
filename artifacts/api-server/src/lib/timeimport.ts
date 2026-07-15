@@ -171,13 +171,30 @@ export async function parseTimeFile(buffer: Buffer, filename: string): Promise<P
     const lines: ParsedLine[] = [];
     const warnings: string[] = [];
     let sheetsWithData = 0;
+    // Tracks, per employee (case-insensitive), which sheets they appear on and
+    // their combined hours, so duplicated tabs can be flagged to the biller.
+    const byEmployee = new Map<string, { name: string; sheets: Set<string>; hours: number }>();
     for (const ws of wb.worksheets) {
       const result = rowsToLines(sheetRows(ws));
       if (result.lines.length > 0) sheetsWithData++;
       lines.push(...result.lines);
+      for (const line of result.lines) {
+        const key = line.employeeName.toLowerCase();
+        const entry = byEmployee.get(key) ?? { name: line.employeeName, sheets: new Set<string>(), hours: 0 };
+        entry.sheets.add(ws.name);
+        entry.hours += line.hours;
+        byEmployee.set(key, entry);
+      }
       for (const w of result.warnings) {
         if (w === "No valid line items were found in the file.") continue;
         warnings.push(`Sheet "${ws.name}": ${w}`);
+      }
+    }
+    for (const entry of byEmployee.values()) {
+      if (entry.sheets.size > 1) {
+        warnings.push(
+          `${entry.name} appears on ${entry.sheets.size} sheets (${entry.hours} total hours) — verify no tab was duplicated by mistake.`,
+        );
       }
     }
     if (lines.length === 0) {

@@ -307,6 +307,44 @@ describe("parseTimeFile", () => {
     expect(result.warnings.some((w) => w.includes("1 of 2 sheets contained timesheet data"))).toBe(true);
   });
 
+  it("warns when the same employee appears on multiple sheets with combined hours", async () => {
+    const wb = new ExcelJS.Workbook();
+    const week1 = wb.addWorksheet("Week 1");
+    week1.addRow(["Name", "Hours", "Rate"]);
+    week1.addRow(["Jane Doe", 40, 100]);
+    week1.addRow(["Solo Person", 8, 100]);
+    const week2 = wb.addWorksheet("Week 2");
+    week2.addRow(["Name", "Hours", "Rate"]);
+    week2.addRow(["JANE DOE", 16, 100]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "multi.xlsx");
+
+    expect(result.lines).toHaveLength(3);
+    expect(
+      result.warnings.some((w) => w.includes("Jane Doe appears on 2 sheets") && w.includes("56 total hours")),
+    ).toBe(true);
+    expect(result.warnings.some((w) => w.includes("Solo Person appears"))).toBe(false);
+  });
+
+  it("does not emit a multi-sheet warning for single-sheet or CSV imports", async () => {
+    const rows = [
+      ["Name", "Hours", "Rate"],
+      ["Jane Doe", "40", "100"],
+      ["Jane Doe", "16", "100"],
+    ];
+    const csv = await parseTimeFile(csvBuffer(rows), "t.csv");
+    const xlsx = await parseTimeFile(
+      await xlsxBuffer(rows.map((r) => [...r])),
+      "t.xlsx",
+    );
+
+    expect(csv.lines).toHaveLength(2);
+    expect(csv.warnings.some((w) => w.includes("appears on"))).toBe(false);
+    expect(xlsx.lines).toHaveLength(2);
+    expect(xlsx.warnings.some((w) => w.includes("appears on"))).toBe(false);
+  });
+
   it("warns once when no sheet in a multi-sheet workbook has valid rows", async () => {
     const wb = new ExcelJS.Workbook();
     wb.addWorksheet("A").addRow(["Unrelated", "Stuff"]);
