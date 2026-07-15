@@ -223,21 +223,40 @@ router.post("/packages", async (req, res): Promise<void> => {
     }
   }
 
-  const [row] = await db
-    .insert(packagesTable)
-    .values({
-      employeeId: parsed.data.employeeId ?? null,
-      workPlanId: parsed.data.workPlanId,
-      payPeriodStart: parsed.data.payPeriodStart,
-      payPeriodEnd: parsed.data.payPeriodEnd,
-      invoiceNumber: parsed.data.invoiceNumber,
-      invoiceDate: parsed.data.invoiceDate,
-      previouslyBilled,
-      previouslyBilledSource,
-      otherDirectCosts: parsed.data.otherDirectCosts ?? 0,
-      preparedBy: parsed.data.preparedBy,
-    })
-    .returning();
+  let row: typeof packagesTable.$inferSelect;
+  try {
+    [row] = await db
+      .insert(packagesTable)
+      .values({
+        employeeId: parsed.data.employeeId ?? null,
+        workPlanId: parsed.data.workPlanId,
+        payPeriodStart: parsed.data.payPeriodStart,
+        payPeriodEnd: parsed.data.payPeriodEnd,
+        invoiceNumber: parsed.data.invoiceNumber,
+        invoiceDate: parsed.data.invoiceDate,
+        previouslyBilled,
+        previouslyBilledSource,
+        otherDirectCosts: parsed.data.otherDirectCosts ?? 0,
+        preparedBy: parsed.data.preparedBy,
+      })
+      .returning();
+  } catch (err) {
+    // packages_job_period_unique: one invoice/package per job per pay period.
+    // Drizzle may wrap the driver error, so walk the cause chain for 23505.
+    const isUniqueViolation = (e: unknown): boolean => {
+      for (let cur = e; cur instanceof Error; cur = cur.cause) {
+        if ((cur as { code?: string }).code === "23505") return true;
+      }
+      return false;
+    };
+    if (isUniqueViolation(err)) {
+      res.status(409).json({
+        error: "A package already exists for this work plan and pay period.",
+      });
+      return;
+    }
+    throw err;
+  }
   await recordAudit({
     action: "created package",
     entityType: "package",

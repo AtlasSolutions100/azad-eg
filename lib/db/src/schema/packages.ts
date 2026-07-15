@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, doublePrecision, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, doublePrecision, date, timestamp, unique } from "drizzle-orm/pg-core";
 import { employeesTable } from "./employees";
 import { workPlansTable } from "./work-plans";
 
@@ -41,6 +41,10 @@ export const packagesTable = pgTable(
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   },
+  (t) => [
+    // One invoice/package per job (work plan) per pay period.
+    unique("packages_job_period_unique").on(t.workPlanId, t.payPeriodStart, t.payPeriodEnd),
+  ],
 );
 
 export type PackageRow = typeof packagesTable.$inferSelect;
