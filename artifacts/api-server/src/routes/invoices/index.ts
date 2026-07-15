@@ -34,7 +34,7 @@ import { buildInvoice, toApiLineItem } from "../../lib/mappers";
 import { recomputeCarryOverWithAudit, deriveCarryOverFromPriors } from "../../lib/carryover";
 import { evaluateBudgetStatus } from "../../lib/financials";
 import { recordAudit } from "../../lib/audit";
-import { upload } from "../../lib/upload";
+import { upload, detectDocument, EXTENSION_FORMATS } from "../../lib/upload";
 import { parseTimeFile } from "../../lib/timeimport";
 import { getProcasConnection } from "../../lib/procas";
 import { syncInvoiceFromProcas } from "../../lib/procasSync";
@@ -345,6 +345,30 @@ router.post("/invoices/:id/time-import", upload.single("file"), async (req, res)
     return;
   }
   const source = typeof req.body?.source === "string" ? req.body.source : "timesheet";
+
+  // First-pass extension allow-list, then verify the file's actual content
+  // (magic bytes) matches the declared extension so a renamed/mislabeled file
+  // can't slip past the parser.
+  const ext = path.extname(file.originalname || "").toLowerCase();
+  if (ext !== ".csv" && ext !== ".xlsx") {
+    res.status(400).json({ error: "Unsupported file type. Upload a .csv or .xlsx file." });
+    return;
+  }
+  const detected = detectDocument(file.buffer);
+  if (ext === ".csv") {
+    // CSV is plain text and has no magic bytes; reject binary documents
+    // disguised with a .csv extension.
+    if (detected !== null) {
+      res.status(400).json({ error: "File content does not match its extension. Upload a genuine CSV text file." });
+      return;
+    }
+  } else {
+    const allowed = EXTENSION_FORMATS[ext] ?? [];
+    if (!detected || !allowed.includes(detected)) {
+      res.status(400).json({ error: "File content does not match its extension. Upload a genuine Excel (.xlsx) file." });
+      return;
+    }
+  }
 
   const parsedFile = await parseTimeFile(file.buffer, file.originalname);
   if (parsedFile.lines.length === 0) {

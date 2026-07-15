@@ -331,6 +331,37 @@ describe("parseTimeFile", () => {
 });
 
 describe("POST /api/invoices/:id/time-import", () => {
+  it("rejects an unsupported file extension", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", Buffer.from("hello"), "timesheet.exe");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Unsupported file type/);
+  });
+
+  it("rejects a binary document renamed to .csv", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const buf = await xlsxBuffer([["Name", "Hours"], ["Someone", 1]]);
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", buf, "timesheet.csv");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/does not match its extension/);
+  });
+
+  it("rejects plain text renamed to .xlsx", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId);
+    const res = await request(app)
+      .post(`/api/invoices/${invId}/time-import`)
+      .attach("file", Buffer.from("Name,Hours\nA,1"), "timesheet.xlsx");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/does not match its extension/);
+  });
+
   it("matches an employee by name (case-insensitive) and fills classification", async () => {
     const wpId = await createWorkPlan();
     const invId = await createInvoice(wpId);
