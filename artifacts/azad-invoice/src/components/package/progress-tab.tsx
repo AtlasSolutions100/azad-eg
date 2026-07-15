@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   useSavePackageProgressReport,
   useUploadProgressReportFile,
+  ApiError,
   type PackageDetail,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -36,6 +37,26 @@ const NARRATIVE_FIELDS: { key: keyof FormState; label: string; placeholder: stri
   { key: "scheduleComment", label: "Schedule", placeholder: "Schedule status and outlook…" },
   { key: "costForecast", label: "Cost Forecast", placeholder: "Budget / cost forecast commentary…" },
 ];
+
+function uploadErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    const data = err.data as { error?: string; code?: string } | null | undefined;
+    switch (data?.code) {
+      case "CONTENT_MISMATCH":
+        return "This file looks corrupted or isn't a real Excel, Word, or PDF document. Try re-exporting or re-saving it, then upload again.";
+      case "UNSUPPORTED_EXTENSION":
+        return "That file type isn't supported. Upload an Excel (.xlsx/.xls), Word (.doc/.docx), or PDF file.";
+      case "FILE_TOO_LARGE":
+        return "That file is too large. The maximum size is 25 MB.";
+      case "NO_FILE":
+        return "No file was received. Please choose a file and try again.";
+    }
+    if (typeof data?.error === "string" && data.error) {
+      return data.error;
+    }
+  }
+  return "Could not upload the file. Use an Excel, Word, or PDF document.";
+}
 
 export default function ProgressTab({ detail }: { detail: PackageDetail }) {
   const { package: pkg, progressReport } = detail;
@@ -90,11 +111,11 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
         title: "File uploaded",
         description: `${res.uploadedFileName} is attached. Save the report to keep it.`,
       });
-    } catch {
+    } catch (err) {
       toast({
         variant: "destructive",
         title: "Upload failed",
-        description: "Could not upload the file. Use an Excel, Word, or PDF document.",
+        description: uploadErrorMessage(err),
       });
     }
   };

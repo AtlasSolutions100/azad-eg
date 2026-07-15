@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import path from "node:path";
 import { eq, and, asc } from "drizzle-orm";
 import {
@@ -701,7 +702,22 @@ const PROGRESS_REPORT_EXTENSIONS = new Set([".xlsx", ".xls", ".doc", ".docx", ".
 
 router.post(
   "/packages/:id/progress-report/upload",
-  upload.single("file"),
+  (req, res, next) => {
+    upload.single("file")(req, res, (err: unknown) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          res.status(400).json({
+            error: "File is too large. The maximum size is 25 MB.",
+            code: "FILE_TOO_LARGE",
+          });
+          return;
+        }
+        next(err);
+        return;
+      }
+      next();
+    });
+  },
   async (req, res): Promise<void> => {
     const id = parseId(req.params.id);
     const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
@@ -711,13 +727,19 @@ router.post(
     }
     const file = (req as unknown as { file?: { buffer: Buffer; originalname: string } }).file;
     if (!file) {
-      res.status(400).json({ error: "No file uploaded (expected an Excel, Word, or PDF in field 'file')." });
+      res.status(400).json({
+        error: "No file uploaded (expected an Excel, Word, or PDF in field 'file').",
+        code: "NO_FILE",
+      });
       return;
     }
     const originalName = path.basename(file.originalname);
     const ext = path.extname(originalName).toLowerCase();
     if (!PROGRESS_REPORT_EXTENSIONS.has(ext)) {
-      res.status(400).json({ error: "Unsupported file type. Upload an Excel, Word, or PDF document." });
+      res.status(400).json({
+        error: "Unsupported file type. Upload an Excel, Word, or PDF document.",
+        code: "UNSUPPORTED_EXTENSION",
+      });
       return;
     }
     // Content-based check: confirm the bytes really are the document type the
@@ -727,6 +749,7 @@ router.post(
     if (!detected || !EXTENSION_FORMATS[ext]?.includes(detected)) {
       res.status(400).json({
         error: "File content does not match its extension. Upload a genuine Excel, Word, or PDF document.",
+        code: "CONTENT_MISMATCH",
       });
       return;
     }
