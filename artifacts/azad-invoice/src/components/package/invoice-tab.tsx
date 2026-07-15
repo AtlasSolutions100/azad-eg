@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -162,7 +163,19 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Previously Billed</Label>
+                <div className="flex items-center gap-2">
+                  <Label>Previously Billed</Label>
+                  {pkg.previouslyBilledSource === "procas" && (
+                    <Badge variant="secondary" className="text-[10px]" data-testid="badge-prev-billed-procas">
+                      from Procas
+                    </Badge>
+                  )}
+                  {pkg.previouslyBilledSource === "manual" && (
+                    <Badge variant="outline" className="text-[10px]" data-testid="badge-prev-billed-manual">
+                      manual override
+                    </Badge>
+                  )}
+                </div>
                 <Input
                   type="number"
                   step="0.01"

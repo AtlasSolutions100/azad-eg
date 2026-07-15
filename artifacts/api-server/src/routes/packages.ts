@@ -202,10 +202,9 @@ router.post("/packages", async (req, res): Promise<void> => {
           wp.jobNumber.trim(),
           parsed.data.payPeriodStart,
         );
-        if (fromProcas > 0) {
-          previouslyBilled = fromProcas;
-          previouslyBilledSource = "procas";
-        }
+        // BillingHistory is authoritative — including a legitimate $0.
+        previouslyBilled = fromProcas;
+        previouslyBilledSource = "procas";
       }
     } catch {
       // Procas being unreachable must never block package creation.

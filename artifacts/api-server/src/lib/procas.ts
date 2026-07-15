@@ -172,6 +172,11 @@ export async function fetchProcasTable(
         : null;
     url = nextLink ? validateNextLink(nextLink, url, table) : null;
   }
+  // Never silently return partial data: if the page cap was hit while the
+  // upstream still had more pages, fail loudly so the sync is marked failed.
+  if (url) {
+    throw new Error(`Procas returned more than ${MAX_PAGES} pages for ${table}; aborting to avoid a partial sync.`);
+  }
   return rows;
 }
 
