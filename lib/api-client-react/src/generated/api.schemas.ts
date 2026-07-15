@@ -840,6 +840,7 @@ export interface PackageSummary {
   weekCount: number;
   totalHours: number;
   totalThisPeriod: number;
+  budgetStatus: BudgetStatus;
   createdAt: string;
   updatedAt: string;
 }

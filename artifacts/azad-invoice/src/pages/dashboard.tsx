@@ -42,6 +42,7 @@ import {
   Clock,
   FileStack,
   Plus,
+  AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -83,6 +84,26 @@ function DocStatusStrip({ pkg }: { pkg: PackageSummary }) {
   );
 }
 
+function BudgetBadge({ pkg }: { pkg: PackageSummary }) {
+  const status = pkg.budgetStatus;
+  if (!status || status.level === "ok") return null;
+  const over = status.level === "over";
+  return (
+    <span
+      title={status.message}
+      data-testid={`badge-budget-${pkg.id}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+        over
+          ? "border-red-200 bg-red-50 text-red-700"
+          : "border-yellow-200 bg-yellow-50 text-yellow-800"
+      }`}
+    >
+      <AlertTriangle className="h-3 w-3" />
+      {over ? "Over budget" : "Approaching budget"}
+    </span>
+  );
+}
+
 function PackageTile({
   pkg,
   onOpen,
@@ -105,12 +126,15 @@ function PackageTile({
           <CalendarRange className="h-4 w-4 text-[#CFAF42]" />
           {periodLabel(pkg.payPeriodStart, pkg.payPeriodEnd)}
         </div>
-        <span
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${
-            PACKAGE_STATUS_STYLES[pkg.status] ?? PACKAGE_STATUS_STYLES.draft
-          }`}
-        >
-          {pkg.status.replace("_", " ")}
+        <span className="flex flex-wrap items-center justify-end gap-1">
+          <BudgetBadge pkg={pkg} />
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${
+              PACKAGE_STATUS_STYLES[pkg.status] ?? PACKAGE_STATUS_STYLES.draft
+            }`}
+          >
+            {pkg.status.replace("_", " ")}
+          </span>
         </span>
       </div>
 

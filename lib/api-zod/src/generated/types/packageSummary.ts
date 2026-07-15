@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { BudgetStatus } from './budgetStatus';
 import type { DocStatus } from './docStatus';
 import type { PackageEmployeeContribution } from './packageEmployeeContribution';
 import type { PackageSummaryStatus } from './packageSummaryStatus';
@@ -52,6 +53,7 @@ export interface PackageSummary {
   weekCount: number;
   totalHours: number;
   totalThisPeriod: number;
+  budgetStatus: BudgetStatus;
   createdAt: string;
   updatedAt: string;
 }

@@ -2052,6 +2052,7 @@ components:
         - weekCount
         - totalHours
         - totalThisPeriod
+        - budgetStatus
         - createdAt
         - updatedAt
       properties:
@@ -2099,6 +2100,8 @@ components:
         weekCount: { type: integer }
         totalHours: { type: number }
         totalThisPeriod: { type: number }
+        budgetStatus:
+          $ref: "#/components/schemas/BudgetStatus"
         createdAt: { type: string }
         updatedAt: { type: string }
     DocStatus:

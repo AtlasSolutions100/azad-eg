@@ -127,4 +127,24 @@ describe("package budgetStatus at the shared thresholds", () => {
     const detail = await request(app).get(`/api/packages/${approachingId}`).expect(200);
     expect(detail.body.rollup.budgetStatus.level).toBe("approaching");
   });
+
+  it("exposes budgetStatus on package summaries in the list endpoints", async () => {
+    const overId = await seedPackage(100000, 120000);
+    const okId = await seedPackage(100000, 50000);
+
+    const list = await request(app).get("/api/packages").expect(200);
+    const overSummary = list.body.find((p: { id: number }) => p.id === overId);
+    const okSummary = list.body.find((p: { id: number }) => p.id === okId);
+    expect(overSummary.budgetStatus.level).toBe("over");
+    expect(overSummary.budgetStatus.overBudget).toBe(true);
+    expect(okSummary.budgetStatus.level).toBe("ok");
+
+    const grouped = await request(app).get("/api/packages/grouped").expect(200);
+    const groupedSummaries = grouped.body.flatMap(
+      (g: { jobs: { packages: { id: number; budgetStatus: { level: string } }[] }[] }) =>
+        g.jobs.flatMap((j) => j.packages),
+    );
+    const groupedOver = groupedSummaries.find((p: { id: number }) => p.id === overId);
+    expect(groupedOver.budgetStatus.level).toBe("over");
+  });
 });

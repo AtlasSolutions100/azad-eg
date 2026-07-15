@@ -1428,6 +1428,13 @@ export const ListPackagesResponseItem = zod.object({
   "weekCount": zod.number(),
   "totalHours": zod.number(),
   "totalThisPeriod": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+}),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -1482,6 +1489,13 @@ export const CreatePackageResponse = zod.object({
   "weekCount": zod.number(),
   "totalHours": zod.number(),
   "totalThisPeriod": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+}),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -1530,6 +1544,13 @@ export const ListPackagesGroupedResponseItem = zod.object({
   "weekCount": zod.number(),
   "totalHours": zod.number(),
   "totalThisPeriod": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+}),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }))
@@ -1579,6 +1600,13 @@ export const GetPackageResponse = zod.object({
   "weekCount": zod.number(),
   "totalHours": zod.number(),
   "totalThisPeriod": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+}),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }),
@@ -1736,6 +1764,13 @@ export const UpdatePackageResponse = zod.object({
   "weekCount": zod.number(),
   "totalHours": zod.number(),
   "totalThisPeriod": zod.number(),
+  "budgetStatus": zod.object({
+  "level": zod.enum(['ok', 'approaching', 'over']),
+  "overBudget": zod.boolean(),
+  "percentExpended": zod.number(),
+  "remainingBalance": zod.number(),
+  "message": zod.string()
+}),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })

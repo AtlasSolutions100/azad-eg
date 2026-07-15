@@ -235,6 +235,7 @@ export function toApiPackageSummary(
     weekCount,
     totalHours: rollup.totalHours,
     totalThisPeriod: rollup.totalThisPeriod,
+    budgetStatus: rollup.budgetStatus,
     createdAt: pkg.createdAt.toISOString(),
     updatedAt: pkg.updatedAt.toISOString(),
   };
