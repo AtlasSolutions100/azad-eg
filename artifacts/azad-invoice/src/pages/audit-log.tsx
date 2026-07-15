@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import type { DateRange } from "react-day-picker";
 import { useListAuditLogs } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, ExternalLink } from "lucide-react";
-import { format } from "date-fns";
+import { AlertTriangle, CalendarIcon, ExternalLink, Search, X } from "lucide-react";
+import { endOfDay, format, startOfDay } from "date-fns";
 
 const OVERRIDE_ACTION = "approved over budget";
 
@@ -22,14 +27,48 @@ function entityLink(entityType: string, entityId: number | null | undefined): st
 export default function AuditLog() {
   const { data: logs, isLoading } = useListAuditLogs();
   const [overridesOnly, setOverridesOnly] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const isOverride = (action: string) => action === OVERRIDE_ACTION;
 
   const overrideCount = logs?.filter((log) => isOverride(log.action)).length ?? 0;
 
-  const visibleLogs = overridesOnly
-    ? logs?.filter((log) => isOverride(log.action))
-    : logs;
+  const visibleLogs = useMemo(() => {
+    if (!logs) return logs;
+    const query = search.trim().toLowerCase();
+    const from = dateRange?.from ? startOfDay(dateRange.from) : null;
+    const to = dateRange?.to
+      ? endOfDay(dateRange.to)
+      : dateRange?.from
+        ? endOfDay(dateRange.from)
+        : null;
+    return logs.filter((log) => {
+      if (overridesOnly && !isOverride(log.action)) return false;
+      if (from || to) {
+        const created = new Date(log.createdAt);
+        if (from && created < from) return false;
+        if (to && created > to) return false;
+      }
+      if (query) {
+        const entity = `${log.entityType} ${log.entityId != null ? `#${log.entityId}` : ""}`;
+        const haystack = [log.userName, log.action, entity, log.description]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [logs, overridesOnly, search, dateRange]);
+
+  const hasFilters = search.trim() !== "" || dateRange?.from != null || overridesOnly;
+
+  const dateLabel = dateRange?.from
+    ? dateRange.to
+      ? `${format(dateRange.from, "MMM d, yyyy")} – ${format(dateRange.to, "MMM d, yyyy")}`
+      : format(dateRange.from, "MMM d, yyyy")
+    : "Date range";
 
   return (
     <div className="space-y-6">
@@ -53,6 +92,60 @@ export default function AuditLog() {
             Budget overrides only
           </Label>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by user, action, entity, or description"
+            className="pl-9"
+            data-testid="input-audit-search"
+          />
+        </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className={cn(
+                "justify-start text-left font-normal",
+                !dateRange?.from && "text-muted-foreground"
+              )}
+              data-testid="button-date-range"
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {dateLabel}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="range"
+              selected={dateRange}
+              onSelect={setDateRange}
+              numberOfMonths={2}
+              defaultMonth={dateRange?.from}
+            />
+          </PopoverContent>
+        </Popover>
+        {dateRange?.from ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDateRange(undefined)}
+            className="text-muted-foreground"
+            data-testid="button-clear-dates"
+          >
+            <X className="mr-1 h-3.5 w-3.5" />
+            Clear dates
+          </Button>
+        ) : null}
+        {!isLoading && visibleLogs && logs && hasFilters ? (
+          <span className="text-sm text-muted-foreground">
+            Showing {visibleLogs.length} of {logs.length} entries
+          </span>
+        ) : null}
       </div>
 
       <div className="rounded-md border bg-white">
@@ -80,7 +173,7 @@ export default function AuditLog() {
             ) : visibleLogs?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                  {overridesOnly ? "No budget overrides found." : "No audit logs found."}
+                  {hasFilters ? "No entries match the current filters." : "No audit logs found."}
                 </TableCell>
               </TableRow>
             ) : (
