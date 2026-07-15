@@ -29,7 +29,6 @@ import {
   LABOR_FIELD_END,
   type LaborColumn,
 } from "@/lib/package-ui";
-import DocDownload from "./doc-download";
 
 type Block = "home" | "field";
 const NUMERIC_COLUMNS: LaborColumn[] = ["hours", "rate", "amount", "billed"];
@@ -252,14 +251,6 @@ export default function LaborTab({ detail }: { detail: PackageDetail }) {
 
   return (
     <div className="space-y-6">
-      <DocDownload
-        packageId={pkg.id}
-        doc="labor"
-        label="Labor Attachment"
-        description="Per-employee labor detail with burden applied."
-        status={pkg.laborAttachmentDocStatus}
-      />
-
       <Card className="border-dashed">
         <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 py-4 text-xs text-[#5F5F5F]">
           <CardDescription className="text-xs">

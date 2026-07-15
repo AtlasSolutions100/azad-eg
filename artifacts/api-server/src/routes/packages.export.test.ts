@@ -35,7 +35,8 @@ const createdWorkPlanIds: number[] = [];
 const createdEmployeeIds: number[] = [];
 const createdFilePrefixes: string[] = [];
 
-async function seedPackage(status = "approved"): Promise<number> {
+async function seedPackage(status = "approved", opts: { withWeeks?: boolean } = {}): Promise<number> {
+  const withWeeks = opts.withWeeks ?? true;
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const [emp] = await db
     .insert(employeesTable)
@@ -71,6 +72,8 @@ async function seedPackage(status = "approved"): Promise<number> {
     .returning();
   createdPackageIds.push(pkg.id);
   createdFilePrefixes.push(invoiceNumber);
+
+  if (!withWeeks) return pkg.id;
 
   const [week] = await db
     .insert(packageWeeksTable)
@@ -255,7 +258,7 @@ afterAll(async () => {
 
 describe("POST /api/packages/:id/export", () => {
   it(
-    "bundles all five documents plus three PDFs into a ZIP",
+    "bundles exactly one combined Excel workbook and one merged PDF into a ZIP",
     async () => {
       const pkgId = await seedPackage("approved");
 
@@ -263,24 +266,92 @@ describe("POST /api/packages/:id/export", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.filename).toMatch(/\.zip$/);
-      expect(res.body.documentCount).toBe(8);
-      expect(res.body.documents).toHaveLength(8);
+      expect(res.body.documentCount).toBe(2);
+      expect(res.body.documents).toHaveLength(2);
 
       const xlsxDocs = res.body.documents.filter((d: { format: string }) => d.format === "xlsx");
       const pdfDocs = res.body.documents.filter((d: { format: string }) => d.format === "pdf");
-      expect(xlsxDocs).toHaveLength(5);
-      expect(pdfDocs).toHaveLength(3);
+      expect(xlsxDocs).toHaveLength(1);
+      expect(pdfDocs).toHaveLength(1);
+      for (const d of res.body.documents) expect(d.doc).toBe("package");
 
       const zipPath = path.resolve(generatedDir, res.body.filename);
       expect(fs.existsSync(zipPath)).toBe(true);
       expect(fs.statSync(zipPath).size).toBeGreaterThan(0);
-      expect(countZipEntries(zipPath)).toBe(8);
+      expect(countZipEntries(zipPath)).toBe(2);
 
       // An approved package transitions to exported and all doc statuses ready.
       const [row] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
       expect(row.status).toBe("exported");
       expect(row.invoiceDocStatus).toBe("ready");
       expect(row.timesheetsDocStatus).toBe("ready");
+    },
+    120000,
+  );
+
+  it(
+    "combined workbook tabs are ordered Overview → Invoice → Sub Calc → Progress Report → Labor Attachment → weekly tabs",
+    async () => {
+      const ExcelJS = (await import("exceljs")).default;
+      const pkgId = await seedPackage("approved");
+
+      const before = new Set(fs.readdirSync(generatedDir));
+      const res = await request(app).post(`/api/packages/${pkgId}/export`).send({});
+      expect(res.status).toBe(200);
+
+      const combined = fs
+        .readdirSync(generatedDir)
+        .filter((f) => !before.has(f) && f.startsWith("InvoicePackage_") && f.endsWith(".xlsx"));
+      expect(combined).toHaveLength(1);
+      createdFilePrefixes.push(combined[0]);
+
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.readFile(path.resolve(generatedDir, combined[0]));
+      const names = wb.worksheets.map((ws) => ws.name);
+      expect(names.slice(0, 5)).toEqual([
+        "Overview",
+        "Invoice",
+        "Sub Calc",
+        "Progress Report",
+        "Labor Attachment",
+      ]);
+      // Seeded package has exactly one week → exactly one weekly timesheet tab.
+      expect(names).toHaveLength(6);
+    },
+    120000,
+  );
+
+  it(
+    "a package with no weeks exports no timesheet tabs and no template placeholder",
+    async () => {
+      const ExcelJS = (await import("exceljs")).default;
+      const { PDFDocument } = await import("pdf-lib");
+      const pkgId = await seedPackage("approved", { withWeeks: false });
+
+      const before = new Set(fs.readdirSync(generatedDir));
+      const res = await request(app).post(`/api/packages/${pkgId}/export`).send({});
+      expect(res.status).toBe(200);
+      expect(res.body.documentCount).toBe(2);
+
+      const fresh = fs.readdirSync(generatedDir).filter((f) => !before.has(f));
+      const combined = fresh.filter((f) => f.startsWith("InvoicePackage_") && f.endsWith(".xlsx"));
+      const merged = fresh.filter((f) => f.startsWith("InvoicePackage_") && f.endsWith(".pdf"));
+      expect(combined).toHaveLength(1);
+      expect(merged).toHaveLength(1);
+      createdFilePrefixes.push(...combined, ...merged);
+
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.readFile(path.resolve(generatedDir, combined[0]));
+      expect(wb.worksheets.map((ws) => ws.name)).toEqual([
+        "Overview",
+        "Invoice",
+        "Sub Calc",
+        "Progress Report",
+        "Labor Attachment",
+      ]);
+
+      const pdf = await PDFDocument.load(fs.readFileSync(path.resolve(generatedDir, merged[0])));
+      expect(pdf.getPageCount()).toBeGreaterThan(0);
     },
     120000,
   );
@@ -378,6 +449,7 @@ const DOC_LABELS: Record<string, string> = {
   progress: "ProgressReport",
   labor: "LaborAttachment",
   timesheets: "Timesheets",
+  package: "InvoicePackage",
 };
 
 // Mirrors sanitizeFilePart in packageDocs.ts.

@@ -30,7 +30,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/package-ui";
-import DocDownload from "./doc-download";
 import BudgetOverrideHistory from "@/components/budget-override-history";
 
 export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
@@ -128,14 +127,6 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
 
   return (
     <div className="space-y-6">
-      <DocDownload
-        packageId={pkg.id}
-        doc="invoice"
-        label="Invoice"
-        description="Cover invoice with billing summary and signature."
-        status={pkg.invoiceDocStatus}
-      />
-
       <BudgetOverrideHistory entityType="package" entityId={pkg.id} />
 
       {budgetStatus.level !== "ok" && (

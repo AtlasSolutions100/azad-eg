@@ -2,8 +2,7 @@ import type { PackageDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarRange, Clock } from "lucide-react";
 import { format } from "date-fns";
-import { DOC_METAS, formatCurrency, formatHours } from "@/lib/package-ui";
-import DocDownload from "./doc-download";
+import { formatCurrency, formatHours } from "@/lib/package-ui";
 
 function weekDateRange(start: string, end: string): string {
   try {
@@ -15,10 +14,6 @@ function weekDateRange(start: string, end: string): string {
 
 export default function OverviewTab({ detail }: { detail: PackageDetail }) {
   const { package: pkg, weeks, entries, rollup } = detail;
-
-  const readyCount = DOC_METAS.filter(
-    (d) => pkg[d.statusField] === "ready",
-  ).length;
 
   const entriesByWeek = (weekId: number) =>
     entries.filter((e) => e.weekId === weekId);
@@ -113,30 +108,11 @@ export default function OverviewTab({ detail }: { detail: PackageDetail }) {
               </span>
             </div>
             <div className="flex justify-between border-t border-dashed border-border pt-3">
-              <span className="text-[#5F5F5F]">Documents ready</span>
-              <span className="font-semibold text-[#333333]">{readyCount} / 5</span>
+              <span className="text-[#5F5F5F]">Weeks</span>
+              <span className="font-semibold text-[#333333]">{weeks.length}</span>
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Combined doc status + individual downloads */}
-      <div>
-        <h3 className="mb-3 text-sm font-semibold text-[#333333]">
-          Documents — status &amp; individual downloads
-        </h3>
-        <div className="grid gap-3 lg:grid-cols-2">
-          {DOC_METAS.map((doc) => (
-            <DocDownload
-              key={doc.kind}
-              packageId={pkg.id}
-              doc={doc.kind}
-              label={doc.label}
-              description={doc.description}
-              status={pkg[doc.statusField]}
-            />
-          ))}
-        </div>
       </div>
     </div>
   );

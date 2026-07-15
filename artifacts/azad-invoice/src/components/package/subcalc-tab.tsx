@@ -7,7 +7,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/package-ui";
-import DocDownload from "./doc-download";
 
 export default function SubCalcTab({ detail }: { detail: PackageDetail }) {
   const { package: pkg, rollup } = detail;
@@ -25,14 +24,6 @@ export default function SubCalcTab({ detail }: { detail: PackageDetail }) {
 
   return (
     <div className="space-y-6">
-      <DocDownload
-        packageId={pkg.id}
-        doc="subcalc"
-        label="Sub Calc"
-        description="Burden, fringe, overhead and fee roll-up."
-        status={pkg.subCalcDocStatus}
-      />
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Burden &amp; Fee Build-up</CardTitle>

@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileUp, FileCheck2, X, Download, Loader2 } from "lucide-react";
-import DocDownload from "./doc-download";
 
 type FormState = {
   percentComplete: number;
@@ -147,14 +146,6 @@ export default function ProgressTab({ detail }: { detail: PackageDetail }) {
 
   return (
     <div className="space-y-6">
-      <DocDownload
-        packageId={pkg.id}
-        doc="progress"
-        label="Progress Report"
-        description="Narrative report of work performed this period."
-        status={pkg.progressReportDocStatus}
-      />
-
       {/* Method 1: Upload */}
       <Card>
         <CardHeader>
