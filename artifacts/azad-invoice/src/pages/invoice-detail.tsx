@@ -20,7 +20,8 @@ import {
   TimeImportUploadSource,
   GenerateInputFormat,
   ProgressReportInput,
-  LineItemInput
+  LineItemInput,
+  ApiError
 } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -140,9 +141,28 @@ export default function InvoiceDetail() {
       });
     } catch (e) {
       console.error(e);
+      // A rejected upload (HTTP 400) carries { error, warnings } in the body.
+      // Surface both so the user knows exactly why every row was skipped,
+      // rather than a generic failure message.
+      let description =
+        e instanceof Error ? e.message : "Could not import the uploaded file.";
+      let warnings: string[] = [];
+      if (e instanceof ApiError && e.data && typeof e.data === "object") {
+        const body = e.data as { error?: unknown; warnings?: unknown };
+        if (typeof body.error === "string" && body.error.trim()) {
+          description = body.error;
+        }
+        if (Array.isArray(body.warnings)) {
+          warnings = body.warnings.filter((w): w is string => typeof w === "string");
+        }
+      }
+      setImportWarnings(warnings);
+      if (warnings.length > 0) {
+        description += ` ${warnings.length} warning(s) — see details below the import form.`;
+      }
       toast({
         title: "Import failed",
-        description: e instanceof Error ? e.message : "Could not import the uploaded file.",
+        description,
         variant: "destructive",
       });
     }
