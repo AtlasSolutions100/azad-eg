@@ -1867,6 +1867,8 @@ components:
         - lastSynced
         - lastFailed
         - lastSkipped
+        - persistFailures
+        - resultsStale
       properties:
         connected: { type: boolean }
         intervalMs: { type: integer }
@@ -1876,6 +1878,8 @@ components:
         lastFailed: { type: integer }
         lastSkipped: { type: boolean }
         lastError: { type: ["string", "null"] }
+        persistFailures: { type: integer }
+        resultsStale: { type: boolean }
 
     ProcasSchedulerRun:
       type: object

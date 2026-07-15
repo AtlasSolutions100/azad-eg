@@ -36,6 +36,22 @@ const SCHEDULER_ID = 1;
 let timer: NodeJS.Timeout | null = null;
 let running = false;
 
+// How many cycle-result writes have failed in a row on this instance. When the
+// database is unhealthy enough that even recording the outcome fails, the
+// persisted "last run" state silently goes stale — this counter lets the
+// status endpoint surface that instead of showing an old timestamp with no
+// warning. Reset to zero the moment a write succeeds.
+let consecutivePersistFailures = 0;
+
+// After this many back-to-back persistence failures, the scheduler status is
+// flagged stale so the UI can warn admins.
+export const PERSIST_FAILURE_WARN_THRESHOLD = 3;
+
+// Exported for tests.
+export function resetPersistFailuresForTest(): void {
+  consecutivePersistFailures = 0;
+}
+
 // Interval baked into the env var / default. Used only when the user hasn't
 // configured an interval from the UI.
 function envIntervalMs(): number {
@@ -85,6 +101,11 @@ export interface ProcasSchedulerState {
   lastFailed: number;
   lastSkipped: boolean;
   lastError: string | null;
+  // Consecutive failures to persist a cycle outcome (in-memory, per instance).
+  persistFailures: number;
+  // True once persistFailures reaches PERSIST_FAILURE_WARN_THRESHOLD — the
+  // persisted last-run info shown in the UI can no longer be trusted as fresh.
+  resultsStale: boolean;
 }
 
 export async function getSchedulerState(): Promise<ProcasSchedulerState> {
@@ -97,6 +118,8 @@ export async function getSchedulerState(): Promise<ProcasSchedulerState> {
     lastFailed: row.lastFailed,
     lastSkipped: row.lastSkipped,
     lastError: row.lastError,
+    persistFailures: consecutivePersistFailures,
+    resultsStale: consecutivePersistFailures >= PERSIST_FAILURE_WARN_THRESHOLD,
   };
 }
 
@@ -177,8 +200,19 @@ async function safeRecordCycleResult(result: {
 }): Promise<void> {
   try {
     await recordCycleResult(result);
+    consecutivePersistFailures = 0;
   } catch (e) {
-    logger.error({ err: e }, "Failed to persist Procas sync cycle result");
+    consecutivePersistFailures += 1;
+    logger.error(
+      { err: e, consecutivePersistFailures },
+      "Failed to persist Procas sync cycle result",
+    );
+    if (consecutivePersistFailures >= PERSIST_FAILURE_WARN_THRESHOLD) {
+      logger.warn(
+        { consecutivePersistFailures },
+        "Procas scheduler results have not been saved for multiple runs; the last-run status shown in the UI is stale",
+      );
+    }
   }
 }
 

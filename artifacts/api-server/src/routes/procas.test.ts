@@ -991,6 +991,52 @@ describe("procas integration", () => {
     await expect(scheduler.tick()).resolves.toBeUndefined();
   });
 
+  it("flags scheduler results as stale after repeated persistence failures and resets once a write succeeds", async () => {
+    const scheduler = await import("../lib/procasScheduler");
+    const procasModule = await import("../lib/procas");
+    const { logger } = await import("../lib/logger");
+
+    scheduler.resetPersistFailuresForTest();
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation((() => logger) as never);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation((() => logger) as never);
+
+    // Every cycle fails, and persisting the outcome fails too.
+    const connSpy = vi
+      .spyOn(procasModule, "getProcasConnection")
+      .mockRejectedValue(new Error("database down during cycle"));
+    const updateSpy = vi.spyOn(db, "update").mockImplementation(() => {
+      throw new Error("database still down while persisting result");
+    });
+
+    try {
+      for (let i = 0; i < scheduler.PERSIST_FAILURE_WARN_THRESHOLD; i++) {
+        await scheduler.tick();
+      }
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    const stale = await scheduler.getSchedulerState();
+    expect(stale.persistFailures).toBe(scheduler.PERSIST_FAILURE_WARN_THRESHOLD);
+    expect(stale.resultsStale).toBe(true);
+
+    // The status endpoint surfaces the indicator (restore the connection mock
+    // first — the payload also reads the Procas connection).
+    connSpy.mockRestore();
+    const res = await request(app).get("/api/procas/scheduler");
+    expect(res.status).toBe(200);
+    expect(res.body.persistFailures).toBe(scheduler.PERSIST_FAILURE_WARN_THRESHOLD);
+    expect(res.body.resultsStale).toBe(true);
+
+    // Once persistence works again, the counter resets automatically.
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+    await scheduler.tick();
+    const recovered = await scheduler.getSchedulerState();
+    expect(recovered.persistFailures).toBe(0);
+    expect(recovered.resultsStale).toBe(false);
+  });
+
   it("skips a concurrent cycle cleanly when another instance holds the cross-instance sync lock", async () => {
     const { tick, getSchedulerState } = await import("../lib/procasScheduler");
     const { pool } = await import("@workspace/db");

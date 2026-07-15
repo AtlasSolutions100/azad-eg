@@ -17,4 +17,6 @@ export interface ProcasSchedulerStatus {
   lastSkipped: boolean;
   /** @nullable */
   lastError?: string | null;
+  persistFailures: number;
+  resultsStale: boolean;
 }

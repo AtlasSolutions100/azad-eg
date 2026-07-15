@@ -278,6 +278,17 @@ export default function ProcasIndicator() {
                       : "Loading schedule…"}
                   </p>
 
+                  {scheduler?.resultsStale && (
+                    <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                      <span>
+                        Refresh results haven't been saved for the last{" "}
+                        {scheduler.persistFailures} runs — the status below may be out of
+                        date. The database may be having trouble.
+                      </span>
+                    </div>
+                  )}
+
                   {scheduler && (
                     <div className="text-xs text-[#5F5F5F]">
                       {scheduler.lastRunAt ? (

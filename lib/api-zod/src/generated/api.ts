@@ -1212,7 +1212,9 @@ export const GetProcasSchedulerResponse = zod.object({
   "lastSynced": zod.number(),
   "lastFailed": zod.number(),
   "lastSkipped": zod.boolean(),
-  "lastError": zod.string().nullish()
+  "lastError": zod.string().nullish(),
+  "persistFailures": zod.number(),
+  "resultsStale": zod.boolean()
 })
 
 
@@ -1231,7 +1233,9 @@ export const UpdateProcasSchedulerResponse = zod.object({
   "lastSynced": zod.number(),
   "lastFailed": zod.number(),
   "lastSkipped": zod.boolean(),
-  "lastError": zod.string().nullish()
+  "lastError": zod.string().nullish(),
+  "persistFailures": zod.number(),
+  "resultsStale": zod.boolean()
 })
 
 
@@ -1260,7 +1264,9 @@ export const RefreshProcasNowResponse = zod.object({
   "lastSynced": zod.number(),
   "lastFailed": zod.number(),
   "lastSkipped": zod.boolean(),
-  "lastError": zod.string().nullish()
+  "lastError": zod.string().nullish(),
+  "persistFailures": zod.number(),
+  "resultsStale": zod.boolean()
 })
 
 
