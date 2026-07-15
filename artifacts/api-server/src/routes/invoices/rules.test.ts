@@ -211,6 +211,27 @@ describe("POST /api/invoices/:id/approve", () => {
     expect(row.status).toBe("draft");
   });
 
+  it("rejects an override with a missing or blank reason (400)", async () => {
+    const wpId = await createWorkPlan();
+    const invId = await createInvoice(wpId, "draft", { previouslyBilled: 200000 });
+    await addLineItem(invId);
+
+    const missing = await request(app)
+      .post(`/api/invoices/${invId}/approve`)
+      .send({ approvedBy: "Approver", budgetOverride: true });
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe("BUDGET_OVERRIDE_REASON_REQUIRED");
+
+    const blank = await request(app)
+      .post(`/api/invoices/${invId}/approve`)
+      .send({ approvedBy: "Approver", budgetOverride: true, budgetOverrideReason: "   " });
+    expect(blank.status).toBe(400);
+    expect(blank.body.code).toBe("BUDGET_OVERRIDE_REASON_REQUIRED");
+
+    const [row] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invId));
+    expect(row.status).toBe("draft");
+  });
+
   it("approves an over-budget invoice with an override and logs it", async () => {
     const wpId = await createWorkPlan();
     const invId = await createInvoice(wpId, "draft", { previouslyBilled: 200000 });

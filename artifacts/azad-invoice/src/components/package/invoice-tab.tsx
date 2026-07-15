@@ -299,13 +299,18 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
                 </AlertDescription>
               </Alert>
               <div className="space-y-2">
-                <Label>Reason for override (optional)</Label>
+                <Label>Reason for override (required)</Label>
                 <Textarea
                   value={overrideReason}
                   onChange={(e) => setOverrideReason(e.target.value)}
                   placeholder="e.g. Client PO amendment pending, approved by PM."
                   rows={3}
                 />
+                {!overrideReason.trim() && (
+                  <p className="text-xs text-muted-foreground">
+                    A reason is required to approve over budget.
+                  </p>
+                )}
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setOverrideOpen(false)}>
@@ -313,8 +318,8 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
                 </Button>
                 <Button
                   className="bg-red-600 text-white hover:bg-red-700"
-                  onClick={() => submitApproval(true, overrideReason)}
-                  disabled={updatePackage.isPending}
+                  onClick={() => submitApproval(true, overrideReason.trim())}
+                  disabled={updatePackage.isPending || !overrideReason.trim()}
                 >
                   {updatePackage.isPending ? "Approving…" : "Override & Approve"}
                 </Button>

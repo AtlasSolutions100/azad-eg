@@ -409,6 +409,15 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
           });
           return;
         }
+        // A budget override is a financial control — it must carry a non-blank
+        // justification so the audit trail is meaningful.
+        if (!budgetOverrideReason?.trim()) {
+          res.status(400).json({
+            error: "A budget override requires a reason. Provide budgetOverrideReason explaining why this over-budget package is being approved.",
+            code: "BUDGET_OVERRIDE_REASON_REQUIRED",
+          });
+          return;
+        }
         overBudget = budget;
       }
     }

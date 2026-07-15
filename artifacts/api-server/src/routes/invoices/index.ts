@@ -228,6 +228,15 @@ router.post("/invoices/:id/approve", async (req, res): Promise<void> => {
     });
     return;
   }
+  // A budget override is a financial control — it must carry a non-blank
+  // justification so the audit trail is meaningful.
+  if (budget.overBudget && parsed.data.budgetOverride && !parsed.data.budgetOverrideReason?.trim()) {
+    res.status(400).json({
+      error: "A budget override requires a reason. Provide budgetOverrideReason explaining why this over-budget invoice is being approved.",
+      code: "BUDGET_OVERRIDE_REASON_REQUIRED",
+    });
+    return;
+  }
   const [row] = await db
     .update(invoicesTable)
     .set({ status: "approved", approvedBy: parsed.data.approvedBy, signatureId: parsed.data.signatureId ?? null })

@@ -614,7 +614,7 @@ export const ApproveInvoiceBody = zod.object({
   "approvedBy": zod.string().min(1),
   "signatureId": zod.number().optional(),
   "budgetOverride": zod.boolean().optional().describe('Explicit acknowledgement that this invoice exceeds its work plan budget. Required to approve an over-budget invoice; the override is recorded in the audit log.'),
-  "budgetOverrideReason": zod.string().optional().describe('Optional justification recorded with a budget override.')
+  "budgetOverrideReason": zod.string().optional().describe('Justification recorded with a budget override. Required (non-blank) when budgetOverride is true.')
 })
 
 export const ApproveInvoiceResponse = zod.object({
@@ -1559,7 +1559,7 @@ export const UpdatePackageBody = zod.object({
   "approvedBy": zod.string().optional(),
   "status": zod.enum(['draft', 'in_review', 'approved', 'exported']).optional(),
   "budgetOverride": zod.boolean().optional().describe('Explicit acknowledgement that this package exceeds its work plan budget. Required to set status to \"approved\" when over budget; the override is recorded in the audit log.'),
-  "budgetOverrideReason": zod.string().optional().describe('Optional justification recorded with a budget override.'),
+  "budgetOverrideReason": zod.string().optional().describe('Justification recorded with a budget override. Required (non-blank) when budgetOverride is true.'),
   "invoiceDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),
   "subCalcDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),
   "progressReportDocStatus": zod.enum(['not_started', 'in_progress', 'ready']).optional(),

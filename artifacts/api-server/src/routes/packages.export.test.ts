@@ -322,6 +322,25 @@ describe("PATCH /api/packages/:id over-budget approval", () => {
     expect(row.status).toBe("draft");
   });
 
+  it("rejects an override with a missing or blank reason (400)", async () => {
+    const pkgId = await seedOverBudgetDraft();
+
+    const missing = await request(app)
+      .patch(`/api/packages/${pkgId}`)
+      .send({ status: "approved", approvedBy: "Approver", budgetOverride: true });
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe("BUDGET_OVERRIDE_REASON_REQUIRED");
+
+    const blank = await request(app)
+      .patch(`/api/packages/${pkgId}`)
+      .send({ status: "approved", approvedBy: "Approver", budgetOverride: true, budgetOverrideReason: "   " });
+    expect(blank.status).toBe(400);
+    expect(blank.body.code).toBe("BUDGET_OVERRIDE_REASON_REQUIRED");
+
+    const [row] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
+    expect(row.status).toBe("draft");
+  });
+
   it("approves an over-budget package with an override and logs it", async () => {
     const pkgId = await seedOverBudgetDraft();
 

@@ -1512,7 +1512,9 @@ components:
             recorded in the audit log.
         budgetOverrideReason:
           type: string
-          description: Optional justification recorded with a budget override.
+          description: >-
+            Justification recorded with a budget override. Required (non-blank)
+            when budgetOverride is true.
 
     LineItem:
       type: object
@@ -2045,7 +2047,9 @@ components:
             override is recorded in the audit log.
         budgetOverrideReason:
           type: string
-          description: Optional justification recorded with a budget override.
+          description: >-
+            Justification recorded with a budget override. Required (non-blank)
+            when budgetOverride is true.
         invoiceDocStatus:
           $ref: "#/components/schemas/DocStatus"
         subCalcDocStatus:
