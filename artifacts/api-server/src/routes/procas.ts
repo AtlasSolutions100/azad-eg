@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-zod";
 import {
   getProcasConnection,
+  getProcasConnectionState,
   saveProcasConnection,
   pingProcas,
 } from "../lib/procas";
@@ -29,7 +30,9 @@ import { recordAudit } from "../lib/audit";
 const router: IRouter = Router();
 
 async function schedulerPayload(state: ProcasSchedulerState) {
-  const conn = await getProcasConnection();
+  // Use the decryption-safe reader so an unreadable stored credential does
+  // not turn scheduler polling into a 500.
+  const { conn } = await getProcasConnectionState();
   return {
     connected: !!conn?.connected,
     intervalMs: state.intervalMs,
@@ -47,25 +50,34 @@ async function schedulerPayload(state: ProcasSchedulerState) {
   };
 }
 
-function statusPayload(conn: Awaited<ReturnType<typeof getProcasConnection>>) {
+function statusPayload(
+  conn: Awaited<ReturnType<typeof getProcasConnection>>,
+  credentialUnreadable = false,
+) {
   const connected = !!conn?.connected;
   return {
     connected,
     mode: connected ? ("live" as const) : ("upload" as const),
+    credentialUnreadable,
     companyCode: conn?.companyCode ?? null,
     username: conn?.username ?? null,
     lastSyncAt: conn?.lastSyncAt ? conn.lastSyncAt.toISOString() : null,
-    message: connected
-      ? "Live pull active — Procas serves a copy of your data refreshed daily at 6 AM Eastern."
-      : "Procas is not connected. Import timesheet data via CSV/Excel upload.",
+    message: credentialUnreadable
+      ? "The stored Procas credential can no longer be decrypted (the encryption key may have been rotated). Reconnect Procas with your username and password to restore the live connection."
+      : connected
+        ? "Live pull active — Procas serves a copy of your data refreshed daily at 6 AM Eastern."
+        : "Procas is not connected. Import timesheet data via CSV/Excel upload.",
   };
 }
 
 // Returns the real, persisted Procas connection state. Falls back to upload
-// mode whenever no live connection has been established.
+// mode whenever no live connection has been established. If the stored
+// credential exists but cannot be decrypted (e.g. the encryption key was
+// rotated without PROCAS_ENC_KEY_OLD), reports a distinct
+// "credential unreadable — reconnect" state instead of a generic error.
 router.get("/procas/status", async (_req, res): Promise<void> => {
-  const conn = await getProcasConnection();
-  res.json(GetProcasStatusResponse.parse(statusPayload(conn)));
+  const { conn, credentialUnreadable } = await getProcasConnectionState();
+  res.json(GetProcasStatusResponse.parse(statusPayload(conn, credentialUnreadable)));
 });
 
 // Starts the real Procas connection flow: validates the supplied credentials by

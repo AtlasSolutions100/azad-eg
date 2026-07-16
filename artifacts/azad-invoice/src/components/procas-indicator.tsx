@@ -50,6 +50,10 @@ export default function ProcasIndicator() {
   const disconnectProcas = useDisconnectProcas();
 
   const connected = status?.connected ?? false;
+  // A stored credential exists but can no longer be decrypted (e.g. after an
+  // encryption key rotation) — the live connection is broken until an admin
+  // reconnects with fresh credentials.
+  const credentialUnreadable = status?.credentialUnreadable ?? false;
 
   const { data: scheduler } = useGetProcasScheduler({
     query: {
@@ -90,12 +94,18 @@ export default function ProcasIndicator() {
 
   const lastSync = status?.lastSyncAt ? new Date(status.lastSyncAt) : null;
 
-  const headline = connected ? "Live Pull Active" : "Upload Mode";
-  const detail = connected
-    ? lastSync
-      ? `Last synced ${formatDistanceToNow(lastSync, { addSuffix: true })}`
-      : "Connected to the Procas Web API"
-    : "Not connected to the Procas Web API";
+  const headline = credentialUnreadable
+    ? "Reconnect Procas"
+    : connected
+      ? "Live Pull Active"
+      : "Upload Mode";
+  const detail = credentialUnreadable
+    ? "Stored credential can no longer be read"
+    : connected
+      ? lastSync
+        ? `Last synced ${formatDistanceToNow(lastSync, { addSuffix: true })}`
+        : "Connected to the Procas Web API"
+      : "Not connected to the Procas Web API";
 
   const refreshStatus = () =>
     Promise.all([
@@ -199,26 +209,38 @@ export default function ProcasIndicator() {
           <button
             type="button"
             className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              connected
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+              credentialUnreadable
+                ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                : connected
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
             } ${isLoading ? "opacity-60" : ""}`}
             aria-label="Procas connection status"
           >
             <span className="relative flex h-2 w-2">
               <span
                 className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  connected ? "animate-ping bg-emerald-400" : "bg-amber-400"
+                  credentialUnreadable
+                    ? "animate-ping bg-red-400"
+                    : connected
+                      ? "animate-ping bg-emerald-400"
+                      : "bg-amber-400"
                 }`}
               />
               <span
                 className={`relative inline-flex h-2 w-2 rounded-full ${
-                  connected ? "bg-emerald-500" : "bg-amber-500"
+                  credentialUnreadable
+                    ? "bg-red-500"
+                    : connected
+                      ? "bg-emerald-500"
+                      : "bg-amber-500"
                 }`}
               />
             </span>
             <span className="hidden sm:inline">{headline}</span>
-            {connected ? (
+            {credentialUnreadable ? (
+              <AlertTriangle className="h-3.5 w-3.5" />
+            ) : connected ? (
               <Wifi className="h-3.5 w-3.5" />
             ) : (
               <WifiOff className="h-3.5 w-3.5" />
@@ -230,12 +252,16 @@ export default function ProcasIndicator() {
             <div className="flex items-start gap-3">
               <span
                 className={`mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${
-                  connected
-                    ? "bg-emerald-100 text-emerald-600"
-                    : "bg-amber-100 text-amber-600"
+                  credentialUnreadable
+                    ? "bg-red-100 text-red-600"
+                    : connected
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-amber-100 text-amber-600"
                 }`}
               >
-                {connected ? (
+                {credentialUnreadable ? (
+                  <AlertTriangle className="h-4 w-4" />
+                ) : connected ? (
                   <Wifi className="h-4 w-4" />
                 ) : (
                   <WifiOff className="h-4 w-4" />
@@ -252,7 +278,47 @@ export default function ProcasIndicator() {
                   ? "Timesheet data is being pulled directly from Procas."
                   : "Procas is not connected. Upload timesheet files manually to build packages.")}
             </p>
-            {connected ? (
+            {credentialUnreadable ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>
+                    The saved Procas password can't be read anymore, so live pulls and
+                    automatic refreshes have stopped. Reconnect with your Procas
+                    username and password to fix this.
+                  </span>
+                </div>
+                {status?.companyCode && (
+                  <p className="truncate text-xs text-[#5F5F5F]">
+                    <span className="font-medium text-[#333333]">Company code:</span>{" "}
+                    {status.companyCode}
+                  </p>
+                )}
+                <Button
+                  size="sm"
+                  className="w-full bg-[#CFAF42] text-white hover:bg-[#bd9e36]"
+                  onClick={() => {
+                    setCompanyCode(status?.companyCode ?? "");
+                    setUsername(status?.username ?? "");
+                    setPassword("");
+                    setDialogOpen(true);
+                  }}
+                >
+                  <Plug className="mr-2 h-4 w-4" /> Reconnect to Procas
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={disconnectProcas.isPending}
+                  onClick={handleDisconnect}
+                >
+                  {disconnectProcas.isPending
+                    ? "Disconnecting..."
+                    : "Disconnect and use Upload Mode"}
+                </Button>
+              </div>
+            ) : connected ? (
               <div className="space-y-3">
                 {status?.companyCode && (
                   <p className="truncate text-xs text-[#5F5F5F]">

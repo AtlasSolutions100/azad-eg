@@ -679,6 +679,8 @@ export const ProcasStatusMode = {
 export interface ProcasStatus {
   connected: boolean;
   mode: ProcasStatusMode;
+  /** True when a stored credential exists but can no longer be decrypted (e.g. after an encryption key rotation without PROCAS_ENC_KEY_OLD). The admin must reconnect Procas. */
+  credentialUnreadable: boolean;
   /** @nullable */
   companyCode?: string | null;
   /** @nullable */

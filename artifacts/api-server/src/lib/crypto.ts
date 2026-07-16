@@ -84,7 +84,7 @@ function parseCiphertext(value: string): { iv: Buffer; tag: Buffer; data: Buffer
   const body = value.slice(ENC_PREFIX.length);
   const [ivB64, tagB64, dataB64] = body.split(":");
   if (!ivB64 || !tagB64 || !dataB64) {
-    throw new Error("Stored credential is malformed and cannot be decrypted.");
+    throw new CredentialDecryptionError("Stored credential is malformed and cannot be decrypted.");
   }
   return {
     iv: Buffer.from(ivB64, "base64"),
@@ -96,6 +96,16 @@ function parseCiphertext(value: string): { iv: Buffer; tag: Buffer; data: Buffer
 // True when the value was produced by encryptSecret (vs. legacy plaintext).
 export function isEncrypted(value: string): boolean {
   return value.startsWith(ENC_PREFIX);
+}
+
+// Thrown when stored ciphertext cannot be decrypted with any available key
+// (or is malformed). Callers can catch this specific type to surface a
+// "reconnect Procas" state instead of a generic server error.
+export class CredentialDecryptionError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "CredentialDecryptionError";
+  }
 }
 
 export function encryptSecret(plaintext: string): string {
@@ -118,7 +128,7 @@ export function decryptSecret(value: string): string {
       lastError = err;
     }
   }
-  throw new Error(
+  throw new CredentialDecryptionError(
     "Stored credential could not be decrypted with any available key. " +
       "If the master key was rotated, set PROCAS_ENC_KEY_OLD to the previous key so the value can be re-encrypted, " +
       "or reconnect Procas to store fresh credentials.",

@@ -1273,6 +1273,7 @@ export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
 export const GetProcasStatusResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
+  "credentialUnreadable": zod.boolean().describe('True when a stored credential exists but can no longer be decrypted (e.g. after an encryption key rotation without PROCAS_ENC_KEY_OLD). The admin must reconnect Procas.'),
   "companyCode": zod.string().nullish(),
   "username": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),
@@ -1297,6 +1298,7 @@ export const ConnectProcasBody = zod.object({
 export const ConnectProcasResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
+  "credentialUnreadable": zod.boolean().describe('True when a stored credential exists but can no longer be decrypted (e.g. after an encryption key rotation without PROCAS_ENC_KEY_OLD). The admin must reconnect Procas.'),
   "companyCode": zod.string().nullish(),
   "username": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),
@@ -1310,6 +1312,7 @@ export const ConnectProcasResponse = zod.object({
 export const DisconnectProcasResponse = zod.object({
   "connected": zod.boolean(),
   "mode": zod.enum(['live', 'upload']),
+  "credentialUnreadable": zod.boolean().describe('True when a stored credential exists but can no longer be decrypted (e.g. after an encryption key rotation without PROCAS_ENC_KEY_OLD). The admin must reconnect Procas.'),
   "companyCode": zod.string().nullish(),
   "username": zod.string().nullish(),
   "lastSyncAt": zod.string().nullish(),

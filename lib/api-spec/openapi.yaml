@@ -1909,12 +1909,18 @@ components:
 
     ProcasStatus:
       type: object
-      required: [connected, mode, message]
+      required: [connected, mode, credentialUnreadable, message]
       properties:
         connected: { type: boolean }
         mode:
           type: string
           enum: [live, upload]
+        credentialUnreadable:
+          type: boolean
+          description: >-
+            True when a stored credential exists but can no longer be
+            decrypted (e.g. after an encryption key rotation without
+            PROCAS_ENC_KEY_OLD). The admin must reconnect Procas.
         companyCode: { type: ["string", "null"] }
         username: { type: ["string", "null"] }
         lastSyncAt: { type: ["string", "null"] }

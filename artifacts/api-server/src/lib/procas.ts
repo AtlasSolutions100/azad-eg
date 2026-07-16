@@ -1,6 +1,6 @@
 import { db, procasConnectionTable, type ProcasConnectionRow } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { encryptSecret, decryptSecret, isSealedWithCurrentKey } from "./crypto";
+import { encryptSecret, decryptSecret, isSealedWithCurrentKey, CredentialDecryptionError } from "./crypto";
 
 const CONNECTION_ID = 1;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -236,6 +236,32 @@ export async function getProcasConnection(): Promise<ProcasConnectionRow | null>
     return { ...row, password: plaintext };
   }
   return { ...row, password: row.password ? decryptSecret(row.password) : row.password };
+}
+
+// Connection state that distinguishes "credential can no longer be
+// decrypted" (e.g. the master key was rotated without PROCAS_ENC_KEY_OLD)
+// from a healthy or absent connection. The status endpoint uses this so
+// admins see a clear "reconnect Procas" state instead of a 500.
+export interface ProcasConnectionState {
+  conn: ProcasConnectionRow | null;
+  credentialUnreadable: boolean;
+}
+
+export async function getProcasConnectionState(): Promise<ProcasConnectionState> {
+  try {
+    return { conn: await getProcasConnection(), credentialUnreadable: false };
+  } catch (err) {
+    if (!(err instanceof CredentialDecryptionError)) throw err;
+    console.error("[procas] Stored credential could not be decrypted:", err.message);
+    // The password is unreadable, but the rest of the row (company code,
+    // username, last sync) is plaintext — return it with the password
+    // stripped so the UI can still show which connection is broken.
+    const [row] = await db
+      .select()
+      .from(procasConnectionTable)
+      .where(eq(procasConnectionTable.id, CONNECTION_ID));
+    return { conn: row ? { ...row, password: null } : null, credentialUnreadable: true };
+  }
 }
 
 // One-shot rotation routine, run at server startup. If the stored Procas

@@ -102,6 +102,40 @@ describe("procas integration", () => {
     expect(res.status).toBe(200);
     expect(res.body.connected).toBe(false);
     expect(res.body.mode).toBe("upload");
+    expect(res.body.credentialUnreadable).toBe(false);
+  });
+
+  it("reports a distinct credential-unreadable state when the stored password cannot be decrypted", async () => {
+    // Ciphertext with valid structure but garbage key material: no available
+    // key can decrypt it, mimicking a rotated-out PROCAS_ENC_KEY with no
+    // PROCAS_ENC_KEY_OLD set.
+    const junk = Buffer.from("garbage-data-not-real").toString("base64");
+    await db.insert(procasConnectionTable).values({
+      id: 1,
+      connected: true,
+      companyCode: "AZAD",
+      username: "julie",
+      password: `enc:v1:${Buffer.alloc(12).toString("base64")}:${Buffer.alloc(16).toString("base64")}:${junk}`,
+    });
+
+    const res = await request(app).get("/api/procas/status");
+    expect(res.status).toBe(200);
+    expect(res.body.connected).toBe(true);
+    expect(res.body.credentialUnreadable).toBe(true);
+    expect(res.body.companyCode).toBe("AZAD");
+    expect(res.body.username).toBe("julie");
+    expect(res.body.message).toMatch(/reconnect/i);
+
+    // The scheduler status endpoint must not 500 either.
+    const sched = await request(app).get("/api/procas/scheduler");
+    expect(sched.status).toBe(200);
+
+    // Reconnecting with fresh credentials clears the state.
+    mockOData(() => odataResponse([{ LCItem: "ENG" }]));
+    await request(app).post("/api/procas/connect").send(GOOD_CREDS).expect(200);
+    const after = await request(app).get("/api/procas/status");
+    expect(after.body.credentialUnreadable).toBe(false);
+    expect(after.body.connected).toBe(true);
   });
 
   it("rejects connect when the credentials are unauthorized", async () => {
