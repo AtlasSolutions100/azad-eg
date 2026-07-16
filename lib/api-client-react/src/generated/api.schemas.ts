@@ -286,6 +286,11 @@ export interface Invoice {
      * @nullable
      */
   lastImportSource?: InvoiceLastImportSource;
+  /**
+     * ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice's data.
+     * @nullable
+     */
+  lineItemsEditedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

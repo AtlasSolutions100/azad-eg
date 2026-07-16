@@ -118,6 +118,37 @@ describe("import warnings persistence", () => {
     ).toBe(true);
   });
 
+  it("stamps lineItemsEditedAt when line items are edited after an import", async () => {
+    const id = await makeInvoice();
+
+    const csv = "Employee,Classification,Hours,Rate\nGhost Person,Engineer,10,\n";
+    const imported = await csvUpload(id, csv);
+    expect(imported.status).toBe(200);
+
+    const before = await request(app).get(`/api/invoices/${id}`);
+    expect(before.status).toBe(200);
+    expect(before.body.lineItemsEditedAt ?? null).toBeNull();
+
+    const add = await request(app)
+      .post(`/api/invoices/${id}/line-items`)
+      .send({
+        employeeName: "Manual Person",
+        classification: "Engineer",
+        category: "regular",
+        location: "home",
+        hours: 2,
+        rate: 100,
+      });
+    expect(add.status).toBe(201);
+
+    const after = await request(app).get(`/api/invoices/${id}`);
+    expect(after.status).toBe(200);
+    expect(typeof after.body.lineItemsEditedAt).toBe("string");
+    expect(Date.parse(after.body.lineItemsEditedAt)).toBeGreaterThanOrEqual(
+      Date.parse(after.body.lastImportAt),
+    );
+  });
+
   it("returns 409 when there are no warnings to dismiss", async () => {
     const id = await makeInvoice();
     const dismiss = await request(app).delete(`/api/invoices/${id}/import-warnings`);

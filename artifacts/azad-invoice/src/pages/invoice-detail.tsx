@@ -135,6 +135,15 @@ export default function InvoiceDetail() {
   const persistedImportWarnings = invoice?.importWarnings ?? [];
   const importWarnings =
     failedImportWarnings.length > 0 ? failedImportWarnings : persistedImportWarnings;
+  // Persisted warnings describe the last import; if line items were hand-edited
+  // afterwards, hint that the warnings may no longer match the data. Only
+  // applies to persisted warnings — failed-import warnings are always current.
+  const warningsMayBeOutdated =
+    failedImportWarnings.length === 0 &&
+    !!invoice?.lastImportAt &&
+    !!invoice?.lineItemsEditedAt &&
+    new Date(invoice.lineItemsEditedAt).getTime() >
+      new Date(invoice.lastImportAt).getTime();
 
   // Client-side filter for the Activity tab, over already-fetched entries.
   const [activityFilter, setActivityFilter] = useState<string>("all");
@@ -977,6 +986,15 @@ export default function InvoiceDetail() {
                       </span>
                     )}
                   </AlertTitle>
+                  {warningsMayBeOutdated && (
+                    <p
+                      className="mt-1 text-xs italic text-yellow-700/80"
+                      data-testid="import-warnings-outdated-hint"
+                    >
+                      Line items have been edited since this import — these warnings may
+                      no longer reflect the current data.
+                    </p>
+                  )}
                   <AlertDescription className="text-yellow-700">
                     <ul className="list-disc pl-4">
                       {importWarnings.map((w, i) => (

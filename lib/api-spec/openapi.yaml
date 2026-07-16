@@ -1595,6 +1595,12 @@ components:
           type: ["string", "null"]
           enum: [upload, procas, procas-scheduled, null]
           description: Source of the most recent time-data import.
+        lineItemsEditedAt:
+          type: ["string", "null"]
+          description: >-
+            ISO timestamp of the most recent manual line-item edit (add,
+            update, or delete). When later than lastImportAt, the stored
+            import warnings may no longer reflect the invoice's data.
         createdAt: { type: string }
         updatedAt: { type: string }
     InvoiceInput:

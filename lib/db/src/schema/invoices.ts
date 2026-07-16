@@ -24,6 +24,10 @@ export const invoicesTable = pgTable("invoices", {
   // so billers can tell whether the stored warnings are still relevant.
   lastImportAt: timestamp("last_import_at", { withTimezone: true }),
   lastImportSource: text("last_import_source"),
+  // When a biller last hand-edited line items (add/update/delete via the
+  // line-item routes). Compared against lastImportAt so the UI can flag
+  // import warnings as possibly outdated once the data has changed by hand.
+  lineItemsEditedAt: timestamp("line_items_edited_at", { withTimezone: true }),
   preparedBy: text("prepared_by"),
   approvedBy: text("approved_by"),
   signatureId: integer("signature_id"),

@@ -14,6 +14,15 @@ import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
 
+// Manual line-item edits are stamped on the invoice so the UI can flag
+// persisted import warnings as possibly outdated (edit after lastImportAt).
+async function markLineItemsEdited(invoiceId: number): Promise<void> {
+  await db
+    .update(invoicesTable)
+    .set({ lineItemsEditedAt: new Date() })
+    .where(eq(invoicesTable.id, invoiceId));
+}
+
 router.get("/invoices/:id/line-items", async (req, res): Promise<void> => {
   const invoiceId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const rows = await db.select().from(lineItemsTable).where(eq(lineItemsTable.invoiceId, invoiceId)).orderBy(lineItemsTable.id);
@@ -34,6 +43,7 @@ router.post("/invoices/:id/line-items", async (req, res): Promise<void> => {
   }
   const amount = parsed.data.hours * parsed.data.rate;
   const [row] = await db.insert(lineItemsTable).values({ ...parsed.data, invoiceId, amount }).returning();
+  await markLineItemsEdited(invoiceId);
   await recomputeCarryOverWithAudit(inv.workPlanId, {
     invoiceId,
     invoiceNumber: inv.invoiceNumber,
@@ -62,6 +72,7 @@ router.patch("/line-items/:id", async (req, res): Promise<void> => {
     .set({ ...parsed.data, amount: hours * rate })
     .where(eq(lineItemsTable.id, id))
     .returning();
+  await markLineItemsEdited(row.invoiceId);
   const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, row.invoiceId));
   if (inv)
     await recomputeCarryOverWithAudit(inv.workPlanId, {
@@ -79,6 +90,7 @@ router.delete("/line-items/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Line item not found" });
     return;
   }
+  await markLineItemsEdited(row.invoiceId);
   const [inv] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, row.invoiceId));
   if (inv)
     await recomputeCarryOverWithAudit(inv.workPlanId, {

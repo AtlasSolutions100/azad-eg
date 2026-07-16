@@ -456,6 +456,7 @@ export const ListInvoicesResponseItem = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -507,6 +508,7 @@ export const CreateInvoiceResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -547,6 +549,7 @@ export const GetInvoiceResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -601,6 +604,7 @@ export const UpdateInvoiceResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -652,6 +656,7 @@ export const UnpinInvoiceCarryOverResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -702,6 +707,7 @@ export const ApproveInvoiceResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -743,6 +749,7 @@ export const GetInvoicePreviewResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }),
@@ -867,6 +874,7 @@ export const DismissImportWarningsResponse = zod.object({
   "importWarnings": zod.array(zod.string()).nullish().describe('Warnings from the most recent time-data import; replaced on each new import.'),
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
+  "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
