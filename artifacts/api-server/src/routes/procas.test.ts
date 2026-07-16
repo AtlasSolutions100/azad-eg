@@ -1111,6 +1111,17 @@ describe("procas integration", () => {
       expect(state.lastRunAt).toBeNull();
       expect(state.lastError).toBeNull();
       expect(state.lastSynced).toBe(0);
+      // The skip is recorded with its reason so repeated streaks surface in the UI.
+      expect(state.consecutiveSkips).toBe(1);
+      expect(state.lastSkipReason).toBe("lock_held");
+      expect(state.skipWarning).toBe(false);
+
+      // Two more skipped ticks push the streak over the warning threshold.
+      await tick();
+      await tick();
+      const streak = await getSchedulerState();
+      expect(streak.consecutiveSkips).toBe(3);
+      expect(streak.skipWarning).toBe(true);
     } finally {
       await holder.query("SELECT pg_advisory_unlock($1)", [SYNC_LOCK_KEY]);
       holder.release();
@@ -1123,6 +1134,12 @@ describe("procas integration", () => {
       .from(lineItemsTable)
       .where(eq(lineItemsTable.invoiceId, draftInv.id));
     expect(itemsAfterRelease).toHaveLength(1);
+
+    // A successful cycle ends the skip streak.
+    const recovered = await getSchedulerState();
+    expect(recovered.consecutiveSkips).toBe(0);
+    expect(recovered.lastSkipReason).toBeNull();
+    expect(recovered.skipWarning).toBe(false);
   });
 
   it("tick skips cleanly with a warning when the pool connection for the sync lock times out", async () => {
@@ -1166,6 +1183,9 @@ describe("procas integration", () => {
       expect(state.running).toBe(false);
       expect(state.lastRunAt).toBeNull();
       expect(state.lastError).toBeNull();
+      // The busy-pool skip is recorded so a streak of them can warn billers.
+      expect(state.consecutiveSkips).toBe(1);
+      expect(state.lastSkipReason).toBe("db_busy");
 
       // If the checkout completes after the timeout, the client is handed
       // straight back to the pool rather than leaked.
@@ -1179,6 +1199,9 @@ describe("procas integration", () => {
       const after = await scheduler.getSchedulerState();
       expect(after.lastRunAt).not.toBeNull();
       expect(after.lastSkipped).toBe(true);
+      // The cycle ran (even though Procas wasn't connected), so the streak resets.
+      expect(after.consecutiveSkips).toBe(0);
+      expect(after.lastSkipReason).toBeNull();
     } finally {
       if (prev === undefined) delete process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"];
       else process.env["PROCAS_LOCK_CONNECT_TIMEOUT_MS"] = prev;

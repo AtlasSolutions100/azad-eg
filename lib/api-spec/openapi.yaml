@@ -1937,6 +1937,8 @@ components:
         - lastSynced
         - lastFailed
         - lastSkipped
+        - consecutiveSkips
+        - skipWarning
         - persistFailures
         - resultsStale
       properties:
@@ -1948,6 +1950,11 @@ components:
         lastFailed: { type: integer }
         lastSkipped: { type: boolean }
         lastError: { type: ["string", "null"] }
+        consecutiveSkips: { type: integer }
+        lastSkipReason:
+          type: ["string", "null"]
+          enum: [db_busy, lock_held, null]
+        skipWarning: { type: boolean }
         persistFailures: { type: integer }
         resultsStale: { type: boolean }
 

@@ -12,6 +12,13 @@ export const procasSchedulerTable = pgTable("procas_scheduler", {
   lastFailed: integer("last_failed").notNull().default(0),
   lastSkipped: boolean("last_skipped").notNull().default(false),
   lastError: text("last_error"),
+  // How many scheduler ticks in a row were skipped without running a cycle —
+  // either because the database was too busy to hand out the lock connection
+  // ("db_busy") or another instance already held the sync lock ("lock_held").
+  // Reset to zero whenever a cycle actually runs, so a sustained streak means
+  // invoice data is quietly going stale.
+  consecutiveSkips: integer("consecutive_skips").notNull().default(0),
+  lastSkipReason: text("last_skip_reason"),
 });
 
 export type ProcasSchedulerRow = typeof procasSchedulerTable.$inferSelect;

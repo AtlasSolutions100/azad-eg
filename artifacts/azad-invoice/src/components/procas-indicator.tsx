@@ -278,6 +278,22 @@ export default function ProcasIndicator() {
                       : "Loading schedule…"}
                   </p>
 
+                  {scheduler?.skipWarning && (
+                    <div className="flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                      <span>
+                        The last {scheduler.consecutiveSkips} automatic refreshes were
+                        skipped
+                        {scheduler.lastSkipReason === "db_busy"
+                          ? " because the database was too busy"
+                          : scheduler.lastSkipReason === "lock_held"
+                            ? " because another server was already refreshing"
+                            : ""}
+                        . Invoice data may be getting stale.
+                      </span>
+                    </div>
+                  )}
+
                   {scheduler?.resultsStale && (
                     <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />

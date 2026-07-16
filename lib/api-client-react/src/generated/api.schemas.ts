@@ -697,6 +697,17 @@ export interface ProcasConnectInput {
   password: string;
 }
 
+/**
+ * @nullable
+ */
+export type ProcasSchedulerStatusLastSkipReason = typeof ProcasSchedulerStatusLastSkipReason[keyof typeof ProcasSchedulerStatusLastSkipReason] | null;
+
+
+export const ProcasSchedulerStatusLastSkipReason = {
+  db_busy: 'db_busy',
+  lock_held: 'lock_held',
+} as const;
+
 export interface ProcasSchedulerStatus {
   connected: boolean;
   intervalMs: number;
@@ -708,6 +719,10 @@ export interface ProcasSchedulerStatus {
   lastSkipped: boolean;
   /** @nullable */
   lastError?: string | null;
+  consecutiveSkips: number;
+  /** @nullable */
+  lastSkipReason?: ProcasSchedulerStatusLastSkipReason;
+  skipWarning: boolean;
   persistFailures: number;
   resultsStale: boolean;
 }

@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProcasSchedulerStatusLastSkipReason } from './procasSchedulerStatusLastSkipReason';
 
 export interface ProcasSchedulerStatus {
   connected: boolean;
@@ -17,6 +18,10 @@ export interface ProcasSchedulerStatus {
   lastSkipped: boolean;
   /** @nullable */
   lastError?: string | null;
+  consecutiveSkips: number;
+  /** @nullable */
+  lastSkipReason?: ProcasSchedulerStatusLastSkipReason;
+  skipWarning: boolean;
   persistFailures: number;
   resultsStale: boolean;
 }

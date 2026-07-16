@@ -52,6 +52,15 @@ export function resetPersistFailuresForTest(): void {
   consecutivePersistFailures = 0;
 }
 
+// Why a scheduler tick was skipped without running a cycle: the pool was too
+// busy to hand out the lock connection in time, or another instance already
+// held the cross-instance sync lock.
+export type SkipReason = "db_busy" | "lock_held";
+
+// After this many back-to-back skipped ticks, the UI shows a warning that
+// automatic refreshes keep getting skipped and invoice data may be stale.
+export const SKIP_WARN_THRESHOLD = 3;
+
 // Interval baked into the env var / default. Used only when the user hasn't
 // configured an interval from the UI.
 function envIntervalMs(): number {
@@ -101,6 +110,13 @@ export interface ProcasSchedulerState {
   lastFailed: number;
   lastSkipped: boolean;
   lastError: string | null;
+  // Consecutive scheduler ticks skipped without running a cycle (persisted).
+  consecutiveSkips: number;
+  // Why the most recent skip happened, if any ("db_busy" | "lock_held").
+  lastSkipReason: SkipReason | null;
+  // True once consecutiveSkips reaches SKIP_WARN_THRESHOLD — automatic
+  // refreshes keep getting skipped and invoice data may be going stale.
+  skipWarning: boolean;
   // Consecutive failures to persist a cycle outcome (in-memory, per instance).
   persistFailures: number;
   // True once persistFailures reaches PERSIST_FAILURE_WARN_THRESHOLD — the
@@ -118,6 +134,12 @@ export async function getSchedulerState(): Promise<ProcasSchedulerState> {
     lastFailed: row.lastFailed,
     lastSkipped: row.lastSkipped,
     lastError: row.lastError,
+    consecutiveSkips: row.consecutiveSkips,
+    lastSkipReason:
+      row.lastSkipReason === "db_busy" || row.lastSkipReason === "lock_held"
+        ? row.lastSkipReason
+        : null,
+    skipWarning: row.consecutiveSkips >= SKIP_WARN_THRESHOLD,
     persistFailures: consecutivePersistFailures,
     resultsStale: consecutivePersistFailures >= PERSIST_FAILURE_WARN_THRESHOLD,
   };
@@ -159,6 +181,10 @@ async function recordCycleResult(result: {
       lastFailed: result.failed,
       lastSkipped: result.skipped,
       lastError: result.error ?? null,
+      // A cycle actually ran (the lock was acquired), so the skip streak ends
+      // here regardless of the cycle's outcome.
+      consecutiveSkips: 0,
+      lastSkipReason: null,
     })
     .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
   // Append this cycle to the rolling history, then prune anything beyond the
@@ -213,6 +239,25 @@ async function safeRecordCycleResult(result: {
         "Procas scheduler results have not been saved for multiple runs; the last-run status shown in the UI is stale",
       );
     }
+  }
+}
+
+// Bumps the persisted skip streak after a tick that could not run a cycle,
+// remembering why so the UI can tell "database busy" apart from "another
+// instance is running". Never lets a failed write escape — if the database is
+// busy enough to cause the skip, the bookkeeping write may fail too.
+async function safeRecordSkippedTick(reason: SkipReason): Promise<void> {
+  try {
+    await getSchedulerRow();
+    await db
+      .update(procasSchedulerTable)
+      .set({
+        consecutiveSkips: sql`${procasSchedulerTable.consecutiveSkips} + 1`,
+        lastSkipReason: reason,
+      })
+      .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
+  } catch (e) {
+    logger.error({ err: e, reason }, "Failed to record skipped Procas sync tick");
   }
 }
 
@@ -311,7 +356,7 @@ async function connectWithTimeout(timeoutMs: number): Promise<PoolClient | null>
 // the whole cycle and is always released in `finally`, even on error.
 async function withSyncLock<T>(
   fn: () => Promise<T>,
-): Promise<{ acquired: true; value: T } | { acquired: false }> {
+): Promise<{ acquired: true; value: T } | { acquired: false; reason: SkipReason }> {
   const timeoutMs = lockConnectTimeoutMs();
   const client = await connectWithTimeout(timeoutMs);
   if (!client) {
@@ -319,7 +364,7 @@ async function withSyncLock<T>(
       { timeoutMs },
       "Procas sync skipped: timed out waiting for a database connection to acquire the sync lock",
     );
-    return { acquired: false };
+    return { acquired: false, reason: "db_busy" };
   }
   let locked = false;
   try {
@@ -329,7 +374,7 @@ async function withSyncLock<T>(
     );
     locked = res.rows[0]?.locked === true;
     if (!locked) {
-      return { acquired: false };
+      return { acquired: false, reason: "lock_held" };
     }
     const value = await fn();
     return { acquired: true, value };
@@ -359,8 +404,11 @@ export async function runAndRecordCycle(): Promise<ProcasSchedulerState> {
   try {
     const outcome = await withSyncLock(() => runProcasSyncCycle());
     if (!outcome.acquired) {
-      // Another instance is already running this cycle; skip cleanly.
-      logger.debug("Procas sync cycle skipped (another instance holds the lock)");
+      // The cycle could not run — either the pool was too busy to hand out
+      // the lock connection or another instance is mid-cycle. Record the skip
+      // so repeated streaks surface in the UI instead of only in logs.
+      logger.debug({ reason: outcome.reason }, "Procas sync cycle skipped");
+      await safeRecordSkippedTick(outcome.reason);
       return getSchedulerState();
     }
     const result = outcome.value;
