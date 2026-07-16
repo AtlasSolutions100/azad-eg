@@ -142,6 +142,10 @@ type Toast = Omit<ToasterToast, "id">
 function toast({ ...props }: Toast) {
   const id = genId()
 
+  if (props.variant === "destructive" && props.duration === undefined) {
+    props.duration = Infinity
+  }
+
   const update = (props: ToasterToast) =>
     dispatch({
       type: "UPDATE_TOAST",

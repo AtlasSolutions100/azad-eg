@@ -134,10 +134,20 @@ test("a rejected upload shows a destructive toast with the API error and its war
 
     // The destructive toast must show the API's error message, not a
     // generic one, and point at the warning details.
-    const toast = page.getByRole("status").filter({ hasText: /import failed/i });
+    const toast = page.getByRole("listitem").filter({ hasText: /import failed/i });
     await expect(toast.first()).toBeVisible();
     await expect(toast.first()).toContainText(/no valid rows found/i);
     await expect(toast.first()).toContainText(/warning/i);
+
+    // Destructive toasts must not auto-dismiss: the default toast duration is
+    // 5s, so after 7s of no interaction the error must still be on screen.
+    await page.waitForTimeout(7_000);
+    await expect(toast.first()).toBeVisible();
+
+    // But it must be manually dismissable via its close (X) button.
+    await toast.first().hover();
+    await toast.first().getByRole("button").last().click();
+    await expect(toast.first()).toBeHidden();
 
     // The row-level warnings from the 400 body must be rendered in the UI.
     const warnings = page.getByTestId("import-warnings");
@@ -157,7 +167,7 @@ test("a rejected upload shows a destructive toast with the API error and its war
       buffer: await buildNoHeaderXlsx(),
     });
 
-    const toast2 = page.getByRole("status").filter({ hasText: /import failed/i });
+    const toast2 = page.getByRole("listitem").filter({ hasText: /import failed/i });
     await expect(toast2.first()).toBeVisible();
     await expect(toast2.first()).toContainText(/no valid rows found/i);
 
