@@ -327,6 +327,42 @@ describe("parseTimeFile", () => {
     expect(result.warnings.some((w) => w.includes("Solo Person appears"))).toBe(false);
   });
 
+  it("flags a sheet whose parsed rows are an exact copy of another sheet", async () => {
+    const wb = new ExcelJS.Workbook();
+    const week1 = wb.addWorksheet("Week 1");
+    week1.addRow(["Name", "Hours", "Rate"]);
+    week1.addRow(["Jane Doe", 40, 100]);
+    week1.addRow(["John Smith", 32, 90]);
+    const week2 = wb.addWorksheet("Week 2");
+    week2.addRow(["Name", "Hours", "Rate"]);
+    week2.addRow(["Jane Doe", 40, 100]);
+    week2.addRow(["John Smith", 32, 90]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "dup.xlsx");
+
+    expect(result.lines).toHaveLength(4);
+    expect(
+      result.warnings.some((w) => w.includes('Sheet "Week 2" is an exact copy of "Week 1"')),
+    ).toBe(true);
+    expect(result.warnings.some((w) => w.includes("Jane Doe appears on 2 sheets"))).toBe(true);
+  });
+
+  it("does not flag sheets with different rows as exact copies", async () => {
+    const wb = new ExcelJS.Workbook();
+    const week1 = wb.addWorksheet("Week 1");
+    week1.addRow(["Name", "Hours", "Rate"]);
+    week1.addRow(["Jane Doe", 40, 100]);
+    const week2 = wb.addWorksheet("Week 2");
+    week2.addRow(["Name", "Hours", "Rate"]);
+    week2.addRow(["Jane Doe", 16, 100]);
+    const buf = Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
+
+    const result = await parseTimeFile(buf, "multi.xlsx");
+
+    expect(result.warnings.some((w) => w.includes("exact copy"))).toBe(false);
+  });
+
   it("does not emit a multi-sheet warning for single-sheet or CSV imports", async () => {
     const rows = [
       ["Name", "Hours", "Rate"],

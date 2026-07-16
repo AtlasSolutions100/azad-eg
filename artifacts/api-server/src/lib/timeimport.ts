@@ -174,9 +174,34 @@ export async function parseTimeFile(buffer: Buffer, filename: string): Promise<P
     // Tracks, per employee (case-insensitive), which sheets they appear on and
     // their combined hours, so duplicated tabs can be flagged to the biller.
     const byEmployee = new Map<string, { name: string; sheets: Set<string>; hours: number }>();
+    // Maps a fingerprint of a sheet's parsed lines to the first sheet that
+    // produced it, so exact-copy tabs can be flagged explicitly.
+    const byFingerprint = new Map<string, string>();
     for (const ws of wb.worksheets) {
       const result = rowsToLines(sheetRows(ws));
-      if (result.lines.length > 0) sheetsWithData++;
+      if (result.lines.length > 0) {
+        sheetsWithData++;
+        const fingerprint = JSON.stringify(
+          result.lines.map((l) => [
+            l.employeeName.toLowerCase(),
+            l.classification,
+            l.category,
+            l.location,
+            l.hours,
+            l.rate,
+            l.taskNo ?? null,
+            l.notes ?? null,
+          ]),
+        );
+        const original = byFingerprint.get(fingerprint);
+        if (original !== undefined) {
+          warnings.push(
+            `Sheet "${ws.name}" is an exact copy of "${original}" — a tab was likely duplicated by mistake.`,
+          );
+        } else {
+          byFingerprint.set(fingerprint, ws.name);
+        }
+      }
       lines.push(...result.lines);
       for (const line of result.lines) {
         const key = line.employeeName.toLowerCase();
