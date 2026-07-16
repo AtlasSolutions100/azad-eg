@@ -94,6 +94,11 @@ export default function ProcasIndicator() {
 
   const lastSync = status?.lastSyncAt ? new Date(status.lastSyncAt) : null;
 
+  // Repeated scheduler skips (or unsaved refresh results) mean invoice data may
+  // be quietly going stale — surface it on the header pill so billers notice
+  // without having to open the popover.
+  const staleWarning = connected && !!(scheduler?.skipWarning || scheduler?.resultsStale);
+
   const headline = credentialUnreadable
     ? "Reconnect Procas"
     : connected
@@ -211,35 +216,56 @@ export default function ProcasIndicator() {
             className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
               credentialUnreadable
                 ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                : connected
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                  : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                : staleWarning
+                  ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  : connected
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
             } ${isLoading ? "opacity-60" : ""}`}
-            aria-label="Procas connection status"
+            aria-label={
+              staleWarning
+                ? "Procas connection status — invoice data may be getting stale"
+                : "Procas connection status"
+            }
+            title={
+              staleWarning
+                ? "Automatic refreshes are being skipped — invoice data may be getting stale. Click for details."
+                : undefined
+            }
+            data-testid="procas-indicator-pill"
           >
             <span className="relative flex h-2 w-2">
               <span
                 className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
                   credentialUnreadable
                     ? "animate-ping bg-red-400"
-                    : connected
-                      ? "animate-ping bg-emerald-400"
-                      : "bg-amber-400"
+                    : staleWarning
+                      ? "animate-ping bg-amber-400"
+                      : connected
+                        ? "animate-ping bg-emerald-400"
+                        : "bg-amber-400"
                 }`}
               />
               <span
                 className={`relative inline-flex h-2 w-2 rounded-full ${
                   credentialUnreadable
                     ? "bg-red-500"
-                    : connected
-                      ? "bg-emerald-500"
-                      : "bg-amber-500"
+                    : staleWarning
+                      ? "bg-amber-500"
+                      : connected
+                        ? "bg-emerald-500"
+                        : "bg-amber-500"
                 }`}
               />
             </span>
             <span className="hidden sm:inline">{headline}</span>
             {credentialUnreadable ? (
               <AlertTriangle className="h-3.5 w-3.5" />
+            ) : staleWarning ? (
+              <AlertTriangle
+                className="h-3.5 w-3.5 text-amber-600"
+                data-testid="procas-stale-badge"
+              />
             ) : connected ? (
               <Wifi className="h-3.5 w-3.5" />
             ) : (
