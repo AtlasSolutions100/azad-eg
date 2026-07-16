@@ -109,6 +109,16 @@ export default function InvoiceDetail() {
   const importWarnings =
     failedImportWarnings.length > 0 ? failedImportWarnings : persistedImportWarnings;
 
+  // Client-side filter for the Activity tab, over already-fetched entries.
+  const [activityFilter, setActivityFilter] = useState<string>("all");
+  const activityActions = Array.from(
+    new Set((auditLogs ?? []).map((log) => log.action)),
+  ).sort();
+  const filteredAuditLogs =
+    activityFilter === "all"
+      ? auditLogs
+      : auditLogs?.filter((log) => log.action === activityFilter);
+
   // Over-budget approval requires an explicit, audited override.
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
@@ -911,11 +921,30 @@ export default function InvoiceDetail() {
         <TabsContent value="activity" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Activity</CardTitle>
-              <CardDescription>Full audit history for this invoice, most recent first.</CardDescription>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Activity</CardTitle>
+                  <CardDescription>Full audit history for this invoice, most recent first.</CardDescription>
+                </div>
+                {activityActions.length > 0 && (
+                  <Select value={activityFilter} onValueChange={setActivityFilter}>
+                    <SelectTrigger className="w-[220px]" data-testid="select-activity-filter">
+                      <SelectValue placeholder="Filter by action" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All actions</SelectItem>
+                      {activityActions.map((action) => (
+                        <SelectItem key={action} value={action} className="capitalize">
+                          {action}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              {auditLogs && auditLogs.length > 0 ? (
+              {filteredAuditLogs && filteredAuditLogs.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -926,7 +955,7 @@ export default function InvoiceDetail() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {auditLogs.map((log) => (
+                    {filteredAuditLogs.map((log) => (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap text-muted-foreground">
                           {new Date(log.createdAt).toLocaleString()}
@@ -939,7 +968,11 @@ export default function InvoiceDetail() {
                   </TableBody>
                 </Table>
               ) : (
-                <p className="text-muted-foreground">No activity recorded for this invoice yet.</p>
+                <p className="text-muted-foreground" data-testid="text-no-activity">
+                  {activityFilter !== "all" && auditLogs && auditLogs.length > 0
+                    ? "No matching activity for the selected action."
+                    : "No activity recorded for this invoice yet."}
+                </p>
               )}
               {hasMoreAuditLogs ? (
                 <div className="mt-4 flex justify-center">
