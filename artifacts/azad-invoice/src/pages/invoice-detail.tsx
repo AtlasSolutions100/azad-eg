@@ -337,9 +337,9 @@ export default function InvoiceDetail() {
   };
 
   const submitApproval = async (budgetOverride: boolean, reason?: string) => {
-    const signature = signatures?.find(s => s.isDefault);
+    const signature = signatures?.find(s => s.isDefault) ?? signatures?.[0];
     if (!signature) {
-      alert("No default signature found. Please add one in Signatures.");
+      alert("No signatures found. Please add one in Signatures.");
       return;
     }
     try {

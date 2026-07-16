@@ -2990,6 +2990,76 @@ export const useDeleteSignature = <TError = ErrorType<unknown>,
       return useMutation(getDeleteSignatureMutationOptions(options));
     }
 
+export const getSetDefaultSignatureUrl = (id: number,) => {
+
+
+
+
+  return `/api/signatures/${id}/default`
+}
+
+/**
+ * @summary Mark a signature as the default (clears any other default)
+ */
+export const setDefaultSignature = async (id: number, options?: RequestInit): Promise<Signature> => {
+
+  return customFetch<Signature>(getSetDefaultSignatureUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getSetDefaultSignatureMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDefaultSignature>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setDefaultSignature>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['setDefaultSignature'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setDefaultSignature>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  setDefaultSignature(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetDefaultSignatureMutationResult = NonNullable<Awaited<ReturnType<typeof setDefaultSignature>>>
+
+    export type SetDefaultSignatureMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark a signature as the default (clears any other default)
+ */
+export const useSetDefaultSignature = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setDefaultSignature>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setDefaultSignature>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getSetDefaultSignatureMutationOptions(options));
+    }
+
 export const getListColumnDefinitionsUrl = () => {
 
 

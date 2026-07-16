@@ -667,6 +667,20 @@ paths:
       responses:
         "204":
           description: Deleted
+  /signatures/{id}/default:
+    post:
+      operationId: setDefaultSignature
+      tags: [signatures]
+      summary: Mark a signature as the default (clears any other default)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Updated signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Signature"
 
   /column-definitions:
     get:

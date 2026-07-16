@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListSignatures, useUploadSignature, useDeleteSignature } from "@workspace/api-client-react";
+import { useListSignatures, useUploadSignature, useDeleteSignature, useSetDefaultSignature } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +14,17 @@ export default function Signatures() {
   const { data: signatures, isLoading } = useListSignatures();
   const uploadSignature = useUploadSignature();
   const deleteSignature = useDeleteSignature();
+  const setDefaultSignature = useSetDefaultSignature();
   const queryClient = useQueryClient();
+
+  const handleSetDefault = async (id: number) => {
+    try {
+      await setDefaultSignature.mutateAsync({ id });
+      queryClient.invalidateQueries();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -136,7 +146,16 @@ export default function Signatures() {
                   <TableCell>
                     {sig.isDefault ? (
                       <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-800">Default</span>
-                    ) : '-'}
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSetDefault(sig.id)}
+                        disabled={setDefaultSignature.isPending}
+                      >
+                        Set as default
+                      </Button>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{format(new Date(sig.createdAt), "MMM d, yyyy")}</TableCell>
                   <TableCell className="text-right">

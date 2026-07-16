@@ -1138,6 +1138,24 @@ export const DeleteSignatureResponse = zod.void()
 
 
 /**
+ * @summary Mark a signature as the default (clears any other default)
+ */
+export const SetDefaultSignatureParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetDefaultSignatureResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "title": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "imageUrl": zod.string(),
+  "isDefault": zod.boolean(),
+  "createdAt": zod.string()
+})
+
+
+/**
  * @summary List column definitions (field reference)
  */
 export const ListColumnDefinitionsResponseItem = zod.object({

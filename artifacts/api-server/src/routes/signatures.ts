@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
 import { db, signaturesTable } from "@workspace/db";
-import { ListSignaturesResponse, UploadSignatureResponse } from "@workspace/api-zod";
+import { ListSignaturesResponse, UploadSignatureResponse, SetDefaultSignatureResponse } from "@workspace/api-zod";
 import { imageUpload, detectImage } from "../lib/upload";
 import { uploadsDir, ensureDirs, deleteUploadedFile } from "../lib/paths";
 import { recordAudit } from "../lib/audit";
@@ -84,6 +84,27 @@ router.post(
   res.status(201).json(UploadSignatureResponse.parse(toApi(row)));
   },
 );
+
+router.post("/signatures/:id/default", async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const row = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(signaturesTable).where(eq(signaturesTable.id, id));
+    if (!existing) return undefined;
+    await tx.update(signaturesTable).set({ isDefault: false }).where(eq(signaturesTable.isDefault, true));
+    const [updated] = await tx
+      .update(signaturesTable)
+      .set({ isDefault: true })
+      .where(eq(signaturesTable.id, id))
+      .returning();
+    return updated;
+  });
+  if (!row) {
+    res.status(404).json({ error: "Signature not found" });
+    return;
+  }
+  await recordAudit({ action: "set default signature", entityType: "signature", entityId: row.id, description: `${row.name} is now the default signature.` });
+  res.json(SetDefaultSignatureResponse.parse(toApi(row)));
+});
 
 router.delete("/signatures/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
