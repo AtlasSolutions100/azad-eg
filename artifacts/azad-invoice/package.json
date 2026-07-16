@@ -52,10 +52,12 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
+    "@workspace/db": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "drizzle-orm": "catalog:",
     "embla-carousel-react": "^8.6.0",
     "exceljs": "^4.4.0",
     "framer-motion": "catalog:",
@@ -76,12 +78,11 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "wouter": "^3.3.5",
-    "zod": "catalog:",
-    "@workspace/db": "workspace:*",
-    "drizzle-orm": "catalog:"
+    "zod": "catalog:"
   },
   "dependencies": {
     "@clerk/react": "^6.11.0",
-    "@clerk/themes": "^2.4.57"
+    "@clerk/themes": "^2.4.57",
+    "@tanstack/react-virtual": "^3.14.6"
   }
 }

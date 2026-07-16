@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { 
   useGetInvoice, 
   useListLineItems, 
@@ -143,6 +144,32 @@ export default function InvoiceDetail() {
     activityFilter === "all"
       ? auditLogs
       : auditLogs?.filter((log) => log.action === activityFilter);
+
+  // Virtualize the Activity table so thousands of loaded audit entries don't
+  // bloat the DOM: only rows near the viewport are rendered, with spacer rows
+  // preserving the total scroll height.
+  const activityTableRef = useRef<HTMLDivElement | null>(null);
+  const activityVirtualizer = useWindowVirtualizer({
+    count: filteredAuditLogs?.length ?? 0,
+    estimateSize: () => 53,
+    overscan: 12,
+    scrollMargin: activityTableRef.current?.offsetTop ?? 0,
+  });
+  const activityVirtualRows = activityVirtualizer.getVirtualItems();
+  const activityPaddingTop = activityVirtualRows.length
+    ? Math.max(
+        0,
+        activityVirtualRows[0].start - activityVirtualizer.options.scrollMargin,
+      )
+    : 0;
+  const activityPaddingBottom = activityVirtualRows.length
+    ? Math.max(
+        0,
+        activityVirtualizer.getTotalSize() -
+          (activityVirtualRows[activityVirtualRows.length - 1].end -
+            activityVirtualizer.options.scrollMargin),
+      )
+    : 0;
 
   // Over-budget approval requires an explicit, audited override.
   const [overrideOpen, setOverrideOpen] = useState(false);
@@ -1029,28 +1056,43 @@ export default function InvoiceDetail() {
             </CardHeader>
             <CardContent>
               {filteredAuditLogs && filteredAuditLogs.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="whitespace-nowrap">When</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>User</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAuditLogs.map((log) => (
-                      <TableRow key={log.id}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
-                          {new Date(log.createdAt).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-medium capitalize">{log.action}</TableCell>
-                        <TableCell className="text-muted-foreground">{log.description}</TableCell>
-                        <TableCell>{log.userName}</TableCell>
+                <div ref={activityTableRef}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="whitespace-nowrap">When</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>User</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {activityPaddingTop > 0 ? (
+                        <tr aria-hidden="true" style={{ height: activityPaddingTop }} />
+                      ) : null}
+                      {activityVirtualRows.map((virtualRow) => {
+                        const log = filteredAuditLogs[virtualRow.index];
+                        return (
+                          <TableRow
+                            key={log.id}
+                            data-index={virtualRow.index}
+                            ref={activityVirtualizer.measureElement}
+                          >
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </TableCell>
+                            <TableCell className="font-medium capitalize">{log.action}</TableCell>
+                            <TableCell className="text-muted-foreground">{log.description}</TableCell>
+                            <TableCell>{log.userName}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {activityPaddingBottom > 0 ? (
+                        <tr aria-hidden="true" style={{ height: activityPaddingBottom }} />
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </div>
               ) : (
                 <p className="text-muted-foreground" data-testid="text-no-activity">
                   {activityFilter !== "all" && auditLogs && auditLogs.length > 0

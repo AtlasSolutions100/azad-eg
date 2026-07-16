@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { DateRange } from "react-day-picker";
 import { usePagedAuditLogs } from "@/hooks/use-paged-audit-logs";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
@@ -70,6 +71,25 @@ export default function AuditLog() {
   }, [logs, overridesOnly, search, dateRange]);
 
   const hasFilters = search.trim() !== "" || dateRange?.from != null || overridesOnly;
+
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useWindowVirtualizer({
+    count: visibleLogs?.length ?? 0,
+    estimateSize: () => 53,
+    overscan: 12,
+    scrollMargin: tableContainerRef.current?.offsetTop ?? 0,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualRows.length
+    ? Math.max(0, virtualRows[0].start - rowVirtualizer.options.scrollMargin)
+    : 0;
+  const paddingBottom = virtualRows.length
+    ? Math.max(
+        0,
+        rowVirtualizer.getTotalSize() -
+          (virtualRows[virtualRows.length - 1].end - rowVirtualizer.options.scrollMargin),
+      )
+    : 0;
 
   const dateLabel = dateRange?.from
     ? dateRange.to
@@ -155,7 +175,7 @@ export default function AuditLog() {
         ) : null}
       </div>
 
-      <div className="rounded-md border bg-white">
+      <div ref={tableContainerRef} className="rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
@@ -184,12 +204,19 @@ export default function AuditLog() {
                 </TableCell>
               </TableRow>
             ) : (
-              visibleLogs?.map((log) => {
+              <>
+              {paddingTop > 0 ? (
+                <tr aria-hidden="true" style={{ height: paddingTop }} />
+              ) : null}
+              {virtualRows.map((virtualRow) => {
+                const log = visibleLogs![virtualRow.index];
                 const override = isOverride(log.action);
                 const href = entityLink(log.entityType, log.entityId);
                 return (
                   <TableRow
                     key={log.id}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
                     className={cn(override && "bg-red-50 hover:bg-red-100")}
                   >
                     <TableCell className="whitespace-nowrap">{format(new Date(log.createdAt), "MMM d, yyyy HH:mm:ss")}</TableCell>
@@ -222,7 +249,11 @@ export default function AuditLog() {
                     </TableCell>
                   </TableRow>
                 );
-              })
+              })}
+              {paddingBottom > 0 ? (
+                <tr aria-hidden="true" style={{ height: paddingBottom }} />
+              ) : null}
+              </>
             )}
           </TableBody>
         </Table>
