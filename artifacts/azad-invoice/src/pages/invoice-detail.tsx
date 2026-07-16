@@ -33,6 +33,16 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Trash2, Edit, AlertTriangle, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -97,6 +107,15 @@ export default function InvoiceDetail() {
   const [importSource, setImportSource] = useState<TimeImportUploadSource>('procas');
   const [importFile, setImportFile] = useState<File | null>(null);
 
+  // Re-importing replaces every non-manual row (Procas/Timesheet). If a biller
+  // edited one of those rows it still keeps its imported source, so it would
+  // be silently overwritten — confirm before proceeding when any exist.
+  const [confirmImportAction, setConfirmImportAction] = useState<"upload" | "sync" | null>(null);
+  const nonManualItems = lineItems?.filter((item) => item.source && item.source !== "manual") ?? [];
+  const nonManualCount = nonManualItems.length;
+  const procasRowCount = nonManualItems.filter((item) => item.source?.startsWith("procas")).length;
+  const timesheetRowCount = nonManualCount - procasRowCount;
+
   const [reportData, setReportData] = useState<Partial<ProgressReportInput>>({});
 
   // Warnings from a rejected upload or Procas sync (HTTP 4xx/502) are only
@@ -145,6 +164,35 @@ export default function InvoiceDetail() {
       });
     }
   }, [progressReport]);
+
+  // Gate both import paths behind a confirmation when imported rows exist —
+  // re-importing replaces them, including any the biller has edited.
+  const requestImport = () => {
+    if (!importFile) return;
+    if (nonManualCount > 0) {
+      setConfirmImportAction("upload");
+    } else {
+      handleImport();
+    }
+  };
+
+  const requestProcasSync = () => {
+    if (nonManualCount > 0) {
+      setConfirmImportAction("sync");
+    } else {
+      handleProcasSync();
+    }
+  };
+
+  const handleConfirmImport = () => {
+    const action = confirmImportAction;
+    setConfirmImportAction(null);
+    if (action === "upload") {
+      handleImport();
+    } else if (action === "sync") {
+      handleProcasSync();
+    }
+  };
 
   const handleImport = async () => {
     if (!importFile) return;
@@ -770,7 +818,7 @@ export default function InvoiceDetail() {
                     {invoice ? ` (${invoice.periodStart} → ${invoice.periodEnd})` : ""}.
                   </p>
                   <Button
-                    onClick={handleProcasSync}
+                    onClick={requestProcasSync}
                     disabled={syncProcas.isPending}
                     className="mt-3 bg-emerald-600 text-white hover:bg-emerald-700"
                   >
@@ -794,7 +842,7 @@ export default function InvoiceDetail() {
                 <Label>File</Label>
                 <Input type="file" accept=".xlsx,.xls,.csv" onChange={e => setImportFile(e.target.files?.[0] || null)} />
               </div>
-              <Button onClick={handleImport} disabled={!importFile || importTime.isPending} className="bg-[#CFAF42] text-white">
+              <Button onClick={requestImport} disabled={!importFile || importTime.isPending} className="bg-[#CFAF42] text-white">
                 {importTime.isPending ? "Importing..." : "Upload & Import"}
               </Button>
               {importWarnings.length > 0 && (
@@ -835,6 +883,36 @@ export default function InvoiceDetail() {
               )}
             </CardContent>
           </Card>
+          <AlertDialog
+            open={confirmImportAction !== null}
+            onOpenChange={(open) => {
+              if (!open) setConfirmImportAction(null);
+            }}
+          >
+            <AlertDialogContent data-testid="confirm-import-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Replace {nonManualCount} imported row{nonManualCount === 1 ? "" : "s"}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {confirmImportAction === "sync" ? "Syncing from Procas" : "Importing this file"} will
+                  replace all imported line items on this invoice
+                  {procasRowCount > 0 && timesheetRowCount > 0
+                    ? ` (${procasRowCount} Procas and ${timesheetRowCount} Timesheet row${timesheetRowCount === 1 ? "" : "s"})`
+                    : procasRowCount > 0
+                      ? ` (${procasRowCount} Procas row${procasRowCount === 1 ? "" : "s"})`
+                      : ` (${timesheetRowCount} Timesheet row${timesheetRowCount === 1 ? "" : "s"})`}
+                  , including any you have edited since they were imported. Rows marked Manual are kept.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel data-testid="confirm-import-cancel">Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmImport} data-testid="confirm-import-proceed">
+                  {confirmImportAction === "sync" ? "Sync & Replace" : "Import & Replace"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </TabsContent>
 
         <TabsContent value="progress" className="mt-4">
