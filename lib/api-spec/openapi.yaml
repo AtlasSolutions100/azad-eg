@@ -2030,6 +2030,7 @@ components:
         skipReason:
           type: ["string", "null"]
           enum: [db_busy, lock_held, null]
+        skipCount: { type: integer }
         error: { type: ["string", "null"] }
 
     ProcasSchedulerInput:

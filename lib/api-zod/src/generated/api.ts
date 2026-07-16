@@ -1415,6 +1415,7 @@ export const GetProcasSchedulerRunsResponseItem = zod.object({
   "failed": zod.number(),
   "skipped": zod.boolean(),
   "skipReason": zod.union([zod.literal('db_busy'),zod.literal('lock_held'),zod.literal(null)]).nullish(),
+  "skipCount": zod.number().optional(),
   "error": zod.string().nullish()
 })
 export const GetProcasSchedulerRunsResponse = zod.array(GetProcasSchedulerRunsResponseItem)

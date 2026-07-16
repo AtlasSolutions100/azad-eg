@@ -272,6 +272,37 @@ async function appendRunHistory(row: {
     .where(notInArray(procasSchedulerRunsTable.id, sql`(${keep})`));
 }
 
+// Records a scheduler-tick skip in the run history. If the newest history row
+// is already a skip with the same reason, that row is collapsed into (its
+// skipCount bumps and ranAt advances) instead of inserting a new row, so a
+// long stretch of consecutive skips occupies a single row and never pushes
+// real completed cycles out of the bounded history.
+async function appendSkipToHistory(reason: SkipReason): Promise<void> {
+  const [newest] = await db
+    .select()
+    .from(procasSchedulerRunsTable)
+    .orderBy(desc(procasSchedulerRunsTable.ranAt), desc(procasSchedulerRunsTable.id))
+    .limit(1);
+  if (newest && newest.skipped && newest.skipReason === reason) {
+    await db
+      .update(procasSchedulerRunsTable)
+      .set({
+        skipCount: sql`${procasSchedulerRunsTable.skipCount} + 1`,
+        ranAt: new Date(),
+      })
+      .where(eq(procasSchedulerRunsTable.id, newest.id));
+    return;
+  }
+  await appendRunHistory({
+    ranAt: new Date(),
+    synced: 0,
+    failed: 0,
+    skipped: true,
+    skipReason: reason,
+    error: null,
+  });
+}
+
 // The most recent cycle outcomes, newest first, for the history panel.
 export async function getRecentRuns(limit = 10): Promise<ProcasSchedulerRunRow[]> {
   return db
@@ -312,7 +343,7 @@ async function safeRecordCycleResult(result: {
 // remembering why so the UI can tell "database busy" apart from "another
 // instance is running". Never lets a failed write escape — if the database is
 // busy enough to cause the skip, the bookkeeping write may fail too.
-async function safeRecordSkippedTick(reason: SkipReason): Promise<void> {
+export async function safeRecordSkippedTick(reason: SkipReason): Promise<void> {
   try {
     await getSchedulerRow();
     await db
@@ -322,16 +353,11 @@ async function safeRecordSkippedTick(reason: SkipReason): Promise<void> {
         lastSkipReason: reason,
       })
       .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
-    // Also append the skip to the run history so billers reviewing the recent
+    // Also record the skip in the run history so billers reviewing the recent
     // refresh list see why a tick left a gap instead of silently nothing.
-    await appendRunHistory({
-      ranAt: new Date(),
-      synced: 0,
-      failed: 0,
-      skipped: true,
-      skipReason: reason,
-      error: null,
-    });
+    // Back-to-back skips with the same reason collapse into one row so a long
+    // busy stretch cannot flood the bounded history and push out real cycles.
+    await appendSkipToHistory(reason);
   } catch (e) {
     logger.error({ err: e, reason }, "Failed to record skipped Procas sync tick");
   }

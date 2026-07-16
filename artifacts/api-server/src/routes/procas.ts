@@ -154,6 +154,7 @@ router.get("/procas/scheduler/runs", async (_req, res): Promise<void> => {
           run.skipReason === "db_busy" || run.skipReason === "lock_held"
             ? run.skipReason
             : null,
+        skipCount: run.skipCount,
         error: run.error,
       })),
     ),

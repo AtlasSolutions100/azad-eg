@@ -15,6 +15,7 @@ export interface ProcasSchedulerRun {
   skipped: boolean;
   /** @nullable */
   skipReason?: ProcasSchedulerRunSkipReason;
+  skipCount?: number;
   /** @nullable */
   error?: string | null;
 }

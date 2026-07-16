@@ -757,6 +757,47 @@ describe("procas integration", () => {
     expect(times[0]).toBeGreaterThanOrEqual(times[1]);
   });
 
+  it("collapses consecutive same-reason skips into one row with a bumped skipCount", async () => {
+    const { safeRecordSkippedTick } = await import("../lib/procasScheduler");
+
+    // A real completed cycle sits in history first.
+    await db.insert(procasSchedulerRunsTable).values({
+      ranAt: new Date(Date.now() - 60_000),
+      synced: 3,
+      failed: 0,
+      skipped: false,
+    });
+
+    await safeRecordSkippedTick("db_busy");
+    await safeRecordSkippedTick("db_busy");
+    await safeRecordSkippedTick("db_busy");
+
+    let rows = await db.select().from(procasSchedulerRunsTable);
+    expect(rows).toHaveLength(2);
+    const collapsed = rows.find((r) => r.skipped);
+    expect(collapsed?.skipReason).toBe("db_busy");
+    expect(collapsed?.skipCount).toBe(3);
+
+    // A different reason starts a new row instead of collapsing.
+    await safeRecordSkippedTick("lock_held");
+    await safeRecordSkippedTick("lock_held");
+
+    rows = await db.select().from(procasSchedulerRunsTable);
+    expect(rows).toHaveLength(3);
+    const lockRow = rows.find((r) => r.skipReason === "lock_held");
+    expect(lockRow?.skipCount).toBe(2);
+
+    // The endpoint reports the count, newest first, with the real cycle intact.
+    const res = await request(app).get("/api/procas/scheduler/runs");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(3);
+    expect(res.body[0].skipReason).toBe("lock_held");
+    expect(res.body[0].skipCount).toBe(2);
+    expect(res.body[1].skipReason).toBe("db_busy");
+    expect(res.body[1].skipCount).toBe(3);
+    expect(res.body[2].skipped).toBe(false);
+  });
+
   it("caps run history at MAX_RUN_HISTORY rows and the endpoint returns at most 10", async () => {
     const { MAX_RUN_HISTORY } = await import("../lib/procasScheduler");
     const base = Date.now() - 1000 * 60 * 60;
@@ -1229,20 +1270,19 @@ describe("procas integration", () => {
       expect(streak.consecutiveSkips).toBe(3);
       expect(streak.skipWarning).toBe(true);
 
-      // Each skipped tick also lands in the run history with its reason so
-      // billers reviewing recent refreshes see why ticks left gaps.
+      // Consecutive same-reason skips collapse into one history row with a
+      // count, so a long busy stretch can't push real cycles out of history.
       const runsRes = await request(app).get("/api/procas/scheduler/runs");
       expect(runsRes.status).toBe(200);
       const skippedRuns = runsRes.body.filter(
         (r: { skipReason: string | null }) => r.skipReason === "lock_held",
       );
-      expect(skippedRuns).toHaveLength(3);
-      for (const run of skippedRuns) {
-        expect(run.skipped).toBe(true);
-        expect(run.synced).toBe(0);
-        expect(run.failed).toBe(0);
-        expect(run.error).toBeNull();
-      }
+      expect(skippedRuns).toHaveLength(1);
+      expect(skippedRuns[0].skipped).toBe(true);
+      expect(skippedRuns[0].skipCount).toBe(3);
+      expect(skippedRuns[0].synced).toBe(0);
+      expect(skippedRuns[0].failed).toBe(0);
+      expect(skippedRuns[0].error).toBeNull();
     } finally {
       await holder.query("SELECT pg_advisory_unlock($1)", [SYNC_LOCK_KEY]);
       holder.release();

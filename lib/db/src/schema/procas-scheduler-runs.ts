@@ -16,6 +16,11 @@ export const procasSchedulerRunsTable = pgTable(
     // that never ran a cycle, or null for skips due to Procas being
     // disconnected (and for all non-skipped rows).
     skipReason: text("skip_reason"),
+    // How many consecutive skipped ticks this row represents. Back-to-back
+    // scheduler skips with the same reason are collapsed into one row (this
+    // counter bumps and ranAt advances) so a long busy stretch cannot push
+    // real completed cycles out of the bounded history.
+    skipCount: integer("skip_count").notNull().default(1),
     error: text("error"),
   },
   (table) => [index("procas_scheduler_runs_ran_at_idx").on(table.ranAt)],

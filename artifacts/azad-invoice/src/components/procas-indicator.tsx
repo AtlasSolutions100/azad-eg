@@ -483,11 +483,19 @@ export default function ProcasIndicator() {
                                 {run.skipped ? (
                                   <span className="flex items-center gap-1 text-[11px] text-amber-600">
                                     <MinusCircle className="h-3 w-3 flex-shrink-0" />
-                                    {run.skipReason === "db_busy"
-                                      ? "Skipped — database busy"
-                                      : run.skipReason === "lock_held"
-                                        ? "Skipped — another server was refreshing"
-                                        : "Skipped (not connected)"}
+                                    {(run.skipCount ?? 1) > 1
+                                      ? `Skipped ${run.skipCount} times — ${
+                                          run.skipReason === "db_busy"
+                                            ? "database busy"
+                                            : run.skipReason === "lock_held"
+                                              ? "another server was refreshing"
+                                              : "not connected"
+                                        }`
+                                      : run.skipReason === "db_busy"
+                                        ? "Skipped — database busy"
+                                        : run.skipReason === "lock_held"
+                                          ? "Skipped — another server was refreshing"
+                                          : "Skipped (not connected)"}
                                   </span>
                                 ) : run.error ? (
                                   <span
