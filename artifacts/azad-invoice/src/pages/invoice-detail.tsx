@@ -497,6 +497,49 @@ export default function InvoiceDetail() {
     }
   };
 
+  // Inline fix-up for imported rows that were left unlinked (employeeId null),
+  // e.g. when multiple employees share a name. Links the chosen employee and
+  // fills in that employee's defaults only where the row is missing them:
+  // rate when it's 0, classification when it's "Unspecified", task number
+  // when blank. Values the import already resolved are kept as-is.
+  const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
+  const handleInlineLinkEmployee = async (item: any, empIdStr: string) => {
+    const empId = Number(empIdStr);
+    const emp = employees?.find((e) => e.id === empId);
+    if (!emp) return;
+    const data: Partial<LineItemInput> = {
+      employeeId: emp.id,
+      employeeName: emp.name,
+    };
+    if (!item.rate || item.rate <= 0) {
+      data.rate = item.location === "field" && emp.fieldRate ? emp.fieldRate : emp.homeRate;
+    }
+    if (!item.classification || item.classification === "Unspecified") {
+      data.classification = emp.classification;
+    }
+    if (!item.taskNo && emp.defaultTaskNo) {
+      data.taskNo = emp.defaultTaskNo;
+    }
+    setLinkingItemId(item.id);
+    try {
+      await updateLineItem.mutateAsync({ id: item.id, data });
+      queryClient.invalidateQueries();
+      toast({
+        title: "Employee linked",
+        description: `Row linked to ${emp.name}.${data.rate !== undefined || data.classification !== undefined ? " Missing rate/classification defaults were filled in." : ""}`,
+      });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Could not link employee",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLinkingItemId(null);
+    }
+  };
+
   const handleEmployeeSelect = (empIdStr: string) => {
     const empId = Number(empIdStr);
     const emp = employees?.find(e => e.id === empId);
@@ -786,6 +829,19 @@ export default function InvoiceDetail() {
                 </DialogContent>
               </Dialog>
 
+              {(lineItems?.filter((i) => i.employeeId == null).length ?? 0) > 0 && (
+                <Alert className="mb-4 border-amber-200 bg-amber-50" data-testid="alert-unlinked-rows">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800">
+                    {lineItems!.filter((i) => i.employeeId == null).length} row
+                    {lineItems!.filter((i) => i.employeeId == null).length === 1 ? " has" : "s have"} no linked employee
+                  </AlertTitle>
+                  <AlertDescription className="text-amber-700">
+                    These rows are highlighted below. Use the "Link employee..." dropdown on each row to pick the
+                    right person — missing rate and classification will be filled from that employee's profile.
+                  </AlertDescription>
+                </Alert>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -801,10 +857,35 @@ export default function InvoiceDetail() {
                 </TableHeader>
                 <TableBody>
                   {lineItems?.map(item => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className={item.employeeId == null ? "bg-amber-50 hover:bg-amber-100/70" : undefined} data-testid={`row-line-item-${item.id}`}>
                       <TableCell>
-                        {item.employeeName}
+                        <div className="flex items-center gap-2">
+                          <span>{item.employeeName}</span>
+                          {item.employeeId == null && (
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100 whitespace-nowrap" data-testid={`badge-unlinked-${item.id}`}>
+                              <AlertTriangle className="mr-1 h-3 w-3" /> No linked employee
+                            </Badge>
+                          )}
+                        </div>
                         {item.taskNo && <span className="block text-xs text-muted-foreground">{item.taskNo}</span>}
+                        {item.employeeId == null && (
+                          <div className="mt-1.5">
+                            <Select
+                              value=""
+                              onValueChange={(val) => handleInlineLinkEmployee(item, val)}
+                              disabled={linkingItemId === item.id}
+                            >
+                              <SelectTrigger className="h-8 w-[220px] border-amber-300 bg-white text-xs" data-testid={`select-link-employee-${item.id}`}>
+                                <SelectValue placeholder={linkingItemId === item.id ? "Linking..." : "Link employee..."} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {employees?.map(e => (
+                                  <SelectItem key={e.id} value={e.id.toString()}>{e.name} ({e.classification})</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>{item.classification}</TableCell>
                       <TableCell className="capitalize">{item.category} ({item.location})</TableCell>
