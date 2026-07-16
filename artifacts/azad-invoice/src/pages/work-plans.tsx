@@ -20,11 +20,45 @@ export default function WorkPlans() {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<WorkPlanInput>>({ billingCycle: 'whole_month' });
+  const [prevBilledTotal, setPrevBilledTotal] = useState<number | undefined>(undefined);
 
   const handleOpenCreate = () => {
     setEditId(null);
     setFormData({ billingCycle: 'whole_month' });
+    setPrevBilledTotal(undefined);
     setOpen(true);
+  };
+
+  // Mirrors the export's back-solve (masterWorkbook decompose): the total is
+  // T = L·(1+OH)·(1+fee) + L·FCCM, with rounding residue folded into the fee
+  // row so the four categories sum exactly to the total.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const decompose = (total: number) => {
+    const oh = (formData.overheadRate ?? 0) / 100;
+    const fee = (formData.fixedFeeRate ?? 0) / 100;
+    const fccm = (formData.fccmRate ?? 0) / 100;
+    const divisor = (1 + oh) * (1 + fee) + fccm;
+    const labor = round2(divisor > 0 ? total / divisor : total);
+    const overhead = round2(labor * oh);
+    const fccmRow = round2(labor * fccm);
+    const fixedFee = round2(total - labor - overhead - fccmRow);
+    return { labor, overhead, fixedFee, fccm: fccmRow };
+  };
+
+  const handleCalculateSplit = () => {
+    const budget = decompose(formData.totalBudget ?? 0);
+    const prev = decompose(prevBilledTotal ?? 0);
+    setFormData({
+      ...formData,
+      budgetLabor: budget.labor,
+      budgetOverhead: budget.overhead,
+      budgetFixedFee: budget.fixedFee,
+      budgetFccm: budget.fccm,
+      prevBilledLabor: prev.labor,
+      prevBilledOverhead: prev.overhead,
+      prevBilledFixedFee: prev.fixedFee,
+      prevBilledFccm: prev.fccm,
+    });
   };
 
   const handleOpenEdit = (plan: any) => {
@@ -60,6 +94,7 @@ export default function WorkPlans() {
       bartProjectNumbers: plan.bartProjectNumbers ?? undefined,
       terms: plan.terms ?? undefined,
     });
+    setPrevBilledTotal(undefined);
     setOpen(true);
   };
 
@@ -168,6 +203,20 @@ export default function WorkPlans() {
             <div className="col-span-2 border-t pt-4">
               <p className="text-sm font-medium text-[#333333]">Budget breakdown by cost category (optional)</p>
               <p className="text-xs text-[#5F5F5F]">Splits the Sub Calc budget and previously-billed columns across labor, overhead, fixed fee, and FCCM rows exactly as entered. Leave blank to let the export calculate the split from the totals.</p>
+            </div>
+            <div className="col-span-2 flex items-end gap-3">
+              <div className="space-y-2 flex-1">
+                <Label>Previously Billed Total ($) — used only by the calculator</Label>
+                <Input type="number" step="0.01" value={prevBilledTotal ?? ''} onChange={e => setPrevBilledTotal(e.target.value === '' ? undefined : Number(e.target.value))} />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCalculateSplit}
+                disabled={!formData.totalBudget}
+              >
+                Calculate from rates
+              </Button>
             </div>
             {([
               ["budgetLabor", "Budget — Labor"],
