@@ -1,0 +1,77 @@
+**CRITICAL CONTEXT (Previous attempts failed)**
+- Earlier versions did not correctly replicate the exact export files Julie sends to BART/AECOM.
+- The dashboard "tile"/package view and billing data capture were incorrect or incomplete.
+- This time, treat the two attached files as **ground truth** and replicate them exactly (data + structure + clean formatting for Excel; visual/layout + page order for PDF).
+
+**Attached Reference Files (analyze thoroughly first)**
+1. `06-2026-BART6M8142-AECOM-B.50-01 Invoice_AZAD-30 -7.1.26 (1).xlsx` — Use this as the template for the generated Excel (all sheets, formulas, tables, numbers, structure).
+2. `06-2026-BART6M8142-AECOM-B.50-01 Invoice_AZAD-30-7.1.26 (2).pdf` — Use this as the exact visual + content reference for the generated PDF (page order, styling, tables, logo, signatures, layout, text).
+
+
+**Core Goal**
+When Julie selects a **Job + Billing Period** and clicks **Export Billing Package**, she receives **exactly** what she sends to the client:
+- 1 clean multi-tab Excel file (client-ready)
+- 1 single multi-page PDF file (client-ready)
+- Optional ZIP containing only those 2 files
+
+**Excel Export Requirements (ONE .xlsx file)**
+Generate exactly **one** Excel workbook per billing period/job with these tabs (keep all tabs visible in the UI so Julie can manually override if needed):
+
+- **Overview** — Cleaned version of the "Master File" sheet (remove all instructional notes like "Change this number...", "Do not enter values manually", "it should be done Manually", etc.)
+- **Invoice** — Exact match to the "Cover" sheet (Professional Services Agreement Invoice layout, tables, billing summary, certification, remit-to section)
+- **Sub Calc** — Exact match to the "Cost" / "Invoice Detail Attachment" sheet (Hours to Date, Budget, Amount This Period, Previously Billed, Amount To Date, % Expended, Fixed Fee, FCCM calculations)
+- **Progress Report** — Exact match to the "Report" sheet (Work Performed, Percent Work Completed, Cost Forecast, Concerns, signatures)
+- **Labor Attachment** — Exact match to the "Labor" sheet (Classification, Category, Hours, Rate/Hour, Amount for Travis Johnson etc.)
+- **Timesheets** — All weekly timesheets combined or as logical sections/sheets (match "TJ Week X", "IL Week X" structure, yellow headers where present, totals, signatures). Clean formatting only.
+
+**Excel must be completely clean for the client**:
+- No yellow highlights
+- No internal notes, comments, border text, or instructions
+- Exact same column structure, merged cells, number formats, formulas, fonts, borders, and styling as the reference XLSX (but cleaned)
+- All calculations and roll-ups must work (e.g. totals from timesheets → Labor → Sub Calc → Invoice)
+
+**Previously Billed / Carry-forward (mandatory)**
+- The system must store approved invoices per Work Plan.
+- Automatically calculate and populate "Previously Billed", "Total Invoiced to Date", "Remaining Balance" from the last approved invoice for the same Work Plan(s).
+- Do **not** require manual entry for these fields.
+
+**Data Capture in Dashboard**
+- All billing fields shown in the dashboard (line items, PO Amount, Previous/Current/Total Invoiced, Remaining Balance, Billing Summary, etc.) must match exactly the structure and fields in the reference XLSX "Cover", "Cost", "Labor", and "Master File" sheets.
+- Hours from timesheets / Procas must aggregate correctly into Labor Attachment and Cost calculations (OH, Fixed Fee, FCCM).
+- Support multiple line items / BART Project Nos. under one invoice (as in the example).
+
+**PDF Export Requirements (ONE single multi-page PDF)**
+Generate **exactly one** multi-page PDF (not separate files per tab/page).
+
+**Page order must be**:
+1. Professional Service Agreement Invoice (match page 1 of reference PDF exactly — header/logo, invoice details, billed line items table, billing summary, certification, signature, remit-to)
+2. Invoice Detail Attachment / Sub Calc (match page 2 of reference PDF)
+3. Labor Attachment (match page 3 of reference PDF)
+4. Progress Report (match page 4 of reference PDF)
+5. Weekly Timesheets (match pages 5–9 of reference PDF — formatted weekly timesheet tables with yellow headers, dates, totals, signatures for Travis Johnson and any other employees)
+
+- Do **not** create one PDF per tab or separate pages.
+- Julie clicks one button → downloads **one ready-to-email multi-page PDF**.
+- Match the visual styling of the reference PDF as closely as possible (AZAD logo, fonts, colors, table layouts, borders, signatures, alignment, professional appearance).
+
+**Dashboard Tile / Package View Updates**
+- The billing "tile"/card for each job + period must display accurate live data: Invoice No., Period, Total Amount Due, Status, key Billing Summary numbers.
+- Export button on the tile (or in the detail view) must trigger the correct Excel + PDF generation using current dashboard data.
+- Fix any previous issues where the tile or billing info did not capture correctly.
+
+**Tech & Implementation Notes**
+- Use exceljs / xlsx libraries for precise multi-sheet Excel generation with formulas and formatting.
+- Use @react-pdf/renderer, pdf-lib, or equivalent for high-quality multi-page PDF (support tables, images for logo/signature, exact layout).
+- Ensure exports are reliable and fast.
+- Keep manual override capability via the visible tabs.
+- Maintain Procas integration for hours where possible, with fallback/manual entry.
+- After implementation, test by generating the exact June 2026 B.50-01-30 package and verify it matches the attached reference files (data + cleanliness for Excel; page order + visuals for PDF).
+
+**Success Criteria (must pass)**
+When Julie selects a Job + billing period and exports:
+1. One clean multi-tab Excel (ready for client, no highlights/notes, correct carry-forwards)
+2. One single multi-page PDF (correct page order, professional, ready to email)
+3. Optional ZIP with only those two files
+4. Dashboard tile and all billing fields display/capture data correctly matching the reference examples
+
+Prioritize **exact replication** of the attached examples over any previous implementation. Do not approximate tables, numbers, layout, or order.
