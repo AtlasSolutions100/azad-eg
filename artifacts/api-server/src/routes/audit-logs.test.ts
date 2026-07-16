@@ -220,3 +220,67 @@ describe("GET /audit-logs filtering", () => {
     expect(clamped.body).toHaveLength(total);
   });
 });
+
+describe("GET /audit-logs/count", () => {
+  it("returns the total matching count with and without entity filters", async () => {
+    // Seed rows under a dedicated entity type so counts are exact even on a
+    // shared dev DB: 3 for one invoice, 2 for another.
+    const countEntityType = `count-${suffix}`;
+    const values = [
+      ...Array.from({ length: 3 }, (_, i) => ({
+        userName: `Counter ${i}`,
+        action: "update",
+        entityType: countEntityType,
+        entityId: targetInvoiceId,
+        description: `count target entry ${i}`,
+        createdAt: new Date(`2032-01-01T10:0${i}:00.000Z`),
+      })),
+      ...Array.from({ length: 2 }, (_, i) => ({
+        userName: `Counter other ${i}`,
+        action: "update",
+        entityType: countEntityType,
+        entityId: otherInvoiceId,
+        description: `count other entry ${i}`,
+        createdAt: new Date(`2032-01-01T11:0${i}:00.000Z`),
+      })),
+    ];
+    const inserted = await db.insert(auditLogsTable).values(values).returning();
+    for (const row of inserted) createdIds.push(row.id);
+
+    // entityType filter alone: all 5 seeded rows.
+    const byType = await request(app)
+      .get("/api/audit-logs/count")
+      .query({ entityType: countEntityType });
+    expect(byType.status).toBe(200);
+    expect(byType.body).toEqual({ count: 5 });
+
+    // entityType + entityId: only the target invoice's 3 rows.
+    const byTypeAndId = await request(app)
+      .get("/api/audit-logs/count")
+      .query({ entityType: countEntityType, entityId: targetInvoiceId });
+    expect(byTypeAndId.status).toBe(200);
+    expect(byTypeAndId.body).toEqual({ count: 3 });
+
+    // A filter matching nothing returns zero.
+    const none = await request(app)
+      .get("/api/audit-logs/count")
+      .query({ entityType: `${countEntityType}-missing` });
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual({ count: 0 });
+
+    // Unfiltered: total across all rows is at least our 5 seeded rows, and is
+    // not capped by the 200-row page size semantics of the list endpoint.
+    const unfiltered = await request(app).get("/api/audit-logs/count");
+    expect(unfiltered.status).toBe(200);
+    expect(typeof unfiltered.body.count).toBe("number");
+    expect(unfiltered.body.count).toBeGreaterThanOrEqual(5);
+
+    // The count matches what paging would eventually return for the filter:
+    // a filtered list returns exactly `count` rows.
+    const list = await request(app)
+      .get("/api/audit-logs")
+      .query({ entityType: countEntityType, limit: 200 });
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(byType.body.count);
+  });
+});

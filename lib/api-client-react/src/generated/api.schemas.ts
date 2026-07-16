@@ -1212,6 +1212,16 @@ limit?: number;
 offset?: number;
 };
 
+export type CountAuditLogsParams = {
+entityType?: string;
+entityId?: number;
+};
+
+export type CountAuditLogs200 = {
+  /** Total number of audit log entries matching the filters */
+  count: number;
+};
+
 export type ListPackagesParams = {
 employeeId?: number;
 workPlanId?: number;

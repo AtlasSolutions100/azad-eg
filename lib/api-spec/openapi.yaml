@@ -806,6 +806,31 @@ paths:
                 items:
                   $ref: "#/components/schemas/AuditLog"
 
+  /audit-logs/count:
+    get:
+      operationId: countAuditLogs
+      tags: [reference]
+      summary: Count audit log entries matching the given filters
+      parameters:
+        - name: entityType
+          in: query
+          schema: { type: string }
+        - name: entityId
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Total matching audit log entry count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count:
+                    type: integer
+                    description: Total number of audit log entries matching the filters
+
   /procas/status:
     get:
       operationId: getProcasStatus

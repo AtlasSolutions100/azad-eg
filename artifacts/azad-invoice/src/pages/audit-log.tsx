@@ -27,7 +27,7 @@ function entityLink(entityType: string, entityId: number | null | undefined): st
 }
 
 export default function AuditLog() {
-  const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage, totalCount } =
     usePagedAuditLogs();
   const [overridesOnly, setOverridesOnly] = useState(false);
   const loadMoreRef = useInfiniteScroll({
@@ -168,9 +168,13 @@ export default function AuditLog() {
             Clear dates
           </Button>
         ) : null}
-        {!isLoading && visibleLogs && logs && hasFilters ? (
-          <span className="text-sm text-muted-foreground">
-            Showing {visibleLogs.length} of {logs.length} entries
+        {!isLoading && visibleLogs && logs ? (
+          <span className="text-sm text-muted-foreground" data-testid="text-audit-count">
+            {hasFilters
+              ? `Showing ${visibleLogs.length} of ${logs.length} loaded entries`
+              : totalCount != null
+                ? `Showing ${logs.length.toLocaleString()} of ${totalCount.toLocaleString()} entries`
+                : null}
           </span>
         ) : null}
       </div>

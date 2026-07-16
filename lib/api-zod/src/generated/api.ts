@@ -1286,6 +1286,19 @@ export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
 
 
 /**
+ * @summary Count audit log entries matching the given filters
+ */
+export const CountAuditLogsQueryParams = zod.object({
+  "entityType": zod.coerce.string().optional(),
+  "entityId": zod.coerce.number().optional()
+})
+
+export const CountAuditLogsResponse = zod.object({
+  "count": zod.number().describe('Total number of audit log entries matching the filters')
+})
+
+
+/**
  * @summary Get Procas integration status
  */
 export const GetProcasStatusResponse = zod.object({

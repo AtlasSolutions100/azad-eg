@@ -28,6 +28,8 @@ import type {
   ClassificationInput,
   ClassificationUpdate,
   ColumnDefinition,
+  CountAuditLogs200,
+  CountAuditLogsParams,
   DashboardSummary,
   Employee,
   EmployeeInput,
@@ -3580,6 +3582,90 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListAuditLogsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCountAuditLogsUrl = (params?: CountAuditLogsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/audit-logs/count?${stringifiedParams}` : `/api/audit-logs/count`
+}
+
+/**
+ * @summary Count audit log entries matching the given filters
+ */
+export const countAuditLogs = async (params?: CountAuditLogsParams, options?: RequestInit): Promise<CountAuditLogs200> => {
+
+  return customFetch<CountAuditLogs200>(getCountAuditLogsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCountAuditLogsQueryKey = (params?: CountAuditLogsParams,) => {
+    return [
+    `/api/audit-logs/count`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getCountAuditLogsQueryOptions = <TData = Awaited<ReturnType<typeof countAuditLogs>>, TError = ErrorType<unknown>>(params?: CountAuditLogsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof countAuditLogs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCountAuditLogsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof countAuditLogs>>> = ({ signal }) => countAuditLogs(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof countAuditLogs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type CountAuditLogsQueryResult = NonNullable<Awaited<ReturnType<typeof countAuditLogs>>>
+export type CountAuditLogsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Count audit log entries matching the given filters
+ */
+
+export function useCountAuditLogs<TData = Awaited<ReturnType<typeof countAuditLogs>>, TError = ErrorType<unknown>>(
+ params?: CountAuditLogsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof countAuditLogs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getCountAuditLogsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

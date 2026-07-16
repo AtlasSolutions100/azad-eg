@@ -85,6 +85,7 @@ export default function InvoiceDetail() {
     hasNextPage: hasMoreAuditLogs,
     isFetchingNextPage: isFetchingMoreAuditLogs,
     fetchNextPage: fetchMoreAuditLogs,
+    totalCount: totalAuditCount,
   } = usePagedAuditLogs({ entityType: "invoice", entityId: invoiceId });
   const loadMoreActivityRef = useInfiniteScroll({
     hasMore: !!hasMoreAuditLogs,
@@ -1116,7 +1117,15 @@ export default function InvoiceDetail() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle>Activity</CardTitle>
-                  <CardDescription>Full audit history for this invoice, most recent first.</CardDescription>
+                  <CardDescription>
+                    Full audit history for this invoice, most recent first.
+                    {auditLogs && totalAuditCount != null ? (
+                      <span className="ml-1" data-testid="text-activity-count">
+                        Showing {auditLogs.length.toLocaleString()} of{" "}
+                        {totalAuditCount.toLocaleString()} entries.
+                      </span>
+                    ) : null}
+                  </CardDescription>
                 </div>
                 {activityActions.length > 0 && (
                   <Select value={activityFilter} onValueChange={setActivityFilter}>
