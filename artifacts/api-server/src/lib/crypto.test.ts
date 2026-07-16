@@ -9,8 +9,8 @@ function resolveSecret(): string {
   return secret;
 }
 
-// Reproduce the on-disk ciphertext format using an arbitrary derivation salt so
-// we can simulate credentials written before the Procast -> Procas salt rename.
+// Reproduce the on-disk ciphertext format with an arbitrary secret so we can
+// simulate credentials sealed under a rotated-out master key.
 function encryptWithSalt(plaintext: string, salt: string, secret = resolveSecret()): string {
   const key = scryptSync(secret, salt, 32);
   const iv = randomBytes(12);
@@ -27,12 +27,6 @@ describe("crypto", () => {
     expect(isEncrypted(ciphertext)).toBe(true);
     expect(ciphertext).not.toContain(plaintext);
     expect(decryptSecret(ciphertext)).toBe(plaintext);
-  });
-
-  it("decrypts ciphertext written with the legacy (pre-rename) salt", () => {
-    const plaintext = "legacy-stored-api-key";
-    const legacyCiphertext = encryptWithSalt(plaintext, "procast-connection-v1");
-    expect(decryptSecret(legacyCiphertext)).toBe(plaintext);
   });
 
   it("passes through legacy plaintext values unchanged", () => {
@@ -68,14 +62,6 @@ describe("crypto", () => {
       });
     });
 
-    it("also decrypts old-key ciphertext written with the legacy salt", () => {
-      const plaintext = "old-key-legacy-salt";
-      const oldCiphertext = encryptWithSalt(plaintext, "procast-connection-v1", OLD_SECRET);
-      withEnv({ PROCAS_ENC_KEY_OLD: OLD_SECRET }, () => {
-        expect(decryptSecret(oldCiphertext)).toBe(plaintext);
-      });
-    });
-
     it("fails loudly with a rotation hint when no available key can decrypt", () => {
       const orphaned = encryptWithSalt("unreachable", "procas-connection-v1", "some-forgotten-key");
       withEnv({ PROCAS_ENC_KEY_OLD: undefined }, () => {
@@ -93,10 +79,8 @@ describe("crypto", () => {
       });
     });
 
-    it("reports plaintext and legacy-salt values as not sealed with the current key", () => {
+    it("reports plaintext values as not sealed with the current key", () => {
       expect(isSealedWithCurrentKey("plain-text-value")).toBe(false);
-      const legacy = encryptWithSalt("legacy", "procast-connection-v1");
-      expect(isSealedWithCurrentKey(legacy)).toBe(false);
       expect(isSealedWithCurrentKey(encryptSecret("fresh"))).toBe(true);
     });
   });

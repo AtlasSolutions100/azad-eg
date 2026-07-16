@@ -22,12 +22,8 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12; // GCM standard nonce length
 const ENC_PREFIX = "enc:v1:";
 
-// Domain-separation salt for the derived key. The salt was renamed when the
-// integration was renamed Procast -> Procas. Any ciphertext written before the
-// rename was derived with LEGACY_KEY_SALT, so decryptSecret falls back to it so
-// existing stored credentials remain decryptable with no forced reconnect.
+// Domain-separation salt for the derived key.
 const KEY_SALT = "procas-connection-v1";
-const LEGACY_KEY_SALT = "procast-connection-v1";
 
 // scrypt is deliberately slow; cache derived keys per (secret, salt) pair so
 // repeated encrypt/decrypt calls (and rotation fallbacks) stay cheap.
@@ -67,14 +63,13 @@ function currentKey(): Buffer {
 }
 
 // Every key that may have sealed existing ciphertext, in preference order:
-// current secret with the current salt, current secret with the legacy
-// (pre-rename) salt, then the rotation-era old secret with both salts.
+// the current secret, then the rotation-era old secret.
 function decryptionKeys(): Buffer[] {
   const secret = resolveSecret();
-  const keys = [deriveKey(secret, KEY_SALT), deriveKey(secret, LEGACY_KEY_SALT)];
+  const keys = [deriveKey(secret, KEY_SALT)];
   const oldSecret = resolveOldSecret();
   if (oldSecret && oldSecret !== secret) {
-    keys.push(deriveKey(oldSecret, KEY_SALT), deriveKey(oldSecret, LEGACY_KEY_SALT));
+    keys.push(deriveKey(oldSecret, KEY_SALT));
   }
   return keys;
 }
@@ -131,9 +126,8 @@ export function decryptSecret(value: string): string {
   );
 }
 
-// True when the value is ciphertext sealed under the *current* key (current
-// secret + current salt). False for plaintext, legacy-salt ciphertext, or
-// ciphertext sealed under a rotated-out key — all of which should be re-sealed
+// True when the value is ciphertext sealed under the *current* key. False for
+// plaintext or ciphertext sealed under a rotated-out key — both should be re-sealed
 // by re-encrypting the decrypted value with encryptSecret.
 export function isSealedWithCurrentKey(value: string): boolean {
   if (!isEncrypted(value)) return false;
