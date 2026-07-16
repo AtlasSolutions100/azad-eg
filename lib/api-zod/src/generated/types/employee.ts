@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { EmployeeRateChange } from './employeeRateChange';
 
 export interface Employee {
   id: number;
@@ -19,4 +20,6 @@ export interface Employee {
   defaultTaskNo?: string | null;
   active: boolean;
   createdAt: string;
+  /** Effective-dated rate changes, oldest first. Base homeRate/fieldRate apply before the earliest change. */
+  rateChanges?: EmployeeRateChange[];
 }

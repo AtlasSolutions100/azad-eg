@@ -40,6 +40,7 @@ import { parseTimeFile } from "../../lib/timeimport";
 import { getProcasConnection } from "../../lib/procas";
 import { syncInvoiceFromProcas } from "../../lib/procasSync";
 import { linesToLineItems, clearAutoImportedLineItems } from "../../lib/lineMapping";
+import { loadRateChanges } from "../../lib/employeeRates";
 import { buildInvoiceWorkbook, convertToPdf, resolveSignaturePath } from "../../lib/excel";
 import path from "node:path";
 
@@ -464,7 +465,15 @@ router.post(
   }
 
   const employees = await db.select().from(employeesTable);
-  const { toInsert, warnings: mapWarnings } = linesToLineItems(parsedFile.lines, id, employees, source);
+  const rateChanges = await loadRateChanges(employees.map((e) => e.id));
+  const { toInsert, warnings: mapWarnings } = linesToLineItems(
+    parsedFile.lines,
+    id,
+    employees,
+    source,
+    rateChanges,
+    ctx.invoice.periodStart,
+  );
   const warnings = [...parsedFile.warnings, ...mapWarnings];
 
   // Replace any previously auto-imported rows so re-importing the same period

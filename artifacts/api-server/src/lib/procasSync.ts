@@ -17,6 +17,7 @@ import {
 } from "./procas";
 import type { ParsedLine } from "./timeimport";
 import { linesToLineItems, clearAutoImportedLineItems } from "./lineMapping";
+import { loadRateChanges } from "./employeeRates";
 import { recomputeCarryOverWithAudit } from "./carryover";
 import { recordAudit } from "./audit";
 import { logger } from "./logger";
@@ -357,7 +358,15 @@ export async function syncInvoiceFromProcas(
   }
 
   const employees = await db.select().from(employeesTable);
-  const { toInsert, warnings: mapWarnings } = linesToLineItems(lines, invoice.id, employees, "procas");
+  const rateChanges = await loadRateChanges(employees.map((e) => e.id));
+  const { toInsert, warnings: mapWarnings } = linesToLineItems(
+    lines,
+    invoice.id,
+    employees,
+    "procas",
+    rateChanges,
+    invoice.periodStart,
+  );
   warnings.push(...mapWarnings);
 
   // Replace any previously auto-imported rows so re-syncing the same period

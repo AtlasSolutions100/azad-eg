@@ -1,5 +1,6 @@
 export * from "./work-plans";
 export * from "./employees";
+export * from "./employee-rate-changes";
 export * from "./classifications";
 export * from "./invoices";
 export * from "./line-items";

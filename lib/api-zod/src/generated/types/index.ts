@@ -30,6 +30,8 @@ export * from './dashboardSummary';
 export * from './docStatus';
 export * from './employee';
 export * from './employeeInput';
+export * from './employeeRateChange';
+export * from './employeeRateChangeInput';
 export * from './employeeUpdate';
 export * from './error';
 export * from './financialLine';

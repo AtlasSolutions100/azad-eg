@@ -76,6 +76,7 @@ import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import { fetchPreviouslyBilledFromProcas } from "../lib/procasSync";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
+import { effectiveRate, loadRateChanges } from "../lib/employeeRates";
 import fs from "node:fs";
 import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
 import { uploadsDir, ensureDirs, deleteUploadedFile } from "../lib/paths";
@@ -599,6 +600,18 @@ router.post("/packages/:id/entries", async (req, res): Promise<void> => {
   // so legacy name-only rows don't merge two people who share a name.
   const employeeId =
     parsed.data.employeeId ?? (await resolveEmployeeIdByName(parsed.data.employeeName));
+  // No rate supplied: use the employee's billing rate effective for this
+  // week's start date, honoring effective-dated rate changes so a mid-period
+  // rate change lands as different rates on pre/post-change weeks (which the
+  // export renders as two Labor Attachment rows).
+  let rate = parsed.data.rate ?? 0;
+  if (rate <= 0 && employeeId != null) {
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
+    if (emp) {
+      const changes = await loadRateChanges([employeeId]);
+      rate = effectiveRate(emp, changes.get(employeeId) ?? [], parsed.data.location, week.weekStart);
+    }
+  }
   const [row] = await db
     .insert(timesheetEntriesTable)
     .values({
@@ -616,7 +629,7 @@ router.post("/packages/:id/entries", async (req, res): Promise<void> => {
       hoursFri: parsed.data.hoursFri ?? 0,
       hoursSat: parsed.data.hoursSat ?? 0,
       hoursSun: parsed.data.hoursSun ?? 0,
-      rate: parsed.data.rate ?? 0,
+      rate,
       taskNo: parsed.data.taskNo,
       notes: parsed.data.notes,
     })

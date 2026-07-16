@@ -233,6 +233,67 @@ paths:
         "204":
           description: Deleted
 
+  /employees/{id}/rate-changes:
+    get:
+      operationId: listEmployeeRateChanges
+      tags: [employees]
+      summary: List effective-dated rate changes for an employee
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Rate changes, oldest effective date first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeRateChange"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createEmployeeRateChange
+      tags: [employees]
+      summary: Add an effective-dated rate change
+      description: >-
+        From the effective date (inclusive) onward the new rates apply to
+        timesheet entries and imports; earlier dates keep the employee's base
+        rates (or an earlier change). A mid-period change is exported as two
+        Labor Attachment rows, matching the reference workbook.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeeRateChangeInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeRateChange"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /employees/{id}/rate-changes/{rateChangeId}:
+    delete:
+      operationId: deleteEmployeeRateChange
+      tags: [employees]
+      summary: Delete a rate change
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: rateChangeId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /classifications:
     get:
       operationId: listClassifications
@@ -1678,6 +1739,34 @@ components:
         defaultTaskNo: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string }
+        rateChanges:
+          type: array
+          description: >-
+            Effective-dated rate changes, oldest first. Base homeRate/fieldRate
+            apply before the earliest change.
+          items:
+            $ref: "#/components/schemas/EmployeeRateChange"
+    EmployeeRateChange:
+      type: object
+      required: [id, employeeId, effectiveDate, homeRate, createdAt]
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        effectiveDate:
+          type: string
+          description: YYYY-MM-DD; the new rates apply from this date (inclusive).
+        homeRate: { type: number }
+        fieldRate: { type: ["number", "null"] }
+        createdAt: { type: string }
+    EmployeeRateChangeInput:
+      type: object
+      required: [effectiveDate, homeRate]
+      properties:
+        effectiveDate:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        homeRate: { type: number, exclusiveMinimum: 0 }
+        fieldRate: { type: number, exclusiveMinimum: 0 }
     EmployeeInput:
       type: object
       required: [name, classification, homeRate]

@@ -1,18 +1,23 @@
-import { db, lineItemsTable, employeesTable } from "@workspace/db";
+import { db, lineItemsTable, employeesTable, type EmployeeRateChange } from "@workspace/db";
 import { and, eq, ne } from "drizzle-orm";
 import type { ParsedLine } from "./timeimport";
 import { normalizeEmployeeName } from "./employeeResolve";
+import { effectiveRate } from "./employeeRates";
 
 export type EmployeeRow = typeof employeesTable.$inferSelect;
 
 // Shared mapping of parsed timesheet lines (from file upload OR live Procas pull)
 // into invoice line-item rows: matches employees to apply billable rates and
 // classifications, and accumulates warnings for rows that need manual attention.
+// When `rateChanges`/`effectiveDate` are provided, rate fallbacks honor
+// effective-dated rate changes as of that date (typically the period start).
 export function linesToLineItems(
   lines: ParsedLine[],
   invoiceId: number,
   employees: EmployeeRow[],
   source: string,
+  rateChanges?: Map<number, EmployeeRateChange[]>,
+  effectiveDate?: string,
 ): { toInsert: Array<typeof lineItemsTable.$inferInsert>; warnings: string[] } {
   // Names shared by multiple employees are ambiguous — never guess, or hours
   // could be linked to the wrong person (wrong rate/classification).
@@ -41,7 +46,11 @@ export function linesToLineItems(
     let rate = line.rate;
     let classification = line.classification;
     if (rate <= 0 && emp) {
-      rate = line.location === "field" ? emp.fieldRate ?? emp.homeRate : emp.homeRate;
+      rate = effectiveDate
+        ? effectiveRate(emp, rateChanges?.get(emp.id) ?? [], line.location, effectiveDate)
+        : line.location === "field"
+          ? emp.fieldRate ?? emp.homeRate
+          : emp.homeRate;
     }
     if (!classification && emp) classification = emp.classification;
     if (rate <= 0) warnings.push(`${line.employeeName}: no rate available, set to 0 — please correct manually.`);

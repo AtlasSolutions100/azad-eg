@@ -1,25 +1,77 @@
 import { useState } from "react";
-import { useListEmployees, useCreateEmployee, useUpdateEmployee, useDeleteEmployee, EmployeeInput, EmployeeUpdate } from "@workspace/api-client-react";
+import {
+  useListEmployees,
+  useCreateEmployee,
+  useUpdateEmployee,
+  useDeleteEmployee,
+  useCreateEmployeeRateChange,
+  useDeleteEmployeeRateChange,
+  EmployeeInput,
+  EmployeeUpdate,
+  type Employee,
+} from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2, Edit } from "lucide-react";
+import { Trash2, Edit, CalendarClock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Employees() {
   const { data: employees, isLoading } = useListEmployees();
   const createEmp = useCreateEmployee();
   const updateEmp = useUpdateEmployee();
   const deleteEmp = useDeleteEmployee();
+  const createRateChange = useCreateEmployeeRateChange();
+  const deleteRateChange = useDeleteEmployeeRateChange();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<EmployeeInput>>({ active: true });
+
+  // Rate-history dialog: effective-dated rate changes for one employee.
+  const [ratesEmpId, setRatesEmpId] = useState<number | null>(null);
+  const [rateForm, setRateForm] = useState({ effectiveDate: "", homeRate: "", fieldRate: "" });
+  const ratesEmp: Employee | undefined = employees?.find((e) => e.id === ratesEmpId);
+
+  const submitRateChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ratesEmpId || !rateForm.effectiveDate || !rateForm.homeRate) return;
+    try {
+      await createRateChange.mutateAsync({
+        id: ratesEmpId,
+        data: {
+          effectiveDate: rateForm.effectiveDate,
+          homeRate: Number(rateForm.homeRate),
+          ...(rateForm.fieldRate ? { fieldRate: Number(rateForm.fieldRate) } : {}),
+        },
+      });
+      setRateForm({ effectiveDate: "", homeRate: "", fieldRate: "" });
+      queryClient.invalidateQueries();
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Failed to add rate change",
+        description: err?.response?.data?.error || err?.message,
+      });
+    }
+  };
+
+  const removeRateChange = async (rateChangeId: number) => {
+    if (!ratesEmpId) return;
+    try {
+      await deleteRateChange.mutateAsync({ id: ratesEmpId, rateChangeId });
+      queryClient.invalidateQueries();
+    } catch {
+      toast({ variant: "destructive", title: "Failed to delete rate change" });
+    }
+  };
 
   const handleOpenCreate = () => {
     setEditId(null);
@@ -115,6 +167,77 @@ export default function Employees() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={ratesEmpId != null} onOpenChange={(o) => { if (!o) setRatesEmpId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rate History{ratesEmp ? ` — ${ratesEmp.name}` : ""}</DialogTitle>
+          </DialogHeader>
+          {ratesEmp && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Base rates apply until the first change; each change takes effect on its
+                date. A rate change in the middle of a billing period shows as two labor
+                lines on the exported invoice, like Julie's workbook.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Effective</TableHead>
+                    <TableHead className="text-right">Home Rate</TableHead>
+                    <TableHead className="text-right">Field Rate</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">Base (start)</TableCell>
+                    <TableCell className="text-right">${ratesEmp.homeRate.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{ratesEmp.fieldRate ? `$${ratesEmp.fieldRate.toFixed(2)}` : '-'}</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                  {(ratesEmp.rateChanges ?? []).map((rc) => (
+                    <TableRow key={rc.id}>
+                      <TableCell>{rc.effectiveDate}</TableCell>
+                      <TableCell className="text-right">${rc.homeRate.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{rc.fieldRate != null ? `$${rc.fieldRate.toFixed(2)}` : '-'}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => removeRateChange(rc.id)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <form onSubmit={submitRateChange} className="space-y-3 border-t pt-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label>Effective Date</Label>
+                    <Input required type="date" value={rateForm.effectiveDate}
+                      onChange={e => setRateForm({ ...rateForm, effectiveDate: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>New Home Rate</Label>
+                    <Input required type="number" step="0.01" min="0.01" value={rateForm.homeRate}
+                      onChange={e => setRateForm({ ...rateForm, homeRate: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>New Field Rate</Label>
+                    <Input type="number" step="0.01" min="0.01" value={rateForm.fieldRate}
+                      onChange={e => setRateForm({ ...rateForm, fieldRate: e.target.value })} />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" className="bg-[#CFAF42] text-white" disabled={createRateChange.isPending}>
+                    {createRateChange.isPending ? "Adding..." : "Add Rate Change"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="rounded-md border bg-white">
         <Table>
           <TableHeader>
@@ -160,6 +283,9 @@ export default function Employees() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" title="Rate history" onClick={() => setRatesEmpId(employee.id)}>
+                      <CalendarClock className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(employee)}>
                       <Edit className="h-4 w-4" />
                     </Button>

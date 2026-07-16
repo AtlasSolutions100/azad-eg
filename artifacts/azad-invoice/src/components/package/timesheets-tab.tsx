@@ -140,18 +140,45 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
     setEntryOpen(true);
   };
 
+  // Billing rate effective for the given date: the employee's base rates
+  // apply before the earliest rate change; from a change's effective date
+  // (inclusive) onward that change's rates apply. Mirrors the server logic so
+  // a mid-period rate change auto-fills the right rate per week.
+  const effectiveRateFor = (
+    emp: NonNullable<typeof employees>[number],
+    location: string | undefined,
+    dateISO: string | undefined,
+  ): number => {
+    let homeRate = emp.homeRate;
+    let fieldRate = emp.fieldRate ?? emp.homeRate;
+    if (dateISO) {
+      let best: { effectiveDate: string; homeRate: number; fieldRate?: number | null } | null = null;
+      for (const rc of emp.rateChanges ?? []) {
+        if (rc.effectiveDate > dateISO) continue;
+        if (!best || rc.effectiveDate >= best.effectiveDate) best = rc;
+      }
+      if (best) {
+        homeRate = best.homeRate;
+        fieldRate = best.fieldRate ?? best.homeRate;
+      }
+    }
+    return location === "field" ? fieldRate : homeRate;
+  };
+
   const onEmployeeSelect = (idStr: string) => {
     const emp = employees?.find((e) => e.id === Number(idStr));
     if (emp) {
-      setEntryForm((f) => ({
-        ...f,
-        employeeId: emp.id,
-        employeeName: emp.name,
-        classification: emp.classification,
-        rate:
-          f.location === "field" && emp.fieldRate ? emp.fieldRate : emp.homeRate,
-        taskNo: emp.defaultTaskNo || f.taskNo,
-      }));
+      setEntryForm((f) => {
+        const week = weeks.find((w) => w.id === f.weekId);
+        return {
+          ...f,
+          employeeId: emp.id,
+          employeeName: emp.name,
+          classification: emp.classification,
+          rate: effectiveRateFor(emp, f.location, week?.weekStart),
+          taskNo: emp.defaultTaskNo || f.taskNo,
+        };
+      });
     }
   };
 

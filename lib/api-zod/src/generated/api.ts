@@ -331,7 +331,15 @@ export const ListEmployeesResponseItem = zod.object({
   "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
+  "createdAt": zod.string(),
+  "rateChanges": zod.array(zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "effectiveDate": zod.string().describe('YYYY-MM-DD; the new rates apply from this date (inclusive).'),
+  "homeRate": zod.number(),
+  "fieldRate": zod.number().nullish(),
   "createdAt": zod.string()
+})).optional().describe('Effective-dated rate changes, oldest first. Base homeRate\/fieldRate apply before the earliest change.')
 })
 export const ListEmployeesResponse = zod.array(ListEmployeesResponseItem)
 
@@ -361,7 +369,15 @@ export const CreateEmployeeResponse = zod.object({
   "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
+  "createdAt": zod.string(),
+  "rateChanges": zod.array(zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "effectiveDate": zod.string().describe('YYYY-MM-DD; the new rates apply from this date (inclusive).'),
+  "homeRate": zod.number(),
+  "fieldRate": zod.number().nullish(),
   "createdAt": zod.string()
+})).optional().describe('Effective-dated rate changes, oldest first. Base homeRate\/fieldRate apply before the earliest change.')
 })
 
 
@@ -381,7 +397,15 @@ export const GetEmployeeResponse = zod.object({
   "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
+  "createdAt": zod.string(),
+  "rateChanges": zod.array(zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "effectiveDate": zod.string().describe('YYYY-MM-DD; the new rates apply from this date (inclusive).'),
+  "homeRate": zod.number(),
+  "fieldRate": zod.number().nullish(),
   "createdAt": zod.string()
+})).optional().describe('Effective-dated rate changes, oldest first. Base homeRate\/fieldRate apply before the earliest change.')
 })
 
 
@@ -414,7 +438,15 @@ export const UpdateEmployeeResponse = zod.object({
   "payRate": zod.number().nullish(),
   "defaultTaskNo": zod.string().nullish(),
   "active": zod.boolean(),
+  "createdAt": zod.string(),
+  "rateChanges": zod.array(zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "effectiveDate": zod.string().describe('YYYY-MM-DD; the new rates apply from this date (inclusive).'),
+  "homeRate": zod.number(),
+  "fieldRate": zod.number().nullish(),
   "createdAt": zod.string()
+})).optional().describe('Effective-dated rate changes, oldest first. Base homeRate\/fieldRate apply before the earliest change.')
 })
 
 
@@ -426,6 +458,66 @@ export const DeleteEmployeeParams = zod.object({
 })
 
 export const DeleteEmployeeResponse = zod.void()
+
+
+/**
+ * @summary List effective-dated rate changes for an employee
+ */
+export const ListEmployeeRateChangesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListEmployeeRateChangesResponseItem = zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "effectiveDate": zod.string().describe('YYYY-MM-DD; the new rates apply from this date (inclusive).'),
+  "homeRate": zod.number(),
+  "fieldRate": zod.number().nullish(),
+  "createdAt": zod.string()
+})
+export const ListEmployeeRateChangesResponse = zod.array(ListEmployeeRateChangesResponseItem)
+
+
+/**
+ * From the effective date (inclusive) onward the new rates apply to timesheet entries and imports; earlier dates keep the employee's base rates (or an earlier change). A mid-period change is exported as two Labor Attachment rows, matching the reference workbook.
+ * @summary Add an effective-dated rate change
+ */
+export const CreateEmployeeRateChangeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createEmployeeRateChangeBodyEffectiveDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createEmployeeRateChangeBodyHomeRateExclusiveMin = 0;
+
+export const createEmployeeRateChangeBodyFieldRateExclusiveMin = 0;
+
+
+
+export const CreateEmployeeRateChangeBody = zod.object({
+  "effectiveDate": zod.string().regex(createEmployeeRateChangeBodyEffectiveDateRegExp),
+  "homeRate": zod.number().gt(createEmployeeRateChangeBodyHomeRateExclusiveMin),
+  "fieldRate": zod.number().gt(createEmployeeRateChangeBodyFieldRateExclusiveMin).optional()
+})
+
+export const CreateEmployeeRateChangeResponse = zod.object({
+  "id": zod.number(),
+  "employeeId": zod.number(),
+  "effectiveDate": zod.string().describe('YYYY-MM-DD; the new rates apply from this date (inclusive).'),
+  "homeRate": zod.number(),
+  "fieldRate": zod.number().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a rate change
+ */
+export const DeleteEmployeeRateChangeParams = zod.object({
+  "id": zod.coerce.number(),
+  "rateChangeId": zod.coerce.number()
+})
+
+export const DeleteEmployeeRateChangeResponse = zod.void()
 
 
 /**

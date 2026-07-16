@@ -285,6 +285,17 @@ export interface BilledLineItemsResult {
   summary: PackageBillingSummary;
 }
 
+export interface EmployeeRateChange {
+  id: number;
+  employeeId: number;
+  /** YYYY-MM-DD; the new rates apply from this date (inclusive). */
+  effectiveDate: string;
+  homeRate: number;
+  /** @nullable */
+  fieldRate?: number | null;
+  createdAt: string;
+}
+
 export interface Employee {
   id: number;
   name: string;
@@ -298,6 +309,17 @@ export interface Employee {
   defaultTaskNo?: string | null;
   active: boolean;
   createdAt: string;
+  /** Effective-dated rate changes, oldest first. Base homeRate/fieldRate apply before the earliest change. */
+  rateChanges?: EmployeeRateChange[];
+}
+
+export interface EmployeeRateChangeInput {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  effectiveDate: string;
+  /** @exclusiveMinimum 0 */
+  homeRate: number;
+  /** @exclusiveMinimum 0 */
+  fieldRate?: number;
 }
 
 export interface EmployeeInput {

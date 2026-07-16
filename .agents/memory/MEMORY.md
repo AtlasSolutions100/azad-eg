@@ -3,6 +3,7 @@
 - [Reference-workbook export engine](reference-workbook-engine.md) — exports mutate Julie's populated ground-truth xlsx; write every cell unconditionally or template values leak; rates ÷100; hidden sheets skip PDF.
 - [Procas key rotation](procas-key-rotation.md) — PROCAS_ENC_KEY_OLD is decrypt-only; startup + lazy read re-seal ciphertext under the new PROCAS_ENC_KEY, so rotation is zero-downtime.
 - [Excel export repair warning](excel-export-defined-names.md) — templates carry broken external/`#REF!` named ranges; strip them before write or Excel shows a "Removed Records: Named range" repair prompt.
+- [Employee rate effective dates](employee-rate-effective-dates.md) — labor-row split keys off distinct entry rates; every rate assignment must go through effectiveRate() with a week/period as-of date.
 - [Multi-employee package contributors](multi-employee-packages.md) — key contributors by employeeId (name only as legacy fallback); name-only grouping merges people who share a name.
 - [Procas OData test mocks](procas-odata-testing.md) — decode `+` to spaces before matching $filter text in fetch mocks, or every assertion silently misses.
 - [Playwright e2e on NixOS with Clerk](playwright-e2e-nixos-clerk.md) — bundled Chromium won't launch; use Nix chromium executablePath, Clerk test-mode email_code sign-in.
