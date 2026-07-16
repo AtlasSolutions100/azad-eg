@@ -63,6 +63,18 @@ app.listen(port, async (err) => {
     logger.error({ err: pruneErr }, "Failed to prune generated export files");
   }
 
+  // Re-run the sweep daily so stale files are trimmed even if the server
+  // runs for weeks without a restart or an export. Best-effort: failures
+  // are logged and never crash the server.
+  const pruneTimer = setInterval(() => {
+    try {
+      pruneGeneratedFiles();
+    } catch (pruneErr) {
+      logger.error({ err: pruneErr }, "Periodic generated-file prune failed");
+    }
+  }, 24 * 60 * 60 * 1000);
+  pruneTimer.unref();
+
   try {
     await startProcasScheduler();
   } catch (schedErr) {
