@@ -205,27 +205,44 @@ function contributors(ctx: PackageDocContext): Array<{ key: string; name: string
   return [...seen.entries()].map(([key, v]) => ({ key, ...v }));
 }
 
+interface RateSegment {
+  rate: number;
+  hours: number;
+  /** Week start of the first week this rate appears in (chronological). */
+  firstWeekStart: Date | null;
+}
+
 /**
- * Billing rate for the Overview "Fully Burdened Billing Rate" cell: the rate
- * carried by the entry with the most hours (they are all the same rate in the
- * single-rate case), falling back to the work plan's overheadRate-free 0.
+ * Billable-rate segments across the period, in chronological order of first
+ * appearance. The reference workbook models a mid-period rate change as two
+ * labor rows (Master File I17/I18 → Labor rows 19/20); more than two distinct
+ * rates cannot be represented on the reference sheet, so the caller must fail
+ * loudly rather than silently merging money.
  */
-function dominantRate(entries: TimesheetEntryRow[]): number {
-  const byRate = new Map<number, number>();
-  for (const e of entries) {
+function rateSegments(ctx: PackageDocContext): RateSegment[] {
+  const weekStartById = new Map<number, Date>();
+  for (const w of ctx.weeks) weekStartById.set(w.id, toDate(w.weekStart));
+  const byRate = new Map<number, { hours: number; firstWeekStart: Date | null }>();
+  for (const e of ctx.entries) {
     const hrs =
       e.hoursMon + e.hoursTue + e.hoursWed + e.hoursThu + e.hoursFri + e.hoursSat + e.hoursSun;
-    if (e.rate > 0 && hrs > 0) byRate.set(e.rate, (byRate.get(e.rate) ?? 0) + hrs);
-  }
-  let best = 0;
-  let bestHrs = -1;
-  for (const [rate, hrs] of byRate) {
-    if (hrs > bestHrs) {
-      best = rate;
-      bestHrs = hrs;
+    if (!(e.rate > 0 && hrs > 0)) continue;
+    const ws = weekStartById.get(e.weekId) ?? null;
+    const seg = byRate.get(e.rate);
+    if (!seg) {
+      byRate.set(e.rate, { hours: hrs, firstWeekStart: ws });
+    } else {
+      seg.hours += hrs;
+      if (ws && (!seg.firstWeekStart || ws < seg.firstWeekStart)) seg.firstWeekStart = ws;
     }
   }
-  return best;
+  return [...byRate.entries()]
+    .map(([rate, v]) => ({ rate, ...v }))
+    .sort((a, b) => {
+      const ta = a.firstWeekStart?.getTime() ?? 0;
+      const tb = b.firstWeekStart?.getTime() ?? 0;
+      return ta - tb || a.rate - b.rate;
+    });
 }
 
 /** Category → reference week-tab row: 9 straight time, 11 holiday, 12 PTO. */
@@ -383,9 +400,23 @@ export async function buildMasterWorkbook(
   setVal(master, "B18", wp.totalBudget);
   setVal(master, "D18", 0);
   setVal(master, "E18", 0);
-  const rate = dominantRate(ctx.entries);
-  setVal(master, "I17", rate);
-  setVal(master, "I18", rate);
+  // Billing rates: the reference models a mid-period rate change as two rate
+  // cells (I17 old, I18 new — "Effective <date>" label in H18). More than two
+  // distinct rates cannot be represented on the reference sheets.
+  const segments = rateSegments(ctx);
+  if (segments.length > 2) {
+    throw new Error(
+      `The reference workbook supports at most 2 billing rates per period; found ${segments.length} (${segments.map((s) => s.rate).join(", ")})`,
+    );
+  }
+  const rate1 = segments[0]?.rate ?? 0;
+  const rate2 = segments[1]?.rate ?? rate1;
+  setVal(master, "I17", rate1);
+  setVal(master, "I18", rate2);
+  if (segments.length === 2 && segments[1].firstWeekStart) {
+    const d = segments[1].firstWeekStart;
+    setVal(master, "H18", `Effective ${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`);
+  }
   setVal(master, "D23", 0);
   setVal(master, "E23", round2(pkg.previouslyBilled));
   // W1..F5 roll-up: sum the billable row (O9) of every tab of that week.
@@ -450,48 +481,114 @@ export async function buildMasterWorkbook(
     setFormula(cover, `V${r}`, `IF(ABS(J${r}-S${r})<0.01,0,J${r}-S${r})`);
   });
 
-  // -- 5. Sub Calc (Cost): rates from the work plan; the reference's per-row
-  // budget/previous decomposition is not in the data model, so the whole
-  // work-plan budget and previously-billed land on the package's own rows
-  // (G11 / I13) and every other literal is zeroed — totals (G44/I44) match.
-  // Work-plan rates are stored as percentages (e.g. 120.58); the reference
-  // sheet cells hold fractions (1.2058). Missing/zero rates are written as 0
-  // — never left as-is, or Julie's template rates would silently leak in.
+  // -- 5. Sub Calc (Cost). Rates come from the work plan; work-plan rates are
+  // stored as percentages (e.g. 120.58) while the reference cells hold
+  // fractions (1.2058). Missing/zero rates are written as 0 — never left
+  // as-is, or Julie's template rates would silently leak in.
   const oh = (wp.overheadRate ?? 0) / 100;
   for (const addr of ["C12", "C14", "C18", "C19"]) setVal(cost, addr, oh);
   const fee = (wp.fixedFeeRate ?? 0) / 100;
   setVal(cost, "E37", fee);
   setVal(cost, "E39", fee);
-  setVal(cost, "D43", (wp.fccmRate ?? 0) / 100);
-  setVal(cost, "G11", wp.totalBudget);
-  for (const addr of ["G12", "G13", "G14", "G37", "G39", "G43"]) setVal(cost, addr, 0);
+  const fccm = (wp.fccmRate ?? 0) / 100;
+  setVal(cost, "D43", fccm);
+
+  // Budget (G) and Previously Billed (I) decompose per work scope, mirroring
+  // the reference layout: the package's own scope lives on rows 13/14 (labor /
+  // OH) with its fixed fee on row 39 and FCCM on row 43; every other billed
+  // scope aggregates onto rows 11/12 with fixed fee on row 37. Each scope
+  // total (PO Amount / Previous Invoiced from the Billed Line Items) is
+  // back-solved into labor via T = L·(1+OH)·(1+fee) + L·FCCM — the same math
+  // the reference sheet applies (G14=G13·C14, G39=(G13+G14)·E39, G43=G13·D43)
+  // — with rounding residue folded into the fee row so column totals are
+  // exact to the cent.
+  const currentItems = items.filter((it) => it.currentInvoiced > 0);
+  // Before any billing is entered, every carried-forward item belongs to the
+  // package's own scope bucket so budget/previous still land on rows 13/14.
+  const ownItems = currentItems.length > 0 ? currentItems : items;
+  const ownKeys = new Set(ownItems.map((it) => it.id));
+  const otherItems = items.filter((it) => !ownKeys.has(it.id));
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const decompose = (total: number, withFccm: boolean) => {
+    const divisor = (1 + oh) * (1 + fee) + (withFccm ? fccm : 0);
+    const laborBase = divisor > 0 ? total / divisor : total;
+    const laborRow = round2(laborBase);
+    const ohRow = round2(laborRow * oh);
+    const fccmRow = withFccm ? round2(laborRow * fccm) : 0;
+    const feeRow = round2(total - laborRow - ohRow - fccmRow);
+    return { laborRow, ohRow, feeRow, fccmRow };
+  };
+  // The package's own scope: fall back to the whole work-plan budget /
+  // previously-billed when no line items exist yet.
+  const ownBudget = items.length > 0 ? sum(ownItems.map((it) => it.poAmount)) : wp.totalBudget;
+  const ownPrev =
+    items.length > 0 ? sum(ownItems.map((it) => it.previousInvoiced)) : pkg.previouslyBilled;
+  const otherBudget = sum(otherItems.map((it) => it.poAmount));
+  const otherPrev = sum(otherItems.map((it) => it.previousInvoiced));
+  const gOwn = decompose(ownBudget, true);
+  const iOwn = decompose(ownPrev, true);
+  const gOther = decompose(otherBudget, false);
+  const iOther = decompose(otherPrev, false);
+  setVal(cost, "G13", gOwn.laborRow);
+  setFormula(cost, "G14", "ROUND(G13*C14,2)");
+  setVal(cost, "G39", gOwn.feeRow);
+  setFormula(cost, "G43", "ROUND(G13*D43,2)");
+  setVal(cost, "I13", round2(iOwn.laborRow));
+  setVal(cost, "I14", iOwn.ohRow);
+  setVal(cost, "I39", iOwn.feeRow);
+  setVal(cost, "I43", iOwn.fccmRow);
+  setVal(cost, "G11", gOther.laborRow);
+  setVal(cost, "G12", gOther.ohRow);
+  setVal(cost, "G37", gOther.feeRow);
+  setVal(cost, "I11", iOther.laborRow);
+  setVal(cost, "I12", iOther.ohRow);
+  setVal(cost, "I37", iOther.feeRow);
   clearCell(cost, "D38");
-  for (const addr of ["I11", "I12", "I14", "I32", "I37", "I38", "I39", "I41", "I43"]) {
-    setVal(cost, addr, 0);
-  }
-  setVal(cost, "I13", round2(pkg.previouslyBilled));
-  setVal(cost, "A13", `Field ${wp.code}`);
-  setVal(cost, "A14", `${wp.code}_Field OH`);
-  setVal(cost, "A11", "Field");
-  setVal(cost, "A12", "Field OH");
+  for (const addr of ["G38", "I32", "I38", "I41"]) setVal(cost, addr, 0);
+  const scopeLabel = (list: typeof items, fallback: string) => {
+    const codes = [...new Set(list.map((it) => (it.workScopeNo || "").trim()).filter(Boolean))];
+    return codes.length ? codes.join(" / ") : fallback;
+  };
+  const ownLabel = scopeLabel(ownItems, wp.code);
+  const otherLabel = scopeLabel(otherItems, "");
+  setVal(cost, "A13", `Field ${ownLabel}`);
+  setVal(cost, "A14", `${ownLabel}_Field OH`);
+  setVal(cost, "A39", ownLabel);
+  setVal(cost, "A11", otherLabel ? `Field ${otherLabel}` : "Field");
+  setVal(cost, "A12", otherLabel ? `${otherLabel}_Field OH` : "Field OH");
+  setVal(cost, "A37", otherLabel);
+  setVal(cost, "A38", otherLabel);
   // H14 must follow the injected OH rate even for zero G rows.
   setFormula(cost, "H14", "ROUND(H13*C14,2)");
   setFormula(cost, "H43", "H13*D43");
 
-  // -- 6. Labor Attachment: all billable hours at the injected rate. The
-  // reference's two-rate split (16 hrs old / 128 hrs new) collapses to one
-  // row unless a mid-period rate change is modeled.
-  // All contributors are named on the labor line: the hours total (C19)
-  // includes every contributor's billable hours.
+  // -- 6. Labor Attachment. Rows 19/20 mirror the reference's rate split:
+  // D19='Master File'!I17 and D20='Master File'!I18 are template formulas we
+  // keep. With one rate, all hours land on row 19; with a mid-period rate
+  // change, row 19 carries the old-rate hours and row 20 the remainder
+  // ('Master File'!$G$9-C19), exactly as Julie's workbook does.
+  // All contributors are named on the labor line: the hours totals include
+  // every contributor's billable hours.
   const laborNames = persons
     .filter((p) => p.name)
     .map((p) => `${p.name}, ${p.classification}`)
     .join("; ");
   setVal(labor, "A17", `${wp.code} - Project ${wp.bartProjectNumbers || ""}`.trim());
   setVal(labor, "A18", laborNames);
-  setFormula(labor, "C19", "+'Master File'!G9");
-  setVal(labor, "C20", 0);
-  clearCell(labor, "B20");
+  if (segments.length === 2) {
+    setVal(labor, "C19", segments[0].hours);
+    setFormula(labor, "C20", "'Master File'!$G$9-C19");
+    const eff = segments[1].firstWeekStart;
+    setVal(
+      labor,
+      "B20",
+      eff ? `Labor - new rate effective ${eff.getMonth() + 1}/${eff.getDate()}` : "Labor - new rate",
+    );
+  } else {
+    setFormula(labor, "C19", "+'Master File'!G9");
+    setVal(labor, "C20", 0);
+    clearCell(labor, "B20");
+  }
   clearCell(labor, "H13");
   setVal(labor, "A11", "");
   setVal(labor, "A14", "");

@@ -273,7 +273,9 @@ router.post("/packages", async (req, res): Promise<void> => {
   }
   // Mandatory per-line carry-forward: pull Billed Line Items forward from the
   // last approved invoice for this work plan (Previous += prior Total,
-  // Current resets to 0). Failure must never block package creation.
+  // Current resets to 0). Carry-forward is part of the creation contract — if
+  // seed data exists but cannot be applied, creation must fail rather than
+  // silently produce a package with wrong Previous Invoiced figures.
   try {
     const seeded = await seedBilledLineItemsFromLastApproved(row.id, row.workPlanId);
     if (seeded.length > 0) {
@@ -285,8 +287,9 @@ router.post("/packages", async (req, res): Promise<void> => {
       });
     }
   } catch (err) {
-    // Log via audit-free path; creation continues with an empty line item table.
-    console.error("billed line item carry-forward failed", err);
+    // Roll back the freshly created package so a retry starts clean.
+    await db.delete(packagesTable).where(eq(packagesTable.id, row.id));
+    throw err;
   }
   await recordAudit({
     action: "created package",

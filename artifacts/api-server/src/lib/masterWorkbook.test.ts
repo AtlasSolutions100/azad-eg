@@ -201,8 +201,59 @@ describe("buildMasterWorkbook", () => {
     expect(cost.getCell("C12").value).toBeCloseTo(1.2058, 6);
     expect(cost.getCell("E37").value).toBeCloseTo(0.08, 6);
     expect(cost.getCell("D43").value).toBeCloseTo(0.0039, 6);
-    expect(cost.getCell("G11").value).toBe(1381971.85);
-    expect(cost.getCell("I13").value).toBe(1135877.49);
+  });
+
+  it("decomposes budget and previously billed per work scope on Sub Calc", () => {
+    const cost = wb.getWorksheet("Sub Calc")!;
+    const num = (addr: string) => {
+      const v = cost.getCell(addr).value;
+      if (v && typeof v === "object" && "result" in v) return (v as { result: number }).result;
+      return typeof v === "number" ? v : 0;
+    };
+    const oh = 1.2058;
+    const fccm = 0.0039;
+    // Own scope (B.50-03, the row with current billing): budget 115293.32
+    // splits across labor (G13) / OH (G14 formula) / fee (G39) / FCCM (G43
+    // formula) and sums back exactly.
+    const g13 = num("G13");
+    const g14 = Math.round(g13 * oh * 100) / 100;
+    const g43 = Math.round(g13 * fccm * 100) / 100;
+    expect(g13 + g14 + num("G39") + g43).toBeCloseTo(115293.32, 2);
+    expect(num("I13") + num("I14") + num("I39") + num("I43")).toBeCloseTo(48847.83, 2);
+    // Other scopes (B.50-01) aggregate on rows 11/12 with fee on row 37.
+    expect(num("G11") + num("G12") + num("G37")).toBeCloseTo(179582.83, 2);
+    expect(num("I11") + num("I12") + num("I37")).toBeCloseTo(179582.84, 2);
+    expect(cost.getCell("A13").value).toBe("Field B.50-03");
+    expect(cost.getCell("A11").value).toBe("Field B.50-01");
+  });
+
+  it("splits labor rows on a mid-period rate change like the reference", async () => {
+    const ctx = makeCtx();
+    // Week 1 (16 hrs) at the old rate; weeks 2-5 (128 hrs) at the new rate.
+    ctx.entries = ctx.entries.map((e, i) =>
+      i === 0 ? ({ ...e, rate: 90.11 } as typeof e) : e,
+    );
+    const { wb: wb2 } = await buildMasterWorkbook(ctx);
+    const overview = wb2.getWorksheet("Overview")!;
+    expect(overview.getCell("I17").value).toBe(90.11);
+    expect(overview.getCell("I18").value).toBe(92.5);
+    expect(String(overview.getCell("H18").value)).toContain("Effective 6/");
+    const labor = wb2.getWorksheet("Labor Attachment")!;
+    expect(labor.getCell("C19").value).toBe(16);
+    expect(fx(labor, "C20")).toContain("Overview");
+    expect(fx(labor, "C20")).toContain("$G$9-C19");
+    expect(String(labor.getCell("B20").value)).toContain("new rate effective 6/");
+    // Template rate formulas stay wired to the two Overview rate cells.
+    expect(fx(labor, "D19")).toContain("I17");
+    expect(fx(labor, "D20")).toContain("I18");
+  });
+
+  it("rejects more than two distinct billing rates", async () => {
+    const ctx = makeCtx();
+    ctx.entries = ctx.entries.map((e, i) =>
+      ({ ...e, rate: i === 0 ? 90.11 : i === 1 ? 91 : 92.5 }) as typeof e,
+    );
+    await expect(buildMasterWorkbook(ctx)).rejects.toThrow(/at most 2 billing rates/);
   });
 
   it("writes billed line items with variance formulas and clears unused rows", () => {
