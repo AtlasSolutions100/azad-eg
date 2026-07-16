@@ -227,6 +227,38 @@ describe("buildMasterWorkbook", () => {
     expect(cost.getCell("A11").value).toBe("Field B.50-01");
   });
 
+  it("writes the work plan's explicit per-category decomposition literally when set", async () => {
+    const ctx = makeCtx();
+    ctx.workPlan = {
+      ...ctx.workPlan,
+      budgetLabor: 50000.25,
+      budgetOverhead: 60290.42,
+      budgetFixedFee: 4807.55,
+      budgetFccm: 195.1,
+      prevBilledLabor: 21000.11,
+      prevBilledOverhead: 25322.93,
+      prevBilledFixedFee: 2442.9,
+      prevBilledFccm: 81.89,
+    } as typeof ctx.workPlan;
+    const { wb: wb2 } = await buildMasterWorkbook(ctx);
+    const cost = wb2.getWorksheet("Sub Calc")!;
+    expect(cost.getCell("G13").value).toBe(50000.25);
+    expect(cost.getCell("G14").value).toBe(60290.42);
+    expect(cost.getCell("G39").value).toBe(4807.55);
+    expect(cost.getCell("G43").value).toBe(195.1);
+    expect(cost.getCell("I13").value).toBe(21000.11);
+    expect(cost.getCell("I14").value).toBe(25322.93);
+    expect(cost.getCell("I39").value).toBe(2442.9);
+    expect(cost.getCell("I43").value).toBe(81.89);
+    // Other-scope rows are still back-solved from the billed line items.
+    const num = (addr: string) => {
+      const v = cost.getCell(addr).value;
+      if (v && typeof v === "object" && "result" in v) return (v as { result: number }).result;
+      return typeof v === "number" ? v : 0;
+    };
+    expect(num("G11") + num("G12") + num("G37")).toBeCloseTo(179582.83, 2);
+  });
+
   it("splits labor rows on a mid-period rate change like the reference", async () => {
     const ctx = makeCtx();
     // Week 1 (16 hrs) at the old rate; weeks 2-5 (128 hrs) at the new rate.

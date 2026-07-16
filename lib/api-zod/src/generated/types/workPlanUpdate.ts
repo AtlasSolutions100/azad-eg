@@ -21,6 +21,22 @@ export interface WorkPlanUpdate {
   poNumber?: string;
   wspProjectNo?: string;
   totalBudget?: number;
+  /** @nullable */
+  budgetLabor?: number | null;
+  /** @nullable */
+  budgetOverhead?: number | null;
+  /** @nullable */
+  budgetFixedFee?: number | null;
+  /** @nullable */
+  budgetFccm?: number | null;
+  /** @nullable */
+  prevBilledLabor?: number | null;
+  /** @nullable */
+  prevBilledOverhead?: number | null;
+  /** @nullable */
+  prevBilledFixedFee?: number | null;
+  /** @nullable */
+  prevBilledFccm?: number | null;
   fringeRate?: number;
   overheadRate?: number;
   fixedFeeRate?: number;

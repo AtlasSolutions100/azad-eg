@@ -21,6 +21,46 @@ export interface WorkPlan {
   /** @nullable */
   wspProjectNo?: string | null;
   totalBudget: number;
+  /**
+     * Labor portion of the budget (reference Sub Calc G13).
+     * @nullable
+     */
+  budgetLabor?: number | null;
+  /**
+     * Overhead portion of the budget (reference Sub Calc G14).
+     * @nullable
+     */
+  budgetOverhead?: number | null;
+  /**
+     * Fixed-fee portion of the budget (reference Sub Calc G39).
+     * @nullable
+     */
+  budgetFixedFee?: number | null;
+  /**
+     * FCCM portion of the budget (reference Sub Calc G43).
+     * @nullable
+     */
+  budgetFccm?: number | null;
+  /**
+     * Labor portion of previously billed (reference Sub Calc I13).
+     * @nullable
+     */
+  prevBilledLabor?: number | null;
+  /**
+     * Overhead portion of previously billed (reference Sub Calc I14).
+     * @nullable
+     */
+  prevBilledOverhead?: number | null;
+  /**
+     * Fixed-fee portion of previously billed (reference Sub Calc I39).
+     * @nullable
+     */
+  prevBilledFixedFee?: number | null;
+  /**
+     * FCCM portion of previously billed (reference Sub Calc I43).
+     * @nullable
+     */
+  prevBilledFccm?: number | null;
   fringeRate: number;
   /** @nullable */
   overheadRate?: number | null;

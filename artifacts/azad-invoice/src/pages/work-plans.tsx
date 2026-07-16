@@ -38,6 +38,14 @@ export default function WorkPlans() {
       poNumber: plan.poNumber ?? undefined,
       wspProjectNo: plan.wspProjectNo ?? undefined,
       totalBudget: plan.totalBudget,
+      budgetLabor: plan.budgetLabor ?? undefined,
+      budgetOverhead: plan.budgetOverhead ?? undefined,
+      budgetFixedFee: plan.budgetFixedFee ?? undefined,
+      budgetFccm: plan.budgetFccm ?? undefined,
+      prevBilledLabor: plan.prevBilledLabor ?? undefined,
+      prevBilledOverhead: plan.prevBilledOverhead ?? undefined,
+      prevBilledFixedFee: plan.prevBilledFixedFee ?? undefined,
+      prevBilledFccm: plan.prevBilledFccm ?? undefined,
       fringeRate: plan.fringeRate ?? undefined,
       overheadRate: plan.overheadRate ?? undefined,
       fixedFeeRate: plan.fixedFeeRate ?? undefined,
@@ -157,6 +165,25 @@ export default function WorkPlans() {
               <Label>FCCM Rate (%)</Label>
               <Input type="number" step="0.01" value={formData.fccmRate ?? ''} onChange={e => setFormData({...formData, fccmRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
             </div>
+            <div className="col-span-2 border-t pt-4">
+              <p className="text-sm font-medium text-[#333333]">Budget breakdown by cost category (optional)</p>
+              <p className="text-xs text-[#5F5F5F]">Splits the Sub Calc budget and previously-billed columns across labor, overhead, fixed fee, and FCCM rows exactly as entered. Leave blank to let the export calculate the split from the totals.</p>
+            </div>
+            {([
+              ["budgetLabor", "Budget — Labor"],
+              ["budgetOverhead", "Budget — Overhead"],
+              ["budgetFixedFee", "Budget — Fixed Fee"],
+              ["budgetFccm", "Budget — FCCM"],
+              ["prevBilledLabor", "Prev. Billed — Labor"],
+              ["prevBilledOverhead", "Prev. Billed — Overhead"],
+              ["prevBilledFixedFee", "Prev. Billed — Fixed Fee"],
+              ["prevBilledFccm", "Prev. Billed — FCCM"],
+            ] as const).map(([field, label]) => (
+              <div key={field} className="space-y-2">
+                <Label>{label} ($)</Label>
+                <Input type="number" step="0.01" value={formData[field] ?? ''} onChange={e => setFormData({...formData, [field]: e.target.value === '' ? undefined : Number(e.target.value)})} />
+              </div>
+            ))}
             <div className="col-span-2 border-t pt-4">
               <p className="text-sm font-medium text-[#333333]">Invoice cover header (printed on the client invoice)</p>
               <p className="text-xs text-[#5F5F5F]">Supplier, remit-to, and project references shown on the cover page.</p>

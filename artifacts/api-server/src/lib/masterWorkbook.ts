@@ -525,18 +525,46 @@ export async function buildMasterWorkbook(
     items.length > 0 ? sum(ownItems.map((it) => it.previousInvoiced)) : pkg.previouslyBilled;
   const otherBudget = sum(otherItems.map((it) => it.poAmount));
   const otherPrev = sum(otherItems.map((it) => it.previousInvoiced));
+  // When the work plan carries an explicit per-category decomposition
+  // (entered from Julie's reference sheet), those figures win over the
+  // back-solve and are written literally — including the OH/FCCM rows the
+  // back-solve derives by formula.
+  const budgetSplit =
+    wp.budgetLabor != null ||
+    wp.budgetOverhead != null ||
+    wp.budgetFixedFee != null ||
+    wp.budgetFccm != null;
+  const prevSplit =
+    wp.prevBilledLabor != null ||
+    wp.prevBilledOverhead != null ||
+    wp.prevBilledFixedFee != null ||
+    wp.prevBilledFccm != null;
   const gOwn = decompose(ownBudget, true);
   const iOwn = decompose(ownPrev, true);
   const gOther = decompose(otherBudget, false);
   const iOther = decompose(otherPrev, false);
-  setVal(cost, "G13", gOwn.laborRow);
-  setFormula(cost, "G14", "ROUND(G13*C14,2)");
-  setVal(cost, "G39", gOwn.feeRow);
-  setFormula(cost, "G43", "ROUND(G13*D43,2)");
-  setVal(cost, "I13", round2(iOwn.laborRow));
-  setVal(cost, "I14", iOwn.ohRow);
-  setVal(cost, "I39", iOwn.feeRow);
-  setVal(cost, "I43", iOwn.fccmRow);
+  if (budgetSplit) {
+    setVal(cost, "G13", round2(wp.budgetLabor ?? 0));
+    setVal(cost, "G14", round2(wp.budgetOverhead ?? 0));
+    setVal(cost, "G39", round2(wp.budgetFixedFee ?? 0));
+    setVal(cost, "G43", round2(wp.budgetFccm ?? 0));
+  } else {
+    setVal(cost, "G13", gOwn.laborRow);
+    setFormula(cost, "G14", "ROUND(G13*C14,2)");
+    setVal(cost, "G39", gOwn.feeRow);
+    setFormula(cost, "G43", "ROUND(G13*D43,2)");
+  }
+  if (prevSplit) {
+    setVal(cost, "I13", round2(wp.prevBilledLabor ?? 0));
+    setVal(cost, "I14", round2(wp.prevBilledOverhead ?? 0));
+    setVal(cost, "I39", round2(wp.prevBilledFixedFee ?? 0));
+    setVal(cost, "I43", round2(wp.prevBilledFccm ?? 0));
+  } else {
+    setVal(cost, "I13", round2(iOwn.laborRow));
+    setVal(cost, "I14", iOwn.ohRow);
+    setVal(cost, "I39", iOwn.feeRow);
+    setVal(cost, "I43", iOwn.fccmRow);
+  }
   setVal(cost, "G11", gOther.laborRow);
   setVal(cost, "G12", gOther.ohRow);
   setVal(cost, "G37", gOther.feeRow);

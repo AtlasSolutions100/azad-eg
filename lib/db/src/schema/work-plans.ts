@@ -10,6 +10,17 @@ export const workPlansTable = pgTable("work_plans", {
   poNumber: text("po_number"),
   wspProjectNo: text("wsp_project_no"),
   totalBudget: doublePrecision("total_budget").notNull(),
+  // Per-category decomposition of the budget and previously-billed amounts,
+  // mirroring the reference Sub Calc rows (labor / overhead / fixed fee /
+  // FCCM). Null means "not decomposed" — the export back-solves from totals.
+  budgetLabor: doublePrecision("budget_labor"),
+  budgetOverhead: doublePrecision("budget_overhead"),
+  budgetFixedFee: doublePrecision("budget_fixed_fee"),
+  budgetFccm: doublePrecision("budget_fccm"),
+  prevBilledLabor: doublePrecision("prev_billed_labor"),
+  prevBilledOverhead: doublePrecision("prev_billed_overhead"),
+  prevBilledFixedFee: doublePrecision("prev_billed_fixed_fee"),
+  prevBilledFccm: doublePrecision("prev_billed_fccm"),
   fringeRate: doublePrecision("fringe_rate").notNull().default(120.58),
   overheadRate: doublePrecision("overhead_rate"),
   fixedFeeRate: doublePrecision("fixed_fee_rate").notNull().default(8),

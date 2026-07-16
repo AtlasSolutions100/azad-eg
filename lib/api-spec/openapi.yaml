@@ -1465,6 +1465,30 @@ components:
         poNumber: { type: ["string", "null"] }
         wspProjectNo: { type: ["string", "null"] }
         totalBudget: { type: number }
+        budgetLabor:
+          type: ["number", "null"]
+          description: Labor portion of the budget (reference Sub Calc G13).
+        budgetOverhead:
+          type: ["number", "null"]
+          description: Overhead portion of the budget (reference Sub Calc G14).
+        budgetFixedFee:
+          type: ["number", "null"]
+          description: Fixed-fee portion of the budget (reference Sub Calc G39).
+        budgetFccm:
+          type: ["number", "null"]
+          description: FCCM portion of the budget (reference Sub Calc G43).
+        prevBilledLabor:
+          type: ["number", "null"]
+          description: Labor portion of previously billed (reference Sub Calc I13).
+        prevBilledOverhead:
+          type: ["number", "null"]
+          description: Overhead portion of previously billed (reference Sub Calc I14).
+        prevBilledFixedFee:
+          type: ["number", "null"]
+          description: Fixed-fee portion of previously billed (reference Sub Calc I39).
+        prevBilledFccm:
+          type: ["number", "null"]
+          description: FCCM portion of previously billed (reference Sub Calc I43).
         fringeRate: { type: number }
         overheadRate: { type: ["number", "null"] }
         fixedFeeRate: { type: number }
@@ -1498,6 +1522,14 @@ components:
         poNumber: { type: string }
         wspProjectNo: { type: string }
         totalBudget: { type: number }
+        budgetLabor: { type: ["number", "null"] }
+        budgetOverhead: { type: ["number", "null"] }
+        budgetFixedFee: { type: ["number", "null"] }
+        budgetFccm: { type: ["number", "null"] }
+        prevBilledLabor: { type: ["number", "null"] }
+        prevBilledOverhead: { type: ["number", "null"] }
+        prevBilledFixedFee: { type: ["number", "null"] }
+        prevBilledFccm: { type: ["number", "null"] }
         fringeRate: { type: number }
         overheadRate: { type: number }
         fixedFeeRate: { type: number }
@@ -1524,6 +1556,14 @@ components:
         poNumber: { type: string }
         wspProjectNo: { type: string }
         totalBudget: { type: number }
+        budgetLabor: { type: ["number", "null"] }
+        budgetOverhead: { type: ["number", "null"] }
+        budgetFixedFee: { type: ["number", "null"] }
+        budgetFccm: { type: ["number", "null"] }
+        prevBilledLabor: { type: ["number", "null"] }
+        prevBilledOverhead: { type: ["number", "null"] }
+        prevBilledFixedFee: { type: ["number", "null"] }
+        prevBilledFccm: { type: ["number", "null"] }
         fringeRate: { type: number }
         overheadRate: { type: number }
         fixedFeeRate: { type: number }

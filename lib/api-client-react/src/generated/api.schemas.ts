@@ -42,6 +42,46 @@ export interface WorkPlan {
   /** @nullable */
   wspProjectNo?: string | null;
   totalBudget: number;
+  /**
+     * Labor portion of the budget (reference Sub Calc G13).
+     * @nullable
+     */
+  budgetLabor?: number | null;
+  /**
+     * Overhead portion of the budget (reference Sub Calc G14).
+     * @nullable
+     */
+  budgetOverhead?: number | null;
+  /**
+     * Fixed-fee portion of the budget (reference Sub Calc G39).
+     * @nullable
+     */
+  budgetFixedFee?: number | null;
+  /**
+     * FCCM portion of the budget (reference Sub Calc G43).
+     * @nullable
+     */
+  budgetFccm?: number | null;
+  /**
+     * Labor portion of previously billed (reference Sub Calc I13).
+     * @nullable
+     */
+  prevBilledLabor?: number | null;
+  /**
+     * Overhead portion of previously billed (reference Sub Calc I14).
+     * @nullable
+     */
+  prevBilledOverhead?: number | null;
+  /**
+     * Fixed-fee portion of previously billed (reference Sub Calc I39).
+     * @nullable
+     */
+  prevBilledFixedFee?: number | null;
+  /**
+     * FCCM portion of previously billed (reference Sub Calc I43).
+     * @nullable
+     */
+  prevBilledFccm?: number | null;
   fringeRate: number;
   /** @nullable */
   overheadRate?: number | null;
@@ -93,6 +133,22 @@ export interface WorkPlanInput {
   poNumber?: string;
   wspProjectNo?: string;
   totalBudget: number;
+  /** @nullable */
+  budgetLabor?: number | null;
+  /** @nullable */
+  budgetOverhead?: number | null;
+  /** @nullable */
+  budgetFixedFee?: number | null;
+  /** @nullable */
+  budgetFccm?: number | null;
+  /** @nullable */
+  prevBilledLabor?: number | null;
+  /** @nullable */
+  prevBilledOverhead?: number | null;
+  /** @nullable */
+  prevBilledFixedFee?: number | null;
+  /** @nullable */
+  prevBilledFccm?: number | null;
   fringeRate?: number;
   overheadRate?: number;
   fixedFeeRate?: number;
@@ -137,6 +193,22 @@ export interface WorkPlanUpdate {
   poNumber?: string;
   wspProjectNo?: string;
   totalBudget?: number;
+  /** @nullable */
+  budgetLabor?: number | null;
+  /** @nullable */
+  budgetOverhead?: number | null;
+  /** @nullable */
+  budgetFixedFee?: number | null;
+  /** @nullable */
+  budgetFccm?: number | null;
+  /** @nullable */
+  prevBilledLabor?: number | null;
+  /** @nullable */
+  prevBilledOverhead?: number | null;
+  /** @nullable */
+  prevBilledFixedFee?: number | null;
+  /** @nullable */
+  prevBilledFccm?: number | null;
   fringeRate?: number;
   overheadRate?: number;
   fixedFeeRate?: number;
