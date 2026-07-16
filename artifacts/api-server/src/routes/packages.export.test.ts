@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { generatedDir } from "../lib/paths";
 
 // Mutable auth state shared with the mocked Clerk module (see rules.test.ts).
@@ -219,14 +220,51 @@ async function seedSharedNamePackage(): Promise<{
  * Scanning local-header signatures is unreliable because compressed payloads
  * (xlsx files are themselves ZIPs) can coincidentally contain those bytes.
  */
-function countZipEntries(zipPath: string): number {
-  const buf = fs.readFileSync(zipPath);
+function findEocd(buf: Buffer): number {
   for (let i = buf.length - 22; i >= 0; i--) {
     if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
-      return buf.readUInt16LE(i + 10);
+      return i;
     }
   }
   return -1;
+}
+
+function countZipEntries(zipPath: string): number {
+  const buf = fs.readFileSync(zipPath);
+  const eocd = findEocd(buf);
+  return eocd >= 0 ? buf.readUInt16LE(eocd + 10) : -1;
+}
+
+/**
+ * Extracts one entry (matched by filename suffix) from a ZIP by walking the
+ * central directory. Intermediate xlsx/pdf files are deleted after zipping,
+ * so tests must read the combined documents out of the ZIP itself.
+ */
+function readZipEntry(zipPath: string, suffix: string): Buffer {
+  const buf = fs.readFileSync(zipPath);
+  const eocd = findEocd(buf);
+  if (eocd < 0) throw new Error("EOCD not found");
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) throw new Error("Bad central directory entry");
+    const method = buf.readUInt16LE(off + 10);
+    const compSize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const localOff = buf.readUInt32LE(off + 42);
+    const name = buf.toString("utf8", off + 46, off + 46 + nameLen);
+    if (name.endsWith(suffix)) {
+      const lNameLen = buf.readUInt16LE(localOff + 26);
+      const lExtraLen = buf.readUInt16LE(localOff + 28);
+      const dataStart = localOff + 30 + lNameLen + lExtraLen;
+      const data = buf.subarray(dataStart, dataStart + compSize);
+      return method === 0 ? Buffer.from(data) : zlib.inflateRawSync(data);
+    }
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  throw new Error(`Entry ending with "${suffix}" not found in ${path.basename(zipPath)}`);
 }
 
 beforeAll(() => {
@@ -299,14 +337,13 @@ describe("POST /api/packages/:id/export", () => {
       const res = await request(app).post(`/api/packages/${pkgId}/export`).send({});
       expect(res.status).toBe(200);
 
-      const combined = fs
-        .readdirSync(generatedDir)
-        .filter((f) => !before.has(f) && f.startsWith("InvoicePackage_") && f.endsWith(".xlsx"));
-      expect(combined).toHaveLength(1);
-      createdFilePrefixes.push(combined[0]);
+      // Intermediate combined files are deleted after zipping; only the ZIP remains.
+      const fresh = fs.readdirSync(generatedDir).filter((f) => !before.has(f));
+      expect(fresh.filter((f) => f.startsWith("InvoicePackage_"))).toHaveLength(0);
 
+      const zipPath = path.resolve(generatedDir, res.body.filename);
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.readFile(path.resolve(generatedDir, combined[0]));
+      await wb.xlsx.load(readZipEntry(zipPath, "_InvoicePackage.xlsx") as unknown as Parameters<typeof wb.xlsx.load>[0]);
       const names = wb.worksheets.map((ws) => ws.name);
       expect(names.slice(0, 5)).toEqual([
         "Overview",
@@ -333,15 +370,13 @@ describe("POST /api/packages/:id/export", () => {
       expect(res.status).toBe(200);
       expect(res.body.documentCount).toBe(2);
 
+      // Intermediate combined files are deleted after zipping; only the ZIP remains.
       const fresh = fs.readdirSync(generatedDir).filter((f) => !before.has(f));
-      const combined = fresh.filter((f) => f.startsWith("InvoicePackage_") && f.endsWith(".xlsx"));
-      const merged = fresh.filter((f) => f.startsWith("InvoicePackage_") && f.endsWith(".pdf"));
-      expect(combined).toHaveLength(1);
-      expect(merged).toHaveLength(1);
-      createdFilePrefixes.push(...combined, ...merged);
+      expect(fresh.filter((f) => f.startsWith("InvoicePackage_"))).toHaveLength(0);
 
+      const zipPath = path.resolve(generatedDir, res.body.filename);
       const wb = new ExcelJS.Workbook();
-      await wb.xlsx.readFile(path.resolve(generatedDir, combined[0]));
+      await wb.xlsx.load(readZipEntry(zipPath, "_InvoicePackage.xlsx") as unknown as Parameters<typeof wb.xlsx.load>[0]);
       expect(wb.worksheets.map((ws) => ws.name)).toEqual([
         "Overview",
         "Invoice",
@@ -350,7 +385,7 @@ describe("POST /api/packages/:id/export", () => {
         "Labor Attachment",
       ]);
 
-      const pdf = await PDFDocument.load(fs.readFileSync(path.resolve(generatedDir, merged[0])));
+      const pdf = await PDFDocument.load(readZipEntry(zipPath, "_InvoicePackage.pdf"));
       expect(pdf.getPageCount()).toBeGreaterThan(0);
     },
     120000,

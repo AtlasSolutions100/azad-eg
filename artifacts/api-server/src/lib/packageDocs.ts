@@ -5,6 +5,7 @@ import { ZipArchive } from "archiver";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
 import { convertToPdf, stripBrokenDefinedNames } from "./excel";
 import { buildPackageRollup, contributorKey } from "./packageMappers";
+import { pruneGeneratedFiles } from "./generatedCleanup";
 import { logger } from "./logger";
 import type {
   PackageRow,
@@ -970,6 +971,13 @@ export async function generatePackageZip(ctx: PackageDocContext): Promise<Packag
     cleanupFiles([...files.map((f) => f.path), zipPath]);
     throw err;
   }
+
+  // The ZIP now contains both files; the standalone combined xlsx/pdf are
+  // intermediates and would otherwise accumulate forever.
+  cleanupFiles(files.map((f) => f.path));
+  // Bound disk growth: keep only the newest ZIPs per package and sweep
+  // stale loose files (including legacy per-document exports).
+  pruneGeneratedFiles();
 
   return {
     zipPath,

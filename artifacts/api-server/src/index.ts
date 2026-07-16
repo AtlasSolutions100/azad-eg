@@ -5,6 +5,7 @@ import { seedDatabase } from "./lib/seed";
 import { startProcasScheduler } from "./lib/procasScheduler";
 import { reencryptProcasConnectionIfNeeded } from "./lib/procas";
 import { backfillTimesheetEmployeeIds } from "./lib/employeeResolve";
+import { pruneGeneratedFiles } from "./lib/generatedCleanup";
 
 const rawPort = process.env["PORT"];
 
@@ -52,6 +53,14 @@ app.listen(port, async (err) => {
     }
   } catch (backfillErr) {
     logger.error({ err: backfillErr }, "Timesheet employeeId backfill failed");
+  }
+
+  try {
+    // Sweep old generated export files (legacy ZIPs, stale intermediates) so
+    // storage does not grow forever.
+    pruneGeneratedFiles();
+  } catch (pruneErr) {
+    logger.error({ err: pruneErr }, "Failed to prune generated export files");
   }
 
   try {
