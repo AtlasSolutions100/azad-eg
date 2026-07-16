@@ -1,6 +1,7 @@
 import { db, lineItemsTable, employeesTable } from "@workspace/db";
 import { and, eq, ne } from "drizzle-orm";
 import type { ParsedLine } from "./timeimport";
+import { normalizeEmployeeName } from "./employeeResolve";
 
 export type EmployeeRow = typeof employeesTable.$inferSelect;
 
@@ -13,10 +14,30 @@ export function linesToLineItems(
   employees: EmployeeRow[],
   source: string,
 ): { toInsert: Array<typeof lineItemsTable.$inferInsert>; warnings: string[] } {
-  const empByName = new Map(employees.map((e) => [e.name.toLowerCase().trim(), e]));
+  // Names shared by multiple employees are ambiguous — never guess, or hours
+  // could be linked to the wrong person (wrong rate/classification).
+  const empByName = new Map<string, EmployeeRow>();
+  const ambiguousNames = new Set<string>();
+  for (const e of employees) {
+    const key = normalizeEmployeeName(e.name);
+    if (empByName.has(key)) {
+      empByName.delete(key);
+      ambiguousNames.add(key);
+    } else if (!ambiguousNames.has(key)) {
+      empByName.set(key, e);
+    }
+  }
   const warnings: string[] = [];
+  const warnedAmbiguous = new Set<string>();
   const toInsert = lines.map((line) => {
-    const emp = empByName.get(line.employeeName.toLowerCase().trim());
+    const key = normalizeEmployeeName(line.employeeName);
+    const emp = empByName.get(key);
+    if (ambiguousNames.has(key) && !warnedAmbiguous.has(key)) {
+      warnedAmbiguous.add(key);
+      warnings.push(
+        `${line.employeeName}: multiple employees share this name — rows were left unlinked; please link the correct employee manually.`,
+      );
+    }
     let rate = line.rate;
     let classification = line.classification;
     if (rate <= 0 && emp) {
