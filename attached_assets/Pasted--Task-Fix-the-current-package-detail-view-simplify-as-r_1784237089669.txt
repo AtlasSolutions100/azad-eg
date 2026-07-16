@@ -1,0 +1,41 @@
+**Task: Fix the current package detail view + simplify as requested** Only make these edits. 
+
+1. **Simplify the UI**
+   - Remove or collapse the detailed list of 5 individual "Week X" cards.
+   - Replace with one clean compact Snapshot section showing:
+     - "5 Weeks in this pay period"
+     - Total Hours: 144
+   - Move all detailed weekly timesheet cards to the **Timesheets** tab only.
+   - Keep the right-side Snapshot box but make it clean and accurate.
+
+2. **Fix Header Metrics to 100% accuracy** (map exactly from Excel tabs)
+   - Total Hours → 144 (from Labor Attachment "Total Labor" hours + Master File Total)
+   - Labor Total → $13,281.76 (from Labor Attachment "Total (Labor+Overtime)")
+   - This Period → $31,692.46 (from Cover sheet "TOTAL AMOUNT DUE THIS INVOICE" and Cost sheet "Total Amount Due")
+   - Total to Date → $1,167,569.95 (from Cover row 35 "Total Invoiced" and Master File)
+   - % Expended → 84.49% (from Cover / Cost sheet)
+   - Also display correctly: Budget $1,381,971.85, Previously Billed $1,135,877.49, Amount Remaining $214,401.91
+
+3. **Fix the Snapshot box**
+   - Use the same accurate numbers above.
+   - Show "5 Weeks" clearly.
+
+
+5. **Data Mapping Rule (critical for accuracy)**
+   - Explicitly read and map values from these tabs:
+     - Master File (for hours total, period dates, budget, previously billed)
+     - Cover (for Invoice #, Total Amount Due, line items, Billing Summary, % Expended)
+     - Cost / Sub Calc (for detailed calculations)
+     - Labor Attachment (for hours, rates, labor total)
+     - Report (for progress text if shown in Overview)
+   - Do not calculate or approximate any number — pull directly from the cells in the reference Excel.
+
+6. **Keep existing tabs**
+   - Overview, Invoice, Sub Calc, Progress Report, Labor Attachment, Timesheets — leave the tab structure as-is.
+   - The "Invoice" tab should show the clean Cover sheet content.
+   - The "Timesheets" tab should show all weekly timesheets cleanly.
+
+7. **Export button**
+   - The "Export Package (Excel + PDF)" button should still work and produce files that match the reference PDF page order and Excel tabs exactly.
+
+After making these changes, regenerate the view for this package and confirm the numbers now match the Excel exactly. Then show me the updated screenshot or describe the new layout.
