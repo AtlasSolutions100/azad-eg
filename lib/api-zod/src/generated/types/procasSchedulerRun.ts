@@ -5,6 +5,7 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProcasSchedulerRunSkipReason } from './procasSchedulerRunSkipReason';
 
 export interface ProcasSchedulerRun {
   id: number;
@@ -12,6 +13,8 @@ export interface ProcasSchedulerRun {
   synced: number;
   failed: number;
   skipped: boolean;
+  /** @nullable */
+  skipReason?: ProcasSchedulerRunSkipReason;
   /** @nullable */
   error?: string | null;
 }

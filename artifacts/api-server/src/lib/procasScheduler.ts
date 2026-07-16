@@ -241,13 +241,27 @@ async function recordCycleResult(result: {
     .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
   // Append this cycle to the rolling history, then prune anything beyond the
   // newest MAX_RUN_HISTORY rows so the table stays bounded.
-  await db.insert(procasSchedulerRunsTable).values({
+  await appendRunHistory({
     ranAt,
     synced: result.synced,
     failed: result.failed,
     skipped: result.skipped,
+    skipReason: null,
     error: result.error ?? null,
   });
+}
+
+// Inserts one row into the rolling run history and prunes anything beyond the
+// newest MAX_RUN_HISTORY rows so the table stays bounded.
+async function appendRunHistory(row: {
+  ranAt: Date;
+  synced: number;
+  failed: number;
+  skipped: boolean;
+  skipReason: SkipReason | null;
+  error: string | null;
+}): Promise<void> {
+  await db.insert(procasSchedulerRunsTable).values(row);
   const keep = db
     .select({ id: procasSchedulerRunsTable.id })
     .from(procasSchedulerRunsTable)
@@ -308,6 +322,16 @@ async function safeRecordSkippedTick(reason: SkipReason): Promise<void> {
         lastSkipReason: reason,
       })
       .where(eq(procasSchedulerTable.id, SCHEDULER_ID));
+    // Also append the skip to the run history so billers reviewing the recent
+    // refresh list see why a tick left a gap instead of silently nothing.
+    await appendRunHistory({
+      ranAt: new Date(),
+      synced: 0,
+      failed: 0,
+      skipped: true,
+      skipReason: reason,
+      error: null,
+    });
   } catch (e) {
     logger.error({ err: e, reason }, "Failed to record skipped Procas sync tick");
   }

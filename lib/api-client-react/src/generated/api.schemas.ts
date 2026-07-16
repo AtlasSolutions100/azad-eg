@@ -742,12 +742,25 @@ export interface ProcasSchedulerStatus {
   staleReason: ProcasSchedulerStatusStaleReason;
 }
 
+/**
+ * @nullable
+ */
+export type ProcasSchedulerRunSkipReason = typeof ProcasSchedulerRunSkipReason[keyof typeof ProcasSchedulerRunSkipReason] | null;
+
+
+export const ProcasSchedulerRunSkipReason = {
+  db_busy: 'db_busy',
+  lock_held: 'lock_held',
+} as const;
+
 export interface ProcasSchedulerRun {
   id: number;
   ranAt: string;
   synced: number;
   failed: number;
   skipped: boolean;
+  /** @nullable */
+  skipReason?: ProcasSchedulerRunSkipReason;
   /** @nullable */
   error?: string | null;
 }

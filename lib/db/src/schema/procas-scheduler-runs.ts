@@ -12,6 +12,10 @@ export const procasSchedulerRunsTable = pgTable(
     synced: integer("synced").notNull().default(0),
     failed: integer("failed").notNull().default(0),
     skipped: boolean("skipped").notNull().default(false),
+    // Why the tick was skipped, when it was: "db_busy" / "lock_held" for ticks
+    // that never ran a cycle, or null for skips due to Procas being
+    // disconnected (and for all non-skipped rows).
+    skipReason: text("skip_reason"),
     error: text("error"),
   },
   (table) => [index("procas_scheduler_runs_ran_at_idx").on(table.ranAt)],

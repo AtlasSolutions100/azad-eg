@@ -1228,6 +1228,21 @@ describe("procas integration", () => {
       const streak = await getSchedulerState();
       expect(streak.consecutiveSkips).toBe(3);
       expect(streak.skipWarning).toBe(true);
+
+      // Each skipped tick also lands in the run history with its reason so
+      // billers reviewing recent refreshes see why ticks left gaps.
+      const runsRes = await request(app).get("/api/procas/scheduler/runs");
+      expect(runsRes.status).toBe(200);
+      const skippedRuns = runsRes.body.filter(
+        (r: { skipReason: string | null }) => r.skipReason === "lock_held",
+      );
+      expect(skippedRuns).toHaveLength(3);
+      for (const run of skippedRuns) {
+        expect(run.skipped).toBe(true);
+        expect(run.synced).toBe(0);
+        expect(run.failed).toBe(0);
+        expect(run.error).toBeNull();
+      }
     } finally {
       await holder.query("SELECT pg_advisory_unlock($1)", [SYNC_LOCK_KEY]);
       holder.release();

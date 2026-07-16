@@ -1996,6 +1996,9 @@ components:
         synced: { type: integer }
         failed: { type: integer }
         skipped: { type: boolean }
+        skipReason:
+          type: ["string", "null"]
+          enum: [db_busy, lock_held, null]
         error: { type: ["string", "null"] }
 
     ProcasSchedulerInput:

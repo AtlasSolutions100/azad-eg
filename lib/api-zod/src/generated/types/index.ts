@@ -76,6 +76,7 @@ export * from './packageWeekUpdate';
 export * from './procasConnectInput';
 export * from './procasSchedulerInput';
 export * from './procasSchedulerRun';
+export * from './procasSchedulerRunSkipReason';
 export * from './procasSchedulerStatus';
 export * from './procasSchedulerStatusLastSkipReason';
 export * from './procasSchedulerStatusStaleReason';
