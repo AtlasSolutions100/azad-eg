@@ -78,6 +78,7 @@ export * from './procasSchedulerInput';
 export * from './procasSchedulerRun';
 export * from './procasSchedulerStatus';
 export * from './procasSchedulerStatusLastSkipReason';
+export * from './procasSchedulerStatusStaleReason';
 export * from './procasStatus';
 export * from './procasStatusMode';
 export * from './progressReport';

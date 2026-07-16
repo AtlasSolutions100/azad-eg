@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ProcasSchedulerStatusLastSkipReason } from './procasSchedulerStatusLastSkipReason';
+import type { ProcasSchedulerStatusStaleReason } from './procasSchedulerStatusStaleReason';
 
 export interface ProcasSchedulerStatus {
   connected: boolean;
@@ -24,4 +25,6 @@ export interface ProcasSchedulerStatus {
   skipWarning: boolean;
   persistFailures: number;
   resultsStale: boolean;
+  /** @nullable */
+  staleReason: ProcasSchedulerStatusStaleReason;
 }

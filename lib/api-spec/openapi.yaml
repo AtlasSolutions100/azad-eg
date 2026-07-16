@@ -1947,6 +1947,7 @@ components:
         - skipWarning
         - persistFailures
         - resultsStale
+        - staleReason
       properties:
         connected: { type: boolean }
         intervalMs: { type: integer }
@@ -1963,6 +1964,9 @@ components:
         skipWarning: { type: boolean }
         persistFailures: { type: integer }
         resultsStale: { type: boolean }
+        staleReason:
+          type: ["string", "null"]
+          enum: ["persist_failures", "last_run_age", null]
 
     ProcasSchedulerRun:
       type: object

@@ -47,6 +47,7 @@ async function schedulerPayload(state: ProcasSchedulerState) {
     skipWarning: state.skipWarning,
     persistFailures: state.persistFailures,
     resultsStale: state.resultsStale,
+    staleReason: state.staleReason,
   };
 }
 

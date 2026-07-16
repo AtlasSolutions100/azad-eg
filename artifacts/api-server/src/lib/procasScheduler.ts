@@ -47,6 +47,23 @@ let consecutivePersistFailures = 0;
 // flagged stale so the UI can warn admins.
 export const PERSIST_FAILURE_WARN_THRESHOLD = 3;
 
+// Age-based staleness: if the persisted lastRunAt is older than this many
+// scheduler intervals while the loop is running and Procas is connected, the
+// status is flagged stale. Unlike the in-memory persist-failure counter, this
+// works across restarts and multiple autoscale instances because it compares
+// against the timestamp stored in the database.
+export const STALE_INTERVAL_MULTIPLIER = 3;
+
+// When this instance's scheduler loop started. Used as a startup grace period
+// so a freshly booted instance doesn't flag an old lastRunAt as stale before
+// it has had a chance to run its first few cycles.
+let schedulerStartedAt: Date | null = null;
+
+// Exported for tests.
+export function setSchedulerStartedAtForTest(d: Date | null): void {
+  schedulerStartedAt = d;
+}
+
 // Exported for tests.
 export function resetPersistFailuresForTest(): void {
   consecutivePersistFailures = 0;
@@ -119,15 +136,49 @@ export interface ProcasSchedulerState {
   skipWarning: boolean;
   // Consecutive failures to persist a cycle outcome (in-memory, per instance).
   persistFailures: number;
-  // True once persistFailures reaches PERSIST_FAILURE_WARN_THRESHOLD — the
-  // persisted last-run info shown in the UI can no longer be trusted as fresh.
+  // True when the persisted last-run info shown in the UI can no longer be
+  // trusted as fresh — either persistFailures reached the warn threshold on
+  // this instance, or the persisted lastRunAt is much older than the
+  // configured interval (which survives restarts and other instances).
   resultsStale: boolean;
+  // Why resultsStale is true (null when it is false). "persist_failures"
+  // takes precedence when both conditions hold.
+  staleReason: "persist_failures" | "last_run_age" | null;
+}
+
+// Checks whether the persisted lastRunAt is suspiciously old given the
+// configured interval. Only meaningful while the scheduler loop is active,
+// after a startup grace period (so a freshly booted instance doesn't flag an
+// old timestamp before its first cycles), and when Procas is actually
+// connected (disconnected mode still records skipped runs, but we don't want
+// to alarm admins over a feature that is intentionally idle).
+async function isLastRunStale(lastRunAt: Date | null, intervalMs: number): Promise<boolean> {
+  // schedulerStartedAt is only non-null while the loop is active (set in
+  // start, cleared in stop), so this also gates on the scheduler running.
+  if (!schedulerStartedAt) return false;
+  const now = Date.now();
+  const thresholdMs = intervalMs * STALE_INTERVAL_MULTIPLIER;
+  // Startup grace: this instance must have been running long enough that at
+  // least a few cycles should have happened since it booted.
+  if (now - schedulerStartedAt.getTime() < thresholdMs) return false;
+  if (lastRunAt && now - lastRunAt.getTime() < thresholdMs) return false;
+  // Only check the connection last — it's the most expensive test.
+  try {
+    const conn = await getProcasConnection();
+    return !!conn?.connected;
+  } catch {
+    // Can't determine the connection state; don't raise a possibly-false alarm.
+    return false;
+  }
 }
 
 export async function getSchedulerState(): Promise<ProcasSchedulerState> {
   const row = await getSchedulerRow();
+  const intervalMs = clampInterval(row.intervalMs ?? envIntervalMs());
+  const persistStale = consecutivePersistFailures >= PERSIST_FAILURE_WARN_THRESHOLD;
+  const ageStale = persistStale ? false : await isLastRunStale(row.lastRunAt, intervalMs);
   return {
-    intervalMs: clampInterval(row.intervalMs ?? envIntervalMs()),
+    intervalMs,
     running,
     lastRunAt: row.lastRunAt,
     lastSynced: row.lastSynced,
@@ -141,7 +192,8 @@ export async function getSchedulerState(): Promise<ProcasSchedulerState> {
         : null,
     skipWarning: row.consecutiveSkips >= SKIP_WARN_THRESHOLD,
     persistFailures: consecutivePersistFailures,
-    resultsStale: consecutivePersistFailures >= PERSIST_FAILURE_WARN_THRESHOLD,
+    resultsStale: persistStale || ageStale,
+    staleReason: persistStale ? "persist_failures" : ageStale ? "last_run_age" : null,
   };
 }
 
@@ -449,6 +501,7 @@ export async function tick(): Promise<void> {
 export async function startProcasScheduler(): Promise<void> {
   if (timer) return;
   const ms = await getEffectiveIntervalMs();
+  schedulerStartedAt = new Date();
   timer = setInterval(() => {
     void tick();
   }, ms);
@@ -462,4 +515,5 @@ export function stopProcasScheduler(): void {
     clearInterval(timer);
     timer = null;
   }
+  schedulerStartedAt = null;
 }

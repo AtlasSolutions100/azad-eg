@@ -1069,6 +1069,78 @@ describe("procas integration", () => {
     const recovered = await scheduler.getSchedulerState();
     expect(recovered.persistFailures).toBe(0);
     expect(recovered.resultsStale).toBe(false);
+    expect(recovered.staleReason).toBeNull();
+  });
+
+  it("flags results stale when the persisted lastRunAt is older than the expected interval window", async () => {
+    const scheduler = await import("../lib/procasScheduler");
+    const procasModule = await import("../lib/procas");
+
+    scheduler.resetPersistFailuresForTest();
+
+    // Fetch current state once to ensure the scheduler row exists, then age
+    // the persisted lastRunAt far beyond the stale window.
+    const base = await scheduler.getSchedulerState();
+    const thresholdMs = base.intervalMs * scheduler.STALE_INTERVAL_MULTIPLIER;
+    const oldRunAt = new Date(Date.now() - thresholdMs - 60_000);
+    await db.update(procasSchedulerTable).set({ lastRunAt: oldRunAt });
+
+    const connSpy = vi.spyOn(procasModule, "getProcasConnection").mockResolvedValue({
+      connected: true,
+      companyCode: "CO",
+      username: "user",
+      password: "pw",
+      lastSyncAt: null,
+    } as never);
+
+    try {
+      // Scheduler not started on this instance → no staleness signal at all.
+      scheduler.setSchedulerStartedAtForTest(null);
+      let state = await scheduler.getSchedulerState();
+      expect(state.resultsStale).toBe(false);
+      expect(state.staleReason).toBeNull();
+
+      // Freshly started instance (inside the startup grace window) → still no
+      // false positive, even though lastRunAt is old.
+      scheduler.setSchedulerStartedAtForTest(new Date());
+      state = await scheduler.getSchedulerState();
+      expect(state.resultsStale).toBe(false);
+
+      // Instance has been up longer than the stale window → the old
+      // persisted timestamp is now a genuine stale signal.
+      scheduler.setSchedulerStartedAtForTest(new Date(Date.now() - thresholdMs - 60_000));
+      state = await scheduler.getSchedulerState();
+      expect(state.resultsStale).toBe(true);
+      expect(state.staleReason).toBe("last_run_age");
+
+      // The status endpoint surfaces it too.
+      const res = await request(app).get("/api/procas/scheduler");
+      expect(res.status).toBe(200);
+      expect(res.body.resultsStale).toBe(true);
+      expect(res.body.staleReason).toBe("last_run_age");
+
+      // Procas disconnected → intentionally idle, no warning.
+      connSpy.mockResolvedValue(null as never);
+      state = await scheduler.getSchedulerState();
+      expect(state.resultsStale).toBe(false);
+      expect(state.staleReason).toBeNull();
+
+      // A recent lastRunAt clears the warning.
+      connSpy.mockResolvedValue({
+        connected: true,
+        companyCode: "CO",
+        username: "user",
+        password: "pw",
+        lastSyncAt: null,
+      } as never);
+      await db.update(procasSchedulerTable).set({ lastRunAt: new Date() });
+      state = await scheduler.getSchedulerState();
+      expect(state.resultsStale).toBe(false);
+      expect(state.staleReason).toBeNull();
+    } finally {
+      scheduler.setSchedulerStartedAtForTest(null);
+      connSpy.mockRestore();
+    }
   });
 
   it("skips a concurrent cycle cleanly when another instance holds the cross-instance sync lock", async () => {

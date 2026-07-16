@@ -710,6 +710,17 @@ export const ProcasSchedulerStatusLastSkipReason = {
   lock_held: 'lock_held',
 } as const;
 
+/**
+ * @nullable
+ */
+export type ProcasSchedulerStatusStaleReason = typeof ProcasSchedulerStatusStaleReason[keyof typeof ProcasSchedulerStatusStaleReason] | null;
+
+
+export const ProcasSchedulerStatusStaleReason = {
+  persist_failures: 'persist_failures',
+  last_run_age: 'last_run_age',
+} as const;
+
 export interface ProcasSchedulerStatus {
   connected: boolean;
   intervalMs: number;
@@ -727,6 +738,8 @@ export interface ProcasSchedulerStatus {
   skipWarning: boolean;
   persistFailures: number;
   resultsStale: boolean;
+  /** @nullable */
+  staleReason: ProcasSchedulerStatusStaleReason;
 }
 
 export interface ProcasSchedulerRun {

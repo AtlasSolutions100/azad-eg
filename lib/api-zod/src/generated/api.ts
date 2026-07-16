@@ -1336,7 +1336,8 @@ export const GetProcasSchedulerResponse = zod.object({
   "lastSkipReason": zod.union([zod.literal('db_busy'),zod.literal('lock_held'),zod.literal(null)]).nullish(),
   "skipWarning": zod.boolean(),
   "persistFailures": zod.number(),
-  "resultsStale": zod.boolean()
+  "resultsStale": zod.boolean(),
+  "staleReason": zod.union([zod.literal('persist_failures'),zod.literal('last_run_age'),zod.literal(null)]).nullable()
 })
 
 
@@ -1360,7 +1361,8 @@ export const UpdateProcasSchedulerResponse = zod.object({
   "lastSkipReason": zod.union([zod.literal('db_busy'),zod.literal('lock_held'),zod.literal(null)]).nullish(),
   "skipWarning": zod.boolean(),
   "persistFailures": zod.number(),
-  "resultsStale": zod.boolean()
+  "resultsStale": zod.boolean(),
+  "staleReason": zod.union([zod.literal('persist_failures'),zod.literal('last_run_age'),zod.literal(null)]).nullable()
 })
 
 
@@ -1394,7 +1396,8 @@ export const RefreshProcasNowResponse = zod.object({
   "lastSkipReason": zod.union([zod.literal('db_busy'),zod.literal('lock_held'),zod.literal(null)]).nullish(),
   "skipWarning": zod.boolean(),
   "persistFailures": zod.number(),
-  "resultsStale": zod.boolean()
+  "resultsStale": zod.boolean(),
+  "staleReason": zod.union([zod.literal('persist_failures'),zod.literal('last_run_age'),zod.literal(null)]).nullable()
 })
 
 
