@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import type { DateRange } from "react-day-picker";
 import { usePagedAuditLogs } from "@/hooks/use-paged-audit-logs";
+import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -28,6 +29,11 @@ export default function AuditLog() {
   const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
     usePagedAuditLogs();
   const [overridesOnly, setOverridesOnly] = useState(false);
+  const loadMoreRef = useInfiniteScroll({
+    hasMore: !!hasNextPage,
+    isFetching: isFetchingNextPage,
+    onLoadMore: fetchNextPage,
+  });
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
@@ -223,7 +229,7 @@ export default function AuditLog() {
       </div>
 
       {hasNextPage ? (
-        <div className="flex justify-center">
+        <div ref={loadMoreRef} className="flex justify-center">
           <Button
             variant="outline"
             onClick={() => fetchNextPage()}

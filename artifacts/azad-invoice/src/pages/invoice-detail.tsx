@@ -52,6 +52,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import BudgetOverrideHistory from "@/components/budget-override-history";
 import { usePagedAuditLogs } from "@/hooks/use-paged-audit-logs";
+import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { Loader2 } from "lucide-react";
 
 function sourceBadge(source?: string) {
@@ -84,6 +85,11 @@ export default function InvoiceDetail() {
     isFetchingNextPage: isFetchingMoreAuditLogs,
     fetchNextPage: fetchMoreAuditLogs,
   } = usePagedAuditLogs({ entityType: "invoice", entityId: invoiceId });
+  const loadMoreActivityRef = useInfiniteScroll({
+    hasMore: !!hasMoreAuditLogs,
+    isFetching: isFetchingMoreAuditLogs,
+    onLoadMore: fetchMoreAuditLogs,
+  });
 
   // Surface when this invoice's carry-over ("previously billed") was
   // automatically recalculated because an upstream invoice on the same work
@@ -1053,7 +1059,7 @@ export default function InvoiceDetail() {
                 </p>
               )}
               {hasMoreAuditLogs ? (
-                <div className="mt-4 flex justify-center">
+                <div ref={loadMoreActivityRef} className="mt-4 flex justify-center">
                   <Button
                     variant="outline"
                     onClick={() => fetchMoreAuditLogs()}
