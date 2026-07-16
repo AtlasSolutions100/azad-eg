@@ -185,6 +185,14 @@ export default function InvoiceDetail() {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
 
+  // Confirmation dialog so the biller can see which signature will be applied.
+  const [approveOpen, setApproveOpen] = useState(false);
+
+  // The signature that will be applied on approval: the default, or the
+  // first available one as a fallback when no default is set.
+  const approvalSignature = signatures?.find(s => s.isDefault) ?? signatures?.[0];
+  const isFallbackSignature = !!approvalSignature && !approvalSignature.isDefault;
+
   // Line item modal state
   const [liOpen, setLiOpen] = useState(false);
   const [liEditId, setLiEditId] = useState<number | null>(null);
@@ -374,7 +382,7 @@ export default function InvoiceDetail() {
   };
 
   const submitApproval = async (budgetOverride: boolean, reason?: string) => {
-    const signature = signatures?.find(s => s.isDefault) ?? signatures?.[0];
+    const signature = approvalSignature;
     if (!signature) {
       alert("No signatures found. Please add one in Signatures.");
       return;
@@ -391,6 +399,7 @@ export default function InvoiceDetail() {
       queryClient.invalidateQueries();
       setOverrideOpen(false);
       setOverrideReason("");
+      setApproveOpen(false);
       toast({ title: "Invoice approved" });
     } catch (e) {
       console.error(e);
@@ -403,13 +412,18 @@ export default function InvoiceDetail() {
   };
 
   const handleApprove = () => {
+    if (!approvalSignature) {
+      alert("No signatures found. Please add one in Signatures.");
+      return;
+    }
     // An over-budget invoice cannot be approved without an explicit override
     // that gets recorded in the audit log — prompt for confirmation first.
     if (preview?.budgetStatus?.overBudget) {
       setOverrideOpen(true);
       return;
     }
-    submitApproval(false);
+    // Show which signature will be applied before finalizing the approval.
+    setApproveOpen(true);
   };
 
   const handleExport = async (format: GenerateInputFormat) => {
@@ -597,6 +611,59 @@ export default function InvoiceDetail() {
         </div>
       </div>
 
+      <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
+        <DialogContent data-testid="approve-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle>Approve invoice?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {approvalSignature && (
+              <div className="space-y-2">
+                <p className="text-sm text-[#5F5F5F]">
+                  The following signature will be applied to the approved documents:
+                </p>
+                <div className="flex items-center gap-4 rounded-md border p-3" data-testid="approval-signature-preview">
+                  <div className="flex h-14 w-32 items-center justify-center overflow-hidden rounded bg-white border">
+                    <img
+                      src={approvalSignature.imageUrl}
+                      alt={approvalSignature.name}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                  <div>
+                    <p className="font-medium" data-testid="approval-signature-name">{approvalSignature.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {approvalSignature.isDefault ? "Default signature" : "Fallback signature"}
+                    </p>
+                  </div>
+                </div>
+                {isFallbackSignature && (
+                  <Alert className="border-amber-300 bg-amber-50" data-testid="approval-signature-fallback-warning">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-800">
+                      No default signature is set, so the first available signature will be used.
+                      You can set a default on the Signatures page.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setApproveOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => submitApproval(false)}
+                disabled={approveInvoice.isPending}
+                data-testid="approve-confirm-button"
+              >
+                {approveInvoice.isPending ? "Approving..." : "Approve"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
         <DialogContent>
           <DialogHeader>
@@ -613,6 +680,25 @@ export default function InvoiceDetail() {
                 {" "}Approving will record a budget override in the audit log.
               </AlertDescription>
             </Alert>
+            {approvalSignature && (
+              <div className="flex items-center gap-4 rounded-md border p-3" data-testid="override-signature-preview">
+                <div className="flex h-14 w-32 items-center justify-center overflow-hidden rounded bg-white border">
+                  <img
+                    src={approvalSignature.imageUrl}
+                    alt={approvalSignature.name}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+                <div>
+                  <p className="font-medium">{approvalSignature.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {approvalSignature.isDefault
+                      ? "Default signature — will be applied on approval"
+                      : "Fallback signature (no default set) — will be applied on approval"}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Reason for override (required)</Label>
               <Textarea
