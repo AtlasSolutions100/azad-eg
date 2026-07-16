@@ -3,6 +3,7 @@ export * from "./employees";
 export * from "./classifications";
 export * from "./invoices";
 export * from "./line-items";
+export * from "./billed-line-items";
 export * from "./progress-reports";
 export * from "./packages";
 export * from "./package-weeks";

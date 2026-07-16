@@ -1,5 +1,6 @@
 - [Web→API auth needs Bearer token, not just cookie](auth-bearer-token.md) — Clerk session cookie isn't sent from the canvas iframe / cross-origin; wire setAuthTokenGetter or every API call 401s.
 - [Package billing document engine](package-billing-engine.md) — 5 docs fill real uploaded xlsx templates from timesheet rollups; work-plan overheadRate/fccmRate are nullable and yield $0 unless set in the form.
+- [Reference-workbook export engine](reference-workbook-engine.md) — exports mutate Julie's populated ground-truth xlsx; write every cell unconditionally or template values leak; rates ÷100; hidden sheets skip PDF.
 - [Procas key rotation](procas-key-rotation.md) — PROCAS_ENC_KEY_OLD is decrypt-only; startup + lazy read re-seal ciphertext under the new PROCAS_ENC_KEY, so rotation is zero-downtime.
 - [Excel export repair warning](excel-export-defined-names.md) — templates carry broken external/`#REF!` named ranges; strip them before write or Excel shows a "Removed Records: Named range" repair prompt.
 - [Multi-employee package contributors](multi-employee-packages.md) — key contributors by employeeId (name only as legacy fallback); name-only grouping merges people who share a name.

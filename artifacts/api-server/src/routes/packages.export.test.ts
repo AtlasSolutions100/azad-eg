@@ -328,7 +328,7 @@ describe("POST /api/packages/:id/export", () => {
   );
 
   it(
-    "combined workbook tabs are ordered Overview → Invoice → Sub Calc → Progress Report → Labor Attachment → weekly tabs",
+    "combined workbook tabs are ordered Overview → Invoice → Sub Calc → Labor Attachment → Progress Report → weekly tabs",
     async () => {
       const ExcelJS = (await import("exceljs")).default;
       const pkgId = await seedPackage("approved");
@@ -349,8 +349,8 @@ describe("POST /api/packages/:id/export", () => {
         "Overview",
         "Invoice",
         "Sub Calc",
-        "Progress Report",
         "Labor Attachment",
+        "Progress Report",
       ]);
       // Seeded package has exactly one week → exactly one weekly timesheet tab.
       expect(names).toHaveLength(6);
@@ -381,8 +381,8 @@ describe("POST /api/packages/:id/export", () => {
         "Overview",
         "Invoice",
         "Sub Calc",
-        "Progress Report",
         "Labor Attachment",
+        "Progress Report",
       ]);
 
       const pdf = await PDFDocument.load(readZipEntry(zipPath, "_InvoicePackage.pdf"));

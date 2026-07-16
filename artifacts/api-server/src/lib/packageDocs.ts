@@ -13,6 +13,7 @@ import type {
   TimesheetEntryRow,
   PackageProgressReportRow,
   LaborOverrideRow,
+  BilledLineItemRow,
   WorkPlan,
   Employee,
 } from "@workspace/db";
@@ -30,6 +31,8 @@ export interface PackageDocContext {
   overrides: LaborOverrideRow[];
   /** Absolute path to the approver signature image, or null. */
   signatureImagePath: string | null;
+  /** Invoice cover Billed Line Items (against PO line schedule). */
+  billedLineItems: BilledLineItemRow[];
 }
 
 const TEMPLATES: Record<PackageDocKind, string> = {
@@ -830,88 +833,30 @@ function buildOverviewSheet(wb: ExcelJS.Workbook, ctx: PackageDocContext): void 
  * scrubbed of internal notes/highlights.
  */
 export async function generateCombinedWorkbook(ctx: PackageDocContext): Promise<string> {
-  ensureDirs();
-  const wb = new ExcelJS.Workbook();
-  buildOverviewSheet(wb, ctx);
-
-  const sources: Array<{
-    wb: ExcelJS.Workbook;
-    picks: Array<{ srcSheet: string; tab: string }>;
-  }> = [];
-
-  const invoiceWb = await buildInvoice(ctx);
-  sources.push({ wb: invoiceWb, picks: [{ srcSheet: "Invoice", tab: "Invoice" }] });
-  const subcalcWb = await buildSubCalc(ctx);
-  sources.push({ wb: subcalcWb, picks: [{ srcSheet: "Sub Calc _revised", tab: "Sub Calc" }] });
-  const progressWb = await buildProgressReport(ctx);
-  sources.push({ wb: progressWb, picks: [{ srcSheet: "Progress Report", tab: "Progress Report" }] });
-  const laborWb = await buildLaborAttachment(ctx);
-  sources.push({ wb: laborWb, picks: [{ srcSheet: "Sub Labor", tab: "Labor Attachment" }] });
-  // A package with no weeks has no timesheets: skip the source entirely so the
-  // raw template sheet never leaks into the client-ready workbook.
-  if (ctx.weeks.length > 0) {
-    const timesheetsWb = await buildTimesheets(ctx);
-    sources.push({
-      wb: timesheetsWb,
-      picks: timesheetsWb.worksheets.map((ws) => ({ srcSheet: ws.name, tab: ws.name })),
-    });
-  }
-
-  const used = new Set<string>(["overview"]);
-  for (const src of sources) {
-    const renames = new Map<string, string>();
-    for (const pick of src.picks) {
-      const srcWs = src.wb.getWorksheet(pick.srcSheet);
-      if (!srcWs) {
-        // Fail hard rather than shipping a silently incomplete client package.
-        throw new Error(`Combined workbook: source sheet "${pick.srcSheet}" missing from template`);
-      }
-      const name = uniqueSheetName(sheetName(pick.tab, pick.tab), used);
-      renames.set(srcWs.name, name);
-      cloneSheetInto(wb, src.wb, srcWs, name);
-    }
-    copyDefinedNames(wb, src.wb, renames);
-  }
-
-  stripBrokenDefinedNames(wb);
-  wb.calcProperties.fullCalcOnLoad = true;
-  const outPath = path.resolve(generatedDir, `InvoicePackage_${safeSlug(ctx)}_${Date.now()}.xlsx`);
-  await wb.xlsx.writeFile(outPath);
-  return outPath;
+  const { generateMasterWorkbookFile } = await import("./masterWorkbook");
+  return generateMasterWorkbookFile(ctx);
 }
 
 // ---------------------------------------------------------------------------
 // Merged client-ready PDF (one multi-page PDF per package)
 // ---------------------------------------------------------------------------
 
-/** Client-required page order for the merged PDF. */
-const PDF_PAGE_ORDER: PackageDocKind[] = ["invoice", "subcalc", "labor", "progress", "timesheets"];
-
 /**
- * Renders each document to PDF via LibreOffice and merges them into one
- * multi-page PDF in the client-required order: Invoice → Sub Calc → Labor
- * Attachment → Progress Report → weekly timesheets. Intermediate per-document
- * files are removed.
+ * Renders the reference workbook (Overview hidden) to a single PDF via
+ * LibreOffice. Hidden sheets are skipped by the converter, so pages come out
+ * in the reference order: Invoice → Sub Calc → Labor Attachment → Progress
+ * Report → weekly timesheets. The intermediate xlsx is removed.
  */
 export async function generateMergedPdf(ctx: PackageDocContext): Promise<string> {
   ensureDirs();
-  const { PDFDocument } = await import("pdf-lib");
+  const { generateMasterPdfSource } = await import("./masterWorkbook");
   const intermediates: string[] = [];
   try {
-    const merged = await PDFDocument.create();
-    // No weeks → no timesheet pages; never ship the raw template sheet.
-    const order = ctx.weeks.length > 0 ? PDF_PAGE_ORDER : PDF_PAGE_ORDER.filter((d) => d !== "timesheets");
-    for (const doc of order) {
-      const xlsx = await GENERATORS[doc](ctx);
-      intermediates.push(xlsx);
-      const pdf = await convertToPdf(xlsx);
-      intermediates.push(pdf);
-      const part = await PDFDocument.load(fs.readFileSync(pdf));
-      const pages = await merged.copyPages(part, part.getPageIndices());
-      for (const page of pages) merged.addPage(page);
-    }
+    const src = await generateMasterPdfSource(ctx);
+    intermediates.push(src);
+    const pdf = await convertToPdf(src);
     const outPath = path.resolve(generatedDir, `InvoicePackage_${safeSlug(ctx)}_${Date.now()}.pdf`);
-    fs.writeFileSync(outPath, await merged.save());
+    fs.renameSync(pdf, outPath);
     return outPath;
   } finally {
     cleanupFiles(intermediates);

@@ -23,6 +23,8 @@ import type {
   ApprovalInput,
   AuditLog,
   AuditLogCount,
+  BilledLineItemsReplace,
+  BilledLineItemsResult,
   BillingRuleSheet,
   BillingRuleSheetUpload,
   Classification,
@@ -5736,6 +5738,154 @@ export const useGeneratePackageDocument = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getGeneratePackageDocumentMutationOptions(options));
+    }
+
+export const getListBilledLineItemsUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/billed-line-items`
+}
+
+/**
+ * @summary List a package's billed line items with billing summary
+ */
+export const listBilledLineItems = async (id: number, options?: RequestInit): Promise<BilledLineItemsResult> => {
+
+  return customFetch<BilledLineItemsResult>(getListBilledLineItemsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListBilledLineItemsQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}/billed-line-items`
+    ] as const;
+    }
+
+
+export const getListBilledLineItemsQueryOptions = <TData = Awaited<ReturnType<typeof listBilledLineItems>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBilledLineItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListBilledLineItemsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBilledLineItems>>> = ({ signal }) => listBilledLineItems(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listBilledLineItems>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListBilledLineItemsQueryResult = NonNullable<Awaited<ReturnType<typeof listBilledLineItems>>>
+export type ListBilledLineItemsQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary List a package's billed line items with billing summary
+ */
+
+export function useListBilledLineItems<TData = Awaited<ReturnType<typeof listBilledLineItems>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBilledLineItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListBilledLineItemsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplaceBilledLineItemsUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/billed-line-items`
+}
+
+/**
+ * @summary Replace the package's billed line items (bulk save)
+ */
+export const replaceBilledLineItems = async (id: number,
+    billedLineItemsReplace: BilledLineItemsReplace, options?: RequestInit): Promise<BilledLineItemsResult> => {
+
+  return customFetch<BilledLineItemsResult>(getReplaceBilledLineItemsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(billedLineItemsReplace)
+  }
+);}
+
+
+
+
+export const getReplaceBilledLineItemsMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceBilledLineItems>>, TError,{id: number;data: BodyType<BilledLineItemsReplace>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceBilledLineItems>>, TError,{id: number;data: BodyType<BilledLineItemsReplace>}, TContext> => {
+
+const mutationKey = ['replaceBilledLineItems'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceBilledLineItems>>, {id: number;data: BodyType<BilledLineItemsReplace>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  replaceBilledLineItems(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceBilledLineItemsMutationResult = NonNullable<Awaited<ReturnType<typeof replaceBilledLineItems>>>
+    export type ReplaceBilledLineItemsMutationBody = BodyType<BilledLineItemsReplace>
+    export type ReplaceBilledLineItemsMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Replace the package's billed line items (bulk save)
+ */
+export const useReplaceBilledLineItems = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceBilledLineItems>>, TError,{id: number;data: BodyType<BilledLineItemsReplace>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof replaceBilledLineItems>>,
+        TError,
+        {id: number;data: BodyType<BilledLineItemsReplace>},
+        TContext
+      > => {
+      return useMutation(getReplaceBilledLineItemsMutationOptions(options));
     }
 
 export const getExportPackageUrl = (id: number,) => {

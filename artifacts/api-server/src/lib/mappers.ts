@@ -18,6 +18,14 @@ export function toApiWorkPlan(w: WorkPlan) {
     fccmRate: w.fccmRate,
     billingCycle: w.billingCycle,
     status: w.status,
+    supplierId: w.supplierId,
+    clientProjectNo: w.clientProjectNo,
+    sendToCompany: w.sendToCompany,
+    sendToAddress1: w.sendToAddress1,
+    sendToAddress2: w.sendToAddress2,
+    contactPerson: w.contactPerson,
+    bartProjectNumbers: w.bartProjectNumbers,
+    terms: w.terms,
     createdAt: w.createdAt.toISOString(),
   };
 }

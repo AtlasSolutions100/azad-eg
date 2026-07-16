@@ -27,6 +27,25 @@ export interface WorkPlan {
   fixedFeeRate: number;
   /** @nullable */
   fccmRate?: number | null;
+  /** @nullable */
+  supplierId?: string | null;
+  /**
+     * Client-side project number (e.g. AECOM Project No.).
+     * @nullable
+     */
+  clientProjectNo?: string | null;
+  /** @nullable */
+  sendToCompany?: string | null;
+  /** @nullable */
+  sendToAddress1?: string | null;
+  /** @nullable */
+  sendToAddress2?: string | null;
+  /** @nullable */
+  contactPerson?: string | null;
+  /** @nullable */
+  bartProjectNumbers?: string | null;
+  /** @nullable */
+  terms?: string | null;
   billingCycle: WorkPlanBillingCycle;
   status: WorkPlanStatus;
   createdAt: string;

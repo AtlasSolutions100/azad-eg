@@ -43,7 +43,17 @@ import {
   GeneratePackageDocumentResponse,
   ExportPackageResponse,
   UploadProgressReportFileResponse,
+  ListBilledLineItemsResponse,
+  ReplaceBilledLineItemsBody,
+  ReplaceBilledLineItemsResponse,
 } from "@workspace/api-zod";
+import {
+  listBilledLineItems,
+  replaceBilledLineItems,
+  seedBilledLineItemsFromLastApproved,
+  toApiBilledLineItem,
+  computeBillingSummary,
+} from "../lib/billedLineItems";
 import {
   toApiPackageSummary,
   toApiWeek,
@@ -91,11 +101,12 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
       : null;
   const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
   if (!wp) return null;
-  const [weeks, entries, progressRows, overrides] = await Promise.all([
+  const [weeks, entries, progressRows, overrides, billedLineItems] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, packageId)),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, packageId)),
     db.select().from(packageProgressReportsTable).where(eq(packageProgressReportsTable.packageId, packageId)),
     db.select().from(laborOverridesTable).where(eq(laborOverridesTable.packageId, packageId)),
+    listBilledLineItems(packageId),
   ]);
 
   let signatureImagePath: string | null = null;
@@ -113,6 +124,7 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     progress: progressRows[0] ?? null,
     overrides,
     signatureImagePath,
+    billedLineItems,
   };
 }
 
@@ -259,6 +271,23 @@ router.post("/packages", async (req, res): Promise<void> => {
     }
     throw err;
   }
+  // Mandatory per-line carry-forward: pull Billed Line Items forward from the
+  // last approved invoice for this work plan (Previous += prior Total,
+  // Current resets to 0). Failure must never block package creation.
+  try {
+    const seeded = await seedBilledLineItemsFromLastApproved(row.id, row.workPlanId);
+    if (seeded.length > 0) {
+      await recordAudit({
+        action: "carried forward billed line items",
+        entityType: "package",
+        entityId: row.id,
+        description: `${seeded.length} line item(s) carried forward from the last approved ${wp.code} invoice`,
+      });
+    }
+  } catch (err) {
+    // Log via audit-free path; creation continues with an empty line item table.
+    console.error("billed line item carry-forward failed", err);
+  }
   await recordAudit({
     action: "created package",
     entityType: "package",
@@ -341,11 +370,12 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package references a missing work plan" });
     return;
   }
-  const [weeks, entries, progress, overrides] = await Promise.all([
+  const [weeks, entries, progress, overrides, billedItems] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, id)).orderBy(asc(packageWeeksTable.sortOrder), asc(packageWeeksTable.id)),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)).orderBy(asc(timesheetEntriesTable.id)),
     db.select().from(packageProgressReportsTable).where(eq(packageProgressReportsTable.packageId, id)).then((r) => r[0]),
     db.select().from(laborOverridesTable).where(eq(laborOverridesTable.packageId, id)).orderBy(asc(laborOverridesTable.id)),
+    listBilledLineItems(id),
   ]);
 
   const rollup = buildPackageRollup(entries, wp, {
@@ -356,6 +386,8 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
   res.json(
     GetPackageResponse.parse({
       package: toApiPackageSummary(pkg, emp, wp, weeks.length, entries),
+      billedLineItems: billedItems.map(toApiBilledLineItem),
+      billingSummary: computeBillingSummary(billedItems),
       weeks: weeks.map(toApiWeek),
       entries: entries.map(toApiTimesheetEntry),
       progressReport: progress ? toApiProgressReport(progress) : null,
@@ -956,6 +988,59 @@ router.post("/packages/:id/documents/:doc/generate", async (req, res): Promise<v
       url: `/api/files/${encodeURIComponent(filename)}?download=${encodeURIComponent(downloadName)}`,
       filename,
       format: parsed.data.format,
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Billed line items (Invoice cover table + billing summary)
+// ---------------------------------------------------------------------------
+
+router.get("/packages/:id/billed-line-items", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkg) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const rows = await listBilledLineItems(id);
+  res.json(
+    ListBilledLineItemsResponse.parse({
+      items: rows.map(toApiBilledLineItem),
+      summary: computeBillingSummary(rows),
+    }),
+  );
+});
+
+router.put("/packages/:id/billed-line-items", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const parsed = ReplaceBilledLineItemsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  // The invoice cover carries exactly 10 line rows (25–34); reject early
+  // rather than letting the export fail later.
+  if (parsed.data.items.length > 10) {
+    res.status(400).json({ error: "The invoice cover supports at most 10 billed line items" });
+    return;
+  }
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkg) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const rows = await replaceBilledLineItems(id, parsed.data.items);
+  await recordAudit({
+    action: "updated billed line items",
+    entityType: "package",
+    entityId: id,
+    description: `${rows.length} line item(s) saved`,
+  });
+  res.json(
+    ReplaceBilledLineItemsResponse.parse({
+      items: rows.map(toApiBilledLineItem),
+      summary: computeBillingSummary(rows),
     }),
   );
 });

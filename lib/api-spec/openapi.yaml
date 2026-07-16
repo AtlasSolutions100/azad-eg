@@ -1356,6 +1356,43 @@ paths:
                 $ref: "#/components/schemas/GeneratedFile"
         "404":
           $ref: "#/components/responses/NotFound"
+  /packages/{id}/billed-line-items:
+    get:
+      operationId: listBilledLineItems
+      tags: [packages]
+      summary: List a package's billed line items with billing summary
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Billed line items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BilledLineItemsResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: replaceBilledLineItems
+      tags: [packages]
+      summary: Replace the package's billed line items (bulk save)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BilledLineItemsReplace"
+      responses:
+        "200":
+          description: Saved billed line items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BilledLineItemsResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /packages/{id}/export:
     post:
       operationId: exportPackage
@@ -1432,6 +1469,16 @@ components:
         overheadRate: { type: ["number", "null"] }
         fixedFeeRate: { type: number }
         fccmRate: { type: ["number", "null"] }
+        supplierId: { type: ["string", "null"] }
+        clientProjectNo:
+          type: ["string", "null"]
+          description: Client-side project number (e.g. AECOM Project No.).
+        sendToCompany: { type: ["string", "null"] }
+        sendToAddress1: { type: ["string", "null"] }
+        sendToAddress2: { type: ["string", "null"] }
+        contactPerson: { type: ["string", "null"] }
+        bartProjectNumbers: { type: ["string", "null"] }
+        terms: { type: ["string", "null"] }
         billingCycle:
           type: string
           enum: [whole_month, last_friday]
@@ -1455,6 +1502,14 @@ components:
         overheadRate: { type: number }
         fixedFeeRate: { type: number }
         fccmRate: { type: number }
+        supplierId: { type: string }
+        clientProjectNo: { type: string }
+        sendToCompany: { type: string }
+        sendToAddress1: { type: string }
+        sendToAddress2: { type: string }
+        contactPerson: { type: string }
+        bartProjectNumbers: { type: string }
+        terms: { type: string }
         billingCycle:
           type: string
           enum: [whole_month, last_friday]
@@ -1473,12 +1528,102 @@ components:
         overheadRate: { type: number }
         fixedFeeRate: { type: number }
         fccmRate: { type: number }
+        supplierId: { type: string }
+        clientProjectNo: { type: string }
+        sendToCompany: { type: string }
+        sendToAddress1: { type: string }
+        sendToAddress2: { type: string }
+        contactPerson: { type: string }
+        bartProjectNumbers: { type: string }
+        terms: { type: string }
         billingCycle:
           type: string
           enum: [whole_month, last_friday]
         status:
           type: string
           enum: [active, archived]
+
+    BilledLineItem:
+      type: object
+      required:
+        - id
+        - packageId
+        - workScopeNo
+        - poAmount
+        - previousInvoiced
+        - currentInvoiced
+        - totalInvoiced
+        - remainingBalance
+        - sortOrder
+        - source
+      properties:
+        id: { type: integer }
+        packageId: { type: integer }
+        workScopeNo: { type: string }
+        poNo: { type: ["string", "null"] }
+        lineNo: { type: ["integer", "null"] }
+        bartProjectNo: { type: ["string", "null"] }
+        poAmount: { type: number }
+        previousInvoiced: { type: number }
+        currentInvoiced: { type: number }
+        totalInvoiced:
+          type: number
+          description: previousInvoiced + currentInvoiced (computed).
+        remainingBalance:
+          type: number
+          description: poAmount - totalInvoiced (computed).
+        sortOrder: { type: integer }
+        source:
+          type: string
+          enum: [manual, carry_forward]
+    BilledLineItemInput:
+      type: object
+      required: [workScopeNo]
+      properties:
+        workScopeNo: { type: string, minLength: 1 }
+        poNo: { type: string }
+        lineNo: { type: integer }
+        bartProjectNo: { type: string }
+        poAmount: { type: number }
+        previousInvoiced: { type: number }
+        currentInvoiced: { type: number }
+        sortOrder: { type: integer }
+    BilledLineItemsReplace:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BilledLineItemInput"
+    BilledLineItemsResult:
+      type: object
+      required: [items, summary]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BilledLineItem"
+        summary:
+          $ref: "#/components/schemas/PackageBillingSummary"
+    PackageBillingSummary:
+      type: object
+      required:
+        - poAmountTotal
+        - previousInvoicedTotal
+        - currentInvoicedTotal
+        - totalInvoicedTotal
+        - remainingBalanceTotal
+        - percentExpended
+      properties:
+        poAmountTotal: { type: number }
+        previousInvoicedTotal: { type: number }
+        currentInvoicedTotal: { type: number }
+        totalInvoicedTotal: { type: number }
+        remainingBalanceTotal: { type: number }
+        percentExpended:
+          type: number
+          description: totalInvoicedTotal / poAmountTotal * 100 (0 when no PO amount).
 
     Employee:
       type: object
@@ -2499,6 +2644,12 @@ components:
       properties:
         package:
           $ref: "#/components/schemas/PackageSummary"
+        billedLineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/BilledLineItem"
+        billingSummary:
+          $ref: "#/components/schemas/PackageBillingSummary"
         weeks:
           type: array
           items:

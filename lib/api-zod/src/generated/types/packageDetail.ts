@@ -5,7 +5,9 @@
  * Azad Invoice Automation API
  * OpenAPI spec version: 0.1.0
  */
+import type { BilledLineItem } from './billedLineItem';
 import type { LaborOverride } from './laborOverride';
+import type { PackageBillingSummary } from './packageBillingSummary';
 import type { PackageProgressReport } from './packageProgressReport';
 import type { PackageRollup } from './packageRollup';
 import type { PackageSummary } from './packageSummary';
@@ -14,6 +16,8 @@ import type { TimesheetEntry } from './timesheetEntry';
 
 export interface PackageDetail {
   package: PackageSummary;
+  billedLineItems?: BilledLineItem[];
+  billingSummary?: PackageBillingSummary;
   weeks: PackageWeek[];
   entries: TimesheetEntry[];
   progressReport?: PackageProgressReport | null;

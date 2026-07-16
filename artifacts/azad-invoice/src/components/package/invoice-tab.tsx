@@ -31,6 +31,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/package-ui";
 import BudgetOverrideHistory from "@/components/budget-override-history";
+import BilledLineItemsCard from "@/components/package/billed-line-items-card";
 
 export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
   const { package: pkg, rollup } = detail;
@@ -351,6 +352,8 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
           </CardContent>
         </Card>
       </div>
+
+      <BilledLineItemsCard packageId={pkg.id} />
     </div>
   );
 }

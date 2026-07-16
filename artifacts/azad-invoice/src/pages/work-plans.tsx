@@ -43,6 +43,14 @@ export default function WorkPlans() {
       fixedFeeRate: plan.fixedFeeRate ?? undefined,
       fccmRate: plan.fccmRate ?? undefined,
       billingCycle: plan.billingCycle,
+      supplierId: plan.supplierId ?? undefined,
+      clientProjectNo: plan.clientProjectNo ?? undefined,
+      sendToCompany: plan.sendToCompany ?? undefined,
+      sendToAddress1: plan.sendToAddress1 ?? undefined,
+      sendToAddress2: plan.sendToAddress2 ?? undefined,
+      contactPerson: plan.contactPerson ?? undefined,
+      bartProjectNumbers: plan.bartProjectNumbers ?? undefined,
+      terms: plan.terms ?? undefined,
     });
     setOpen(true);
   };
@@ -148,6 +156,42 @@ export default function WorkPlans() {
             <div className="space-y-2">
               <Label>FCCM Rate (%)</Label>
               <Input type="number" step="0.01" value={formData.fccmRate ?? ''} onChange={e => setFormData({...formData, fccmRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
+            </div>
+            <div className="col-span-2 border-t pt-4">
+              <p className="text-sm font-medium text-[#333333]">Invoice cover header (printed on the client invoice)</p>
+              <p className="text-xs text-[#5F5F5F]">Supplier, remit-to, and project references shown on the cover page.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Supplier ID</Label>
+              <Input value={formData.supplierId || ''} onChange={e => setFormData({...formData, supplierId: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Client Project No</Label>
+              <Input value={formData.clientProjectNo || ''} onChange={e => setFormData({...formData, clientProjectNo: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Send To — Company</Label>
+              <Input value={formData.sendToCompany || ''} onChange={e => setFormData({...formData, sendToCompany: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Contact Person</Label>
+              <Input value={formData.contactPerson || ''} onChange={e => setFormData({...formData, contactPerson: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Send To — Address Line 1</Label>
+              <Input value={formData.sendToAddress1 || ''} onChange={e => setFormData({...formData, sendToAddress1: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Send To — Address Line 2</Label>
+              <Input value={formData.sendToAddress2 || ''} onChange={e => setFormData({...formData, sendToAddress2: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>BART Project Numbers</Label>
+              <Input value={formData.bartProjectNumbers || ''} onChange={e => setFormData({...formData, bartProjectNumbers: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Payment Terms</Label>
+              <Input placeholder="Net 30 Days" value={formData.terms || ''} onChange={e => setFormData({...formData, terms: e.target.value})} />
             </div>
             <div className="col-span-2 pt-4 flex justify-end">
               <Button type="submit" className="bg-[#CFAF42] text-white">

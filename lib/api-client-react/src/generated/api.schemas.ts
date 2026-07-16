@@ -48,6 +48,25 @@ export interface WorkPlan {
   fixedFeeRate: number;
   /** @nullable */
   fccmRate?: number | null;
+  /** @nullable */
+  supplierId?: string | null;
+  /**
+     * Client-side project number (e.g. AECOM Project No.).
+     * @nullable
+     */
+  clientProjectNo?: string | null;
+  /** @nullable */
+  sendToCompany?: string | null;
+  /** @nullable */
+  sendToAddress1?: string | null;
+  /** @nullable */
+  sendToAddress2?: string | null;
+  /** @nullable */
+  contactPerson?: string | null;
+  /** @nullable */
+  bartProjectNumbers?: string | null;
+  /** @nullable */
+  terms?: string | null;
   billingCycle: WorkPlanBillingCycle;
   status: WorkPlanStatus;
   createdAt: string;
@@ -78,6 +97,14 @@ export interface WorkPlanInput {
   overheadRate?: number;
   fixedFeeRate?: number;
   fccmRate?: number;
+  supplierId?: string;
+  clientProjectNo?: string;
+  sendToCompany?: string;
+  sendToAddress1?: string;
+  sendToAddress2?: string;
+  contactPerson?: string;
+  bartProjectNumbers?: string;
+  terms?: string;
   billingCycle: WorkPlanInputBillingCycle;
 }
 
@@ -114,8 +141,76 @@ export interface WorkPlanUpdate {
   overheadRate?: number;
   fixedFeeRate?: number;
   fccmRate?: number;
+  supplierId?: string;
+  clientProjectNo?: string;
+  sendToCompany?: string;
+  sendToAddress1?: string;
+  sendToAddress2?: string;
+  contactPerson?: string;
+  bartProjectNumbers?: string;
+  terms?: string;
   billingCycle?: WorkPlanUpdateBillingCycle;
   status?: WorkPlanUpdateStatus;
+}
+
+export type BilledLineItemSource = typeof BilledLineItemSource[keyof typeof BilledLineItemSource];
+
+
+export const BilledLineItemSource = {
+  manual: 'manual',
+  carry_forward: 'carry_forward',
+} as const;
+
+export interface BilledLineItem {
+  id: number;
+  packageId: number;
+  workScopeNo: string;
+  /** @nullable */
+  poNo?: string | null;
+  /** @nullable */
+  lineNo?: number | null;
+  /** @nullable */
+  bartProjectNo?: string | null;
+  poAmount: number;
+  previousInvoiced: number;
+  currentInvoiced: number;
+  /** previousInvoiced + currentInvoiced (computed). */
+  totalInvoiced: number;
+  /** poAmount - totalInvoiced (computed). */
+  remainingBalance: number;
+  sortOrder: number;
+  source: BilledLineItemSource;
+}
+
+export interface BilledLineItemInput {
+  /** @minLength 1 */
+  workScopeNo: string;
+  poNo?: string;
+  lineNo?: number;
+  bartProjectNo?: string;
+  poAmount?: number;
+  previousInvoiced?: number;
+  currentInvoiced?: number;
+  sortOrder?: number;
+}
+
+export interface BilledLineItemsReplace {
+  items: BilledLineItemInput[];
+}
+
+export interface PackageBillingSummary {
+  poAmountTotal: number;
+  previousInvoicedTotal: number;
+  currentInvoicedTotal: number;
+  totalInvoicedTotal: number;
+  remainingBalanceTotal: number;
+  /** totalInvoicedTotal / poAmountTotal * 100 (0 when no PO amount). */
+  percentExpended: number;
+}
+
+export interface BilledLineItemsResult {
+  items: BilledLineItem[];
+  summary: PackageBillingSummary;
 }
 
 export interface Employee {
@@ -1160,6 +1255,8 @@ export interface PackageRollup {
 
 export interface PackageDetail {
   package: PackageSummary;
+  billedLineItems?: BilledLineItem[];
+  billingSummary?: PackageBillingSummary;
   weeks: PackageWeek[];
   entries: TimesheetEntry[];
   progressReport?: PackageProgressReport | null;

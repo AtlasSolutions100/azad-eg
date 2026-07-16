@@ -25,6 +25,14 @@ export interface WorkPlanUpdate {
   overheadRate?: number;
   fixedFeeRate?: number;
   fccmRate?: number;
+  supplierId?: string;
+  clientProjectNo?: string;
+  sendToCompany?: string;
+  sendToAddress1?: string;
+  sendToAddress2?: string;
+  contactPerson?: string;
+  bartProjectNumbers?: string;
+  terms?: string;
   billingCycle?: WorkPlanUpdateBillingCycle;
   status?: WorkPlanUpdateStatus;
 }

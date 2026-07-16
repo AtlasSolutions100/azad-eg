@@ -84,6 +84,14 @@ export const ListWorkPlansResponseItem = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "supplierId": zod.string().nullish(),
+  "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
+  "sendToCompany": zod.string().nullish(),
+  "sendToAddress1": zod.string().nullish(),
+  "sendToAddress2": zod.string().nullish(),
+  "contactPerson": zod.string().nullish(),
+  "bartProjectNumbers": zod.string().nullish(),
+  "terms": zod.string().nullish(),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -113,6 +121,14 @@ export const CreateWorkPlanBody = zod.object({
   "overheadRate": zod.number().optional(),
   "fixedFeeRate": zod.number().optional(),
   "fccmRate": zod.number().optional(),
+  "supplierId": zod.string().optional(),
+  "clientProjectNo": zod.string().optional(),
+  "sendToCompany": zod.string().optional(),
+  "sendToAddress1": zod.string().optional(),
+  "sendToAddress2": zod.string().optional(),
+  "contactPerson": zod.string().optional(),
+  "bartProjectNumbers": zod.string().optional(),
+  "terms": zod.string().optional(),
   "billingCycle": zod.enum(['whole_month', 'last_friday'])
 })
 
@@ -130,6 +146,14 @@ export const CreateWorkPlanResponse = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "supplierId": zod.string().nullish(),
+  "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
+  "sendToCompany": zod.string().nullish(),
+  "sendToAddress1": zod.string().nullish(),
+  "sendToAddress2": zod.string().nullish(),
+  "contactPerson": zod.string().nullish(),
+  "bartProjectNumbers": zod.string().nullish(),
+  "terms": zod.string().nullish(),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -157,6 +181,14 @@ export const GetWorkPlanResponse = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "supplierId": zod.string().nullish(),
+  "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
+  "sendToCompany": zod.string().nullish(),
+  "sendToAddress1": zod.string().nullish(),
+  "sendToAddress2": zod.string().nullish(),
+  "contactPerson": zod.string().nullish(),
+  "bartProjectNumbers": zod.string().nullish(),
+  "terms": zod.string().nullish(),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -189,6 +221,14 @@ export const UpdateWorkPlanBody = zod.object({
   "overheadRate": zod.number().optional(),
   "fixedFeeRate": zod.number().optional(),
   "fccmRate": zod.number().optional(),
+  "supplierId": zod.string().optional(),
+  "clientProjectNo": zod.string().optional(),
+  "sendToCompany": zod.string().optional(),
+  "sendToAddress1": zod.string().optional(),
+  "sendToAddress2": zod.string().optional(),
+  "contactPerson": zod.string().optional(),
+  "bartProjectNumbers": zod.string().optional(),
+  "terms": zod.string().optional(),
   "billingCycle": zod.enum(['whole_month', 'last_friday']).optional(),
   "status": zod.enum(['active', 'archived']).optional()
 })
@@ -207,6 +247,14 @@ export const UpdateWorkPlanResponse = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "supplierId": zod.string().nullish(),
+  "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
+  "sendToCompany": zod.string().nullish(),
+  "sendToAddress1": zod.string().nullish(),
+  "sendToAddress2": zod.string().nullish(),
+  "contactPerson": zod.string().nullish(),
+  "bartProjectNumbers": zod.string().nullish(),
+  "terms": zod.string().nullish(),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -1674,6 +1722,29 @@ export const GetPackageResponse = zod.object({
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }),
+  "billedLineItems": zod.array(zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "workScopeNo": zod.string(),
+  "poNo": zod.string().nullish(),
+  "lineNo": zod.number().nullish(),
+  "bartProjectNo": zod.string().nullish(),
+  "poAmount": zod.number(),
+  "previousInvoiced": zod.number(),
+  "currentInvoiced": zod.number(),
+  "totalInvoiced": zod.number().describe('previousInvoiced + currentInvoiced (computed).'),
+  "remainingBalance": zod.number().describe('poAmount - totalInvoiced (computed).'),
+  "sortOrder": zod.number(),
+  "source": zod.enum(['manual', 'carry_forward'])
+})).optional(),
+  "billingSummary": zod.object({
+  "poAmountTotal": zod.number(),
+  "previousInvoicedTotal": zod.number(),
+  "currentInvoicedTotal": zod.number(),
+  "totalInvoicedTotal": zod.number(),
+  "remainingBalanceTotal": zod.number(),
+  "percentExpended": zod.number().describe('totalInvoicedTotal \/ poAmountTotal \* 100 (0 when no PO amount).')
+}).optional(),
   "weeks": zod.array(zod.object({
   "id": zod.number(),
   "packageId": zod.number(),
@@ -2252,6 +2323,90 @@ export const GeneratePackageDocumentResponse = zod.object({
   "url": zod.string(),
   "filename": zod.string(),
   "format": zod.string()
+})
+
+
+/**
+ * @summary List a package's billed line items with billing summary
+ */
+export const ListBilledLineItemsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListBilledLineItemsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "workScopeNo": zod.string(),
+  "poNo": zod.string().nullish(),
+  "lineNo": zod.number().nullish(),
+  "bartProjectNo": zod.string().nullish(),
+  "poAmount": zod.number(),
+  "previousInvoiced": zod.number(),
+  "currentInvoiced": zod.number(),
+  "totalInvoiced": zod.number().describe('previousInvoiced + currentInvoiced (computed).'),
+  "remainingBalance": zod.number().describe('poAmount - totalInvoiced (computed).'),
+  "sortOrder": zod.number(),
+  "source": zod.enum(['manual', 'carry_forward'])
+})),
+  "summary": zod.object({
+  "poAmountTotal": zod.number(),
+  "previousInvoicedTotal": zod.number(),
+  "currentInvoicedTotal": zod.number(),
+  "totalInvoicedTotal": zod.number(),
+  "remainingBalanceTotal": zod.number(),
+  "percentExpended": zod.number().describe('totalInvoicedTotal \/ poAmountTotal \* 100 (0 when no PO amount).')
+})
+})
+
+
+/**
+ * @summary Replace the package's billed line items (bulk save)
+ */
+export const ReplaceBilledLineItemsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+export const ReplaceBilledLineItemsBody = zod.object({
+  "items": zod.array(zod.object({
+  "workScopeNo": zod.string().min(1),
+  "poNo": zod.string().optional(),
+  "lineNo": zod.number().optional(),
+  "bartProjectNo": zod.string().optional(),
+  "poAmount": zod.number().optional(),
+  "previousInvoiced": zod.number().optional(),
+  "currentInvoiced": zod.number().optional(),
+  "sortOrder": zod.number().optional()
+}))
+})
+
+export const ReplaceBilledLineItemsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.number(),
+  "packageId": zod.number(),
+  "workScopeNo": zod.string(),
+  "poNo": zod.string().nullish(),
+  "lineNo": zod.number().nullish(),
+  "bartProjectNo": zod.string().nullish(),
+  "poAmount": zod.number(),
+  "previousInvoiced": zod.number(),
+  "currentInvoiced": zod.number(),
+  "totalInvoiced": zod.number().describe('previousInvoiced + currentInvoiced (computed).'),
+  "remainingBalance": zod.number().describe('poAmount - totalInvoiced (computed).'),
+  "sortOrder": zod.number(),
+  "source": zod.enum(['manual', 'carry_forward'])
+})),
+  "summary": zod.object({
+  "poAmountTotal": zod.number(),
+  "previousInvoicedTotal": zod.number(),
+  "currentInvoicedTotal": zod.number(),
+  "totalInvoicedTotal": zod.number(),
+  "remainingBalanceTotal": zod.number(),
+  "percentExpended": zod.number().describe('totalInvoicedTotal \/ poAmountTotal \* 100 (0 when no PO amount).')
+})
 })
 
 
