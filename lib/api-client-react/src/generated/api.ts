@@ -22,13 +22,13 @@ import type {
 import type {
   ApprovalInput,
   AuditLog,
+  AuditLogCount,
   BillingRuleSheet,
   BillingRuleSheetUpload,
   Classification,
   ClassificationInput,
   ClassificationUpdate,
   ColumnDefinition,
-  CountAuditLogs200,
   CountAuditLogsParams,
   DashboardSummary,
   Employee,
@@ -3612,9 +3612,9 @@ export const getCountAuditLogsUrl = (params?: CountAuditLogsParams,) => {
 /**
  * @summary Count audit log entries matching the given filters
  */
-export const countAuditLogs = async (params?: CountAuditLogsParams, options?: RequestInit): Promise<CountAuditLogs200> => {
+export const countAuditLogs = async (params?: CountAuditLogsParams, options?: RequestInit): Promise<AuditLogCount> => {
 
-  return customFetch<CountAuditLogs200>(getCountAuditLogsUrl(params),
+  return customFetch<AuditLogCount>(getCountAuditLogsUrl(params),
   {
     ...options,
     method: 'GET'

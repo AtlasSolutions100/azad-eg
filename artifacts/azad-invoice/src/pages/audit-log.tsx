@@ -1,8 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { DateRange } from "react-day-picker";
-import { usePagedAuditLogs } from "@/hooks/use-paged-audit-logs";
+import { countAuditLogs, getCountAuditLogsQueryKey } from "@workspace/api-client-react";
+import { usePagedAuditLogs, type AuditLogFilters } from "@/hooks/use-paged-audit-logs";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,51 +28,66 @@ function entityLink(entityType: string, entityId: number | null | undefined): st
   return null;
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 export default function AuditLog() {
-  const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage, totalCount } =
-    usePagedAuditLogs();
   const [overridesOnly, setOverridesOnly] = useState(false);
-  const loadMoreRef = useInfiniteScroll({
-    hasMore: !!hasNextPage,
-    isFetching: isFetchingNextPage,
-    onLoadMore: fetchNextPage,
-  });
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
 
-  const isOverride = (action: string) => action === OVERRIDE_ACTION;
-
-  const overrideCount = logs?.filter((log) => isOverride(log.action)).length ?? 0;
-
-  const visibleLogs = useMemo(() => {
-    if (!logs) return logs;
-    const query = search.trim().toLowerCase();
+  const filters = useMemo<AuditLogFilters>(() => {
     const from = dateRange?.from ? startOfDay(dateRange.from) : null;
     const to = dateRange?.to
       ? endOfDay(dateRange.to)
       : dateRange?.from
         ? endOfDay(dateRange.from)
         : null;
-    return logs.filter((log) => {
-      if (overridesOnly && !isOverride(log.action)) return false;
-      if (from || to) {
-        const created = new Date(log.createdAt);
-        if (from && created < from) return false;
-        if (to && created > to) return false;
-      }
-      if (query) {
-        const entity = `${log.entityType} ${log.entityId != null ? `#${log.entityId}` : ""}`;
-        const haystack = [log.userName, log.action, entity, log.description]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-      return true;
-    });
-  }, [logs, overridesOnly, search, dateRange]);
+    return {
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...(from ? { from: from.toISOString() } : {}),
+      ...(to ? { to: to.toISOString() } : {}),
+      ...(overridesOnly ? { overridesOnly: true } : {}),
+    };
+  }, [debouncedSearch, dateRange, overridesOnly]);
 
-  const hasFilters = search.trim() !== "" || dateRange?.from != null || overridesOnly;
+  const hasFilters =
+    debouncedSearch !== "" || dateRange?.from != null || overridesOnly;
+
+  const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    usePagedAuditLogs(filters);
+  const loadMoreRef = useInfiniteScroll({
+    hasMore: !!hasNextPage,
+    isFetching: isFetchingNextPage,
+    onLoadMore: fetchNextPage,
+  });
+
+  const { data: matchCount } = useQuery({
+    queryKey: getCountAuditLogsQueryKey(filters),
+    queryFn: ({ signal }) => countAuditLogs(filters, { signal }),
+    enabled: hasFilters,
+  });
+  const { data: totalCount } = useQuery({
+    queryKey: getCountAuditLogsQueryKey({}),
+    queryFn: ({ signal }) => countAuditLogs({}, { signal }),
+  });
+  const { data: overrideTotal } = useQuery({
+    queryKey: getCountAuditLogsQueryKey({ overridesOnly: true }),
+    queryFn: ({ signal }) => countAuditLogs({ overridesOnly: true }, { signal }),
+  });
+
+  const isOverride = (action: string) => action === OVERRIDE_ACTION;
+
+  const overrideCount = overrideTotal?.count ?? 0;
+
+  const visibleLogs = logs;
 
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useWindowVirtualizer({
@@ -168,13 +185,11 @@ export default function AuditLog() {
             Clear dates
           </Button>
         ) : null}
-        {!isLoading && visibleLogs && logs ? (
+        {!isLoading && totalCount != null && (hasFilters ? matchCount != null : logs != null) ? (
           <span className="text-sm text-muted-foreground" data-testid="text-audit-count">
             {hasFilters
-              ? `Showing ${visibleLogs.length} of ${logs.length} loaded entries`
-              : totalCount != null
-                ? `Showing ${logs.length.toLocaleString()} of ${totalCount.toLocaleString()} entries`
-                : null}
+              ? `Showing ${matchCount!.count.toLocaleString()} of ${totalCount.count.toLocaleString()} entries`
+              : `Showing ${logs!.length.toLocaleString()} of ${totalCount.count.toLocaleString()} entries`}
           </span>
         ) : null}
       </div>

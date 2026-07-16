@@ -788,6 +788,22 @@ paths:
         - name: entityId
           in: query
           schema: { type: integer }
+        - name: search
+          in: query
+          description: Case-insensitive text match against user, action, entity, and description
+          schema: { type: string }
+        - name: from
+          in: query
+          description: Only entries created at or after this instant (ISO 8601)
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Only entries created at or before this instant (ISO 8601)
+          schema: { type: string, format: date-time }
+        - name: overridesOnly
+          in: query
+          description: Only budget-override entries
+          schema: { type: boolean }
         - name: limit
           in: query
           description: Max rows to return (1-200, default 200)
@@ -818,18 +834,29 @@ paths:
         - name: entityId
           in: query
           schema: { type: integer }
+        - name: search
+          in: query
+          description: Case-insensitive text match against user, action, entity, and description
+          schema: { type: string }
+        - name: from
+          in: query
+          description: Only entries created at or after this instant (ISO 8601)
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Only entries created at or before this instant (ISO 8601)
+          schema: { type: string, format: date-time }
+        - name: overridesOnly
+          in: query
+          description: Only budget-override entries
+          schema: { type: boolean }
       responses:
         "200":
-          description: Total matching audit log entry count
+          description: Count of matching audit log entries
           content:
             application/json:
               schema:
-                type: object
-                required: [count]
-                properties:
-                  count:
-                    type: integer
-                    description: Total number of audit log entries matching the filters
+                $ref: "#/components/schemas/AuditLogCount"
 
   /procas/status:
     get:
@@ -1951,6 +1978,12 @@ components:
         entityId: { type: ["integer", "null"] }
         description: { type: ["string", "null"] }
         createdAt: { type: string }
+
+    AuditLogCount:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer }
 
     ProcasStatus:
       type: object

@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CountAuditLogs200 = {
-  /** Total number of audit log entries matching the filters */
+export interface AuditLogCount {
   count: number;
-};
+}

@@ -9,4 +9,20 @@
 export type CountAuditLogsParams = {
 entityType?: string;
 entityId?: number;
+/**
+ * Case-insensitive text match against user, action, entity, and description
+ */
+search?: string;
+/**
+ * Only entries created at or after this instant (ISO 8601)
+ */
+from?: Date;
+/**
+ * Only entries created at or before this instant (ISO 8601)
+ */
+to?: Date;
+/**
+ * Only budget-override entries
+ */
+overridesOnly?: boolean;
 };

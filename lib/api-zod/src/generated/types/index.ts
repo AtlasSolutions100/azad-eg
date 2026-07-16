@@ -8,6 +8,7 @@
 
 export * from './approvalInput';
 export * from './auditLog';
+export * from './auditLogCount';
 export * from './billingRuleSheet';
 export * from './billingRuleSheetUpload';
 export * from './budgetStatus';
@@ -19,7 +20,6 @@ export * from './classificationLocation';
 export * from './classificationUpdate';
 export * from './classificationUpdateLocation';
 export * from './columnDefinition';
-export * from './countAuditLogs200';
 export * from './countAuditLogsParams';
 export * from './dashboardSummary';
 export * from './docStatus';

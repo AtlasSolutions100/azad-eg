@@ -673,6 +673,10 @@ export interface AuditLog {
   createdAt: string;
 }
 
+export interface AuditLogCount {
+  count: number;
+}
+
 export type ProcasStatusMode = typeof ProcasStatusMode[keyof typeof ProcasStatusMode];
 
 
@@ -1206,6 +1210,22 @@ export type ListAuditLogsParams = {
 entityType?: string;
 entityId?: number;
 /**
+ * Case-insensitive text match against user, action, entity, and description
+ */
+search?: string;
+/**
+ * Only entries created at or after this instant (ISO 8601)
+ */
+from?: string;
+/**
+ * Only entries created at or before this instant (ISO 8601)
+ */
+to?: string;
+/**
+ * Only budget-override entries
+ */
+overridesOnly?: boolean;
+/**
  * Max rows to return (1-200, default 200)
  * @minimum 1
  * @maximum 200
@@ -1221,11 +1241,22 @@ offset?: number;
 export type CountAuditLogsParams = {
 entityType?: string;
 entityId?: number;
-};
-
-export type CountAuditLogs200 = {
-  /** Total number of audit log entries matching the filters */
-  count: number;
+/**
+ * Case-insensitive text match against user, action, entity, and description
+ */
+search?: string;
+/**
+ * Only entries created at or after this instant (ISO 8601)
+ */
+from?: string;
+/**
+ * Only entries created at or before this instant (ISO 8601)
+ */
+to?: string;
+/**
+ * Only budget-override entries
+ */
+overridesOnly?: boolean;
 };
 
 export type ListPackagesParams = {

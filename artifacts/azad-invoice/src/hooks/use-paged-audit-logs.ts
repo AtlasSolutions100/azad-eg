@@ -9,8 +9,13 @@ import type { ListAuditLogsParams } from "@workspace/api-client-react";
 
 export const AUDIT_LOG_PAGE_SIZE = 200;
 
+export type AuditLogFilters = Pick<
+  ListAuditLogsParams,
+  "entityType" | "entityId" | "search" | "from" | "to" | "overridesOnly"
+>;
+
 export function usePagedAuditLogs(
-  filters?: Pick<ListAuditLogsParams, "entityType" | "entityId">,
+  filters?: AuditLogFilters,
   options?: { enabled?: boolean },
 ) {
   const query = useInfiniteQuery({

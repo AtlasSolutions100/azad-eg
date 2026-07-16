@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte, or, sql, count, type SQL } from "drizzle-orm";
 import { db, auditLogsTable } from "@workspace/db";
-import { CountAuditLogsResponse, ListAuditLogsResponse } from "@workspace/api-zod";
+import { ListAuditLogsResponse, CountAuditLogsResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+const OVERRIDE_ACTION = "approved over budget";
 
 export function toApiAudit(a: typeof auditLogsTable.$inferSelect) {
   return {
@@ -18,7 +20,7 @@ export function toApiAudit(a: typeof auditLogsTable.$inferSelect) {
   };
 }
 
-function buildFilterConditions(query: Record<string, unknown>): SQL[] {
+function buildConditions(query: Record<string, unknown>): SQL[] {
   const conditions: SQL[] = [];
 
   const entityType = query.entityType;
@@ -31,11 +33,46 @@ function buildFilterConditions(query: Record<string, unknown>): SQL[] {
     conditions.push(eq(auditLogsTable.entityId, entityId));
   }
 
+  const search = query.search;
+  if (typeof search === "string" && search.trim().length > 0) {
+    const pattern = `%${search.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const searchCondition = or(
+      ilike(auditLogsTable.userName, pattern),
+      ilike(auditLogsTable.action, pattern),
+      ilike(auditLogsTable.description, pattern),
+      ilike(
+        sql`(${auditLogsTable.entityType} || coalesce(' #' || ${auditLogsTable.entityId}::text, ''))`,
+        pattern,
+      ),
+    );
+    if (searchCondition) conditions.push(searchCondition);
+  }
+
+  const from = query.from;
+  if (typeof from === "string" && from.length > 0) {
+    const fromDate = new Date(from);
+    if (!Number.isNaN(fromDate.getTime())) {
+      conditions.push(gte(auditLogsTable.createdAt, fromDate));
+    }
+  }
+
+  const to = query.to;
+  if (typeof to === "string" && to.length > 0) {
+    const toDate = new Date(to);
+    if (!Number.isNaN(toDate.getTime())) {
+      conditions.push(lte(auditLogsTable.createdAt, toDate));
+    }
+  }
+
+  if (query.overridesOnly === "true") {
+    conditions.push(eq(auditLogsTable.action, OVERRIDE_ACTION));
+  }
+
   return conditions;
 }
 
 router.get("/audit-logs", async (req, res): Promise<void> => {
-  const conditions = buildFilterConditions(req.query);
+  const conditions = buildConditions(req.query as Record<string, unknown>);
 
   const rawLimit = Number(req.query.limit);
   const limit =
@@ -54,13 +91,12 @@ router.get("/audit-logs", async (req, res): Promise<void> => {
 });
 
 router.get("/audit-logs/count", async (req, res): Promise<void> => {
-  const conditions = buildFilterConditions(req.query);
+  const conditions = buildConditions(req.query as Record<string, unknown>);
 
   const [row] = await db
     .select({ count: count() })
     .from(auditLogsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined);
-
   res.json(CountAuditLogsResponse.parse({ count: row?.count ?? 0 }));
 });
 

@@ -1276,6 +1276,10 @@ export const listAuditLogsQueryOffsetMin = 0;
 export const ListAuditLogsQueryParams = zod.object({
   "entityType": zod.coerce.string().optional(),
   "entityId": zod.coerce.number().optional(),
+  "search": zod.coerce.string().optional().describe('Case-insensitive text match against user, action, entity, and description'),
+  "from": zod.date().optional().describe('Only entries created at or after this instant (ISO 8601)'),
+  "to": zod.date().optional().describe('Only entries created at or before this instant (ISO 8601)'),
+  "overridesOnly": zod.coerce.boolean().optional().describe('Only budget-override entries'),
   "limit": zod.coerce.number().min(1).max(listAuditLogsQueryLimitMax).default(listAuditLogsQueryLimitDefault).describe('Max rows to return (1-200, default 200)'),
   "offset": zod.coerce.number().min(listAuditLogsQueryOffsetMin).default(listAuditLogsQueryOffsetDefault).describe('Number of rows to skip (default 0)')
 })
@@ -1298,11 +1302,15 @@ export const ListAuditLogsResponse = zod.array(ListAuditLogsResponseItem)
  */
 export const CountAuditLogsQueryParams = zod.object({
   "entityType": zod.coerce.string().optional(),
-  "entityId": zod.coerce.number().optional()
+  "entityId": zod.coerce.number().optional(),
+  "search": zod.coerce.string().optional().describe('Case-insensitive text match against user, action, entity, and description'),
+  "from": zod.date().optional().describe('Only entries created at or after this instant (ISO 8601)'),
+  "to": zod.date().optional().describe('Only entries created at or before this instant (ISO 8601)'),
+  "overridesOnly": zod.coerce.boolean().optional().describe('Only budget-override entries')
 })
 
 export const CountAuditLogsResponse = zod.object({
-  "count": zod.number().describe('Total number of audit log entries matching the filters')
+  "count": zod.number()
 })
 
 

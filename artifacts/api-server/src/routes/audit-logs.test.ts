@@ -284,3 +284,106 @@ describe("GET /audit-logs/count", () => {
     expect(list.body).toHaveLength(byType.body.count);
   });
 });
+
+describe("GET /audit-logs server-side search/date/override filters", () => {
+  const filterEntityType = `filter-${suffix}`;
+
+  async function seedFilterRows() {
+    const inserted = await db
+      .insert(auditLogsTable)
+      .values([
+        {
+          userName: "Hank Searcher",
+          action: "create",
+          entityType: filterEntityType,
+          entityId: 42,
+          description: "unique-needle-alpha entry",
+          createdAt: new Date("2032-03-01T10:00:00.000Z"),
+        },
+        {
+          userName: "Iris Other",
+          action: "update",
+          entityType: filterEntityType,
+          entityId: 43,
+          description: "plain entry",
+          createdAt: new Date("2032-03-05T10:00:00.000Z"),
+        },
+        {
+          userName: "Jack Override",
+          action: "approved over budget",
+          entityType: filterEntityType,
+          entityId: 44,
+          description: "override entry",
+          createdAt: new Date("2032-03-10T10:00:00.000Z"),
+        },
+      ])
+      .returning();
+    for (const row of inserted) createdIds.push(row.id);
+    return inserted;
+  }
+
+  it("matches search text against user, description, and entity regardless of paging", async () => {
+    await seedFilterRows();
+
+    const byDescription = await request(app)
+      .get("/api/audit-logs")
+      .query({ entityType: filterEntityType, search: "unique-needle-alpha" });
+    expect(byDescription.status).toBe(200);
+    expect(byDescription.body).toHaveLength(1);
+    expect(byDescription.body[0].userName).toBe("Hank Searcher");
+
+    const byUser = await request(app)
+      .get("/api/audit-logs")
+      .query({ entityType: filterEntityType, search: "iris" });
+    expect(byUser.status).toBe(200);
+    expect(byUser.body).toHaveLength(1);
+    expect(byUser.body[0].userName).toBe("Iris Other");
+
+    const byEntity = await request(app)
+      .get("/api/audit-logs")
+      .query({ search: `${filterEntityType} #44` });
+    expect(byEntity.status).toBe(200);
+    expect(byEntity.body).toHaveLength(1);
+    expect(byEntity.body[0].entityId).toBe(44);
+  });
+
+  it("filters by date range with from/to", async () => {
+    const res = await request(app).get("/api/audit-logs").query({
+      entityType: filterEntityType,
+      from: "2032-03-04T00:00:00.000Z",
+      to: "2032-03-06T23:59:59.999Z",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].userName).toBe("Iris Other");
+  });
+
+  it("filters to budget overrides only", async () => {
+    const res = await request(app)
+      .get("/api/audit-logs")
+      .query({ entityType: filterEntityType, overridesOnly: "true" });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].action).toBe("approved over budget");
+  });
+
+  it("counts matching entries via /audit-logs/count", async () => {
+    const all = await request(app)
+      .get("/api/audit-logs/count")
+      .query({ entityType: filterEntityType });
+    expect(all.status).toBe(200);
+    expect(all.body.count).toBe(3);
+
+    const filtered = await request(app)
+      .get("/api/audit-logs/count")
+      .query({ entityType: filterEntityType, search: "unique-needle-alpha" });
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.count).toBe(1);
+
+    const overrides = await request(app)
+      .get("/api/audit-logs/count")
+      .query({ entityType: filterEntityType, overridesOnly: "true" });
+    expect(overrides.status).toBe(200);
+    expect(overrides.body.count).toBe(1);
+  });
+});
