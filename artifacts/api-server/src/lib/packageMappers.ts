@@ -6,9 +6,8 @@ import type {
   LaborOverrideRow,
   WorkPlan,
   Employee,
-  LineItemRow,
 } from "@workspace/db";
-import { computeFinancials, evaluateBudgetStatus } from "./financials";
+import { evaluateBudgetStatus } from "./financials";
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -89,10 +88,16 @@ export function toApiOverride(o: LaborOverrideRow) {
 
 /**
  * Rolls a package's timesheet entries up into per-line labor and computed
- * financials. Each entry's total weekly hours become a single labor line; we
- * reuse computeFinancials by mapping entries onto the line-item shape it reads
- * (hours, rate, category). The OT/DT premium logic therefore stays identical to
- * the existing invoice pipeline.
+ * financials using the SAME burdened-rate model as the reference-workbook
+ * export engine (masterWorkbook / Sub Calc sheet), so on-screen numbers and
+ * the exported Excel can never drift:
+ *
+ *   This Period = labor × (1 + OH) × (1 + fee) + labor × FCCM (+ ODCs)
+ *
+ * Entry rates are already fully-burdened billing rates, so no separate fringe
+ * layer is applied (the invoice pipeline's computeFinancials model does NOT
+ *  apply here). PTO/holiday hours bill at rate 0 and are excluded from Total
+ * Hours, matching the reference workbook's billable row (week tab O9).
  */
 export function buildPackageRollup(
   entries: TimesheetEntryRow[],
@@ -112,34 +117,95 @@ export function buildPackageRollup(
     };
   });
 
-  const lineItemLike = entries.map((e) => ({
-    hours: round2(entryTotalHours(e)),
-    rate: e.rate,
-    category: e.category,
-  })) as unknown as LineItemRow[];
+  // Billable hours only: PTO/holiday rows are non-billable in the reference
+  // workbook (they live on rows 11/12 and never roll into O9).
+  const totalHours = round2(
+    laborLines.reduce(
+      (s, l) => (l.category === "pto" || l.category === "holiday" ? s : s + l.hours),
+      0,
+    ),
+  );
 
-  const f = computeFinancials(lineItemLike, workPlan, opts);
-  const totalHours = round2(laborLines.reduce((s, l) => s + l.hours, 0));
+  // Straight-time labor + OT/DT premium at burdened entry rates, mirroring
+  // the export's "Total (Labor + Overtime)".
+  let straightLabor = 0;
+  let otdtPremiumRaw = 0;
+  for (const l of laborLines) {
+    const base = l.hours * l.rate;
+    straightLabor += base;
+    if (l.category === "ot") otdtPremiumRaw += base * 0.5;
+    else if (l.category === "dt") otdtPremiumRaw += base * 1.0;
+  }
+  const otdtPremium = round2(otdtPremiumRaw);
+  const laborTotal = round2(straightLabor + otdtPremiumRaw);
+
+  const overheadRate = (workPlan.overheadRate ?? 0) / 100;
+  const fixedFeeRate = (workPlan.fixedFeeRate ?? 0) / 100;
+  const fccmRate = (workPlan.fccmRate ?? 0) / 100;
+
+  const overheadTotal = round2(laborTotal * overheadRate);
+  const fixedFee = round2((laborTotal + overheadTotal) * fixedFeeRate);
+  const fccm = round2(laborTotal * fccmRate);
+  const otherDirectCosts = round2(opts.otherDirectCosts ?? 0);
+
+  const totalThisPeriod = round2(
+    laborTotal + overheadTotal + fixedFee + fccm + otherDirectCosts,
+  );
+  const previouslyBilled = round2(opts.previouslyBilled ?? 0);
+  const totalToDate = round2(totalThisPeriod + previouslyBilled);
+  const budget = workPlan.totalBudget;
+  const remainingBalance = round2(budget - totalToDate);
+  const percentExpended = budget > 0 ? round2((totalToDate / budget) * 100) : 0;
+
+  const financials: {
+    label: string;
+    amount: number;
+    note?: string | null;
+    emphasis?: boolean | null;
+  }[] = [{ label: "Direct Labor (burdened rates)", amount: laborTotal }];
+  if (overheadRate > 0) {
+    financials.push({
+      label: `Overhead (${workPlan.overheadRate}%)`,
+      amount: overheadTotal,
+    });
+  }
+  financials.push({ label: `Fixed Fee (${workPlan.fixedFeeRate ?? 0}%)`, amount: fixedFee });
+  if (fccmRate > 0) {
+    financials.push({ label: `FCCM (${workPlan.fccmRate}%)`, amount: fccm });
+  }
+  if (otherDirectCosts > 0) {
+    financials.push({ label: "Other Direct Costs", amount: otherDirectCosts });
+  }
+  financials.push({ label: "Total This Period", amount: totalThisPeriod, emphasis: true });
+  financials.push({ label: "Previously Billed", amount: previouslyBilled, note: "Carried forward" });
+  financials.push({ label: "Total Billed To Date", amount: totalToDate, emphasis: true });
+  financials.push({
+    label: "Remaining Balance",
+    amount: remainingBalance,
+    note: `${percentExpended}% of budget expended`,
+    emphasis: true,
+  });
 
   return {
     laborLines,
-    financials: f.financials,
+    financials,
     totalHours,
-    laborTotal: f.laborTotal,
-    fringeTotal: f.fringeTotal,
-    overheadTotal: f.overheadTotal,
-    fixedFee: f.fixedFee,
-    fccm: f.fccm,
-    otdtPremium: f.otdtPremium,
-    otherDirectCosts: f.otherDirectCosts,
-    totalThisPeriod: f.totalThisPeriod,
-    previouslyBilled: f.previouslyBilled,
-    totalToDate: f.totalToDate,
-    remainingBalance: f.remainingBalance,
-    percentExpended: f.percentExpended,
+    laborTotal,
+    // No separate fringe layer: entry rates are already fully burdened.
+    fringeTotal: 0,
+    overheadTotal,
+    fixedFee,
+    fccm,
+    otdtPremium,
+    otherDirectCosts,
+    totalThisPeriod,
+    previouslyBilled,
+    totalToDate,
+    remainingBalance,
+    percentExpended,
     // Shared budget signal so package-level UI stays in sync with the
     // per-invoice workspace (same evaluateBudgetStatus thresholds).
-    budgetStatus: evaluateBudgetStatus(f),
+    budgetStatus: evaluateBudgetStatus({ percentExpended, remainingBalance }),
   };
 }
 

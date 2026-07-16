@@ -68,14 +68,19 @@ export default function PackageWorkspace() {
   const statusStyle =
     PACKAGE_STATUS_STYLES[pkg.status] ?? PACKAGE_STATUS_STYLES.draft;
 
+  // Budget = billed to date + remaining (exact: remaining is budget − toDate).
+  const budget = rollup.totalToDate + rollup.remainingBalance;
   const summaryCards = [
     { label: "Total Hours", value: formatHours(rollup.totalHours) },
     { label: "Labor Total", value: formatCurrency(rollup.laborTotal) },
     { label: "This Period", value: formatCurrency(rollup.totalThisPeriod) },
     { label: "Total To Date", value: formatCurrency(rollup.totalToDate) },
+    { label: "Budget", value: formatCurrency(budget) },
+    { label: "Previously Billed", value: formatCurrency(rollup.previouslyBilled) },
+    { label: "Remaining", value: formatCurrency(rollup.remainingBalance) },
     {
       label: "% Expended",
-      value: `${rollup.percentExpended.toFixed(1)}%`,
+      value: `${rollup.percentExpended.toFixed(2)}%`,
     },
   ];
 
@@ -119,7 +124,7 @@ export default function PackageWorkspace() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {summaryCards.map((card) => (
           <Card key={card.label}>
             <CardContent className="p-4">

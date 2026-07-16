@@ -49,3 +49,7 @@ Thumbs.db
 .local/
 artifacts/azad-invoice/test-results/
 artifacts/azad-invoice/playwright-report/
+
+# Runtime storage: generated exports and uploaded files must never be committed
+artifacts/api-server/storage/generated/
+artifacts/api-server/storage/uploads/
