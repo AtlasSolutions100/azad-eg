@@ -5,7 +5,7 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
+const TOAST_LIMIT = 3
 const TOAST_REMOVE_DELAY = 1000000
 
 type ToasterToast = ToastProps & {
@@ -73,11 +73,30 @@ const addToRemoveQueue = (toastId: string) => {
 
 export const reducer = (state: State, action: Action): State => {
   switch (action.type) {
-    case "ADD_TOAST":
+    case "ADD_TOAST": {
+      const toasts = [action.toast, ...state.toasts]
+      if (toasts.length <= TOAST_LIMIT) {
+        return { ...state, toasts }
+      }
+      // Evict oldest non-persistent (non-destructive) toasts first so a
+      // sticky error toast is not silently replaced by a newer toast.
+      const excess = toasts.length - TOAST_LIMIT
+      const evictIds = new Set<string>()
+      for (let i = toasts.length - 1; i >= 0 && evictIds.size < excess; i--) {
+        if (toasts[i].variant !== "destructive" && toasts[i].id !== action.toast.id) {
+          evictIds.add(toasts[i].id)
+        }
+      }
+      for (let i = toasts.length - 1; i >= 0 && evictIds.size < excess; i--) {
+        if (toasts[i].id !== action.toast.id) {
+          evictIds.add(toasts[i].id)
+        }
+      }
       return {
         ...state,
-        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
+        toasts: toasts.filter((t) => !evictIds.has(t.id)),
       }
+    }
 
     case "UPDATE_TOAST":
       return {
