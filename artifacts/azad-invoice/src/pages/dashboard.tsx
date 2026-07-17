@@ -104,6 +104,40 @@ function BudgetBadge({ pkg }: { pkg: PackageSummary }) {
   );
 }
 
+const BUDGET_LEVEL_STYLES: Record<
+  string,
+  { bar: string; text: string }
+> = {
+  ok: { bar: "bg-emerald-500", text: "text-[#5F5F5F]" },
+  approaching: { bar: "bg-yellow-500", text: "text-yellow-800" },
+  over: { bar: "bg-red-500", text: "text-red-700" },
+};
+
+function BudgetMeter({ pkg }: { pkg: PackageSummary }) {
+  const status = pkg.budgetStatus;
+  if (!status) return null;
+  const style = BUDGET_LEVEL_STYLES[status.level] ?? BUDGET_LEVEL_STYLES.ok;
+  const width = Math.max(0, Math.min(100, status.percentExpended));
+  return (
+    <div className="mt-3" data-testid={`budget-meter-${pkg.id}`} title={status.message}>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+        <div
+          className={`h-full rounded-full ${style.bar}`}
+          style={{ width: `${width}%` }}
+        />
+      </div>
+      <div className={`mt-1 flex items-center justify-between text-[11px] font-medium ${style.text}`}>
+        <span>{status.percentExpended}% of budget expended</span>
+        <span>
+          {status.remainingBalance < 0
+            ? `${formatCurrency(Math.abs(status.remainingBalance))} over`
+            : `${formatCurrency(status.remainingBalance)} left`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function PackageTile({
   pkg,
   onOpen,
@@ -176,6 +210,8 @@ function PackageTile({
           </p>
         </div>
       </div>
+
+      <BudgetMeter pkg={pkg} />
 
       <div className="mt-4 flex items-center justify-between border-t border-dashed border-border pt-3">
         <DocStatusStrip pkg={pkg} />
