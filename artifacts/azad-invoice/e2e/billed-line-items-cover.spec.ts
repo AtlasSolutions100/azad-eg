@@ -85,10 +85,6 @@ test("billing editor + cover fields flow: edit → save → export → carry-for
   // Export builds an Excel workbook and a merged PDF — give it room.
   test.setTimeout(300_000);
 
-  // The work-plan and create-package dialogs are taller than the default
-  // viewport and don't scroll, leaving their submit buttons unclickable.
-  await page.setViewportSize({ width: 1400, height: 2200 });
-
   await signIn(page);
   const token = await apiToken(page);
   const api = (path_: string) => `${baseURL}/api${path_}`;
