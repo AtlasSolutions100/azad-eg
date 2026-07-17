@@ -46,6 +46,12 @@ export default function WorkPlans() {
   };
 
   const handleCalculateSplit = () => {
+    const breakdownFields = [
+      formData.budgetLabor, formData.budgetOverhead, formData.budgetFixedFee, formData.budgetFccm,
+      formData.prevBilledLabor, formData.prevBilledOverhead, formData.prevBilledFixedFee, formData.prevBilledFccm,
+    ];
+    const hasExistingValues = breakdownFields.some(v => v !== undefined && v !== null);
+    if (hasExistingValues && !confirm("This will overwrite the breakdown values you've already entered. Replace them with calculated amounts?")) return;
     const budget = decompose(formData.totalBudget ?? 0);
     const prev = decompose(prevBilledTotal ?? 0);
     setFormData({
