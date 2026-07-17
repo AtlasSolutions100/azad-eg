@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
+import { useEffect, useState } from "react";
+import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, useListPackages, getListPackagesQueryKey, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,27 @@ export default function WorkPlans() {
   const [editId, setEditId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<WorkPlanInput>>({ billingCycle: 'whole_month' });
   const [prevBilledTotal, setPrevBilledTotal] = useState<number | undefined>(undefined);
+  const [prevBilledEdited, setPrevBilledEdited] = useState(false);
+
+  // Pre-fill the calculator's previously-billed total from the plan's latest
+  // package (the same previouslyBilled the export uses). Billers can override.
+  const { data: planPackages } = useListPackages(
+    { workPlanId: editId ?? undefined },
+    { query: { enabled: open && editId != null, queryKey: getListPackagesQueryKey({ workPlanId: editId ?? undefined }) } },
+  );
+  useEffect(() => {
+    if (!open || editId == null || prevBilledEdited || !planPackages?.length) return;
+    const latest = [...planPackages].sort((a, b) =>
+      (a.payPeriodEnd ?? "").localeCompare(b.payPeriodEnd ?? "") || a.id - b.id,
+    )[planPackages.length - 1];
+    if (latest?.previouslyBilled != null) setPrevBilledTotal(latest.previouslyBilled);
+  }, [open, editId, prevBilledEdited, planPackages]);
 
   const handleOpenCreate = () => {
     setEditId(null);
     setFormData({ billingCycle: 'whole_month' });
     setPrevBilledTotal(undefined);
+    setPrevBilledEdited(false);
     setOpen(true);
   };
 
@@ -101,6 +117,7 @@ export default function WorkPlans() {
       terms: plan.terms ?? undefined,
     });
     setPrevBilledTotal(undefined);
+    setPrevBilledEdited(false);
     setOpen(true);
   };
 
@@ -213,7 +230,7 @@ export default function WorkPlans() {
             <div className="col-span-2 flex items-end gap-3">
               <div className="space-y-2 flex-1">
                 <Label>Previously Billed Total ($) — used only by the calculator</Label>
-                <Input type="number" step="0.01" value={prevBilledTotal ?? ''} onChange={e => setPrevBilledTotal(e.target.value === '' ? undefined : Number(e.target.value))} />
+                <Input type="number" step="0.01" value={prevBilledTotal ?? ''} onChange={e => { setPrevBilledEdited(true); setPrevBilledTotal(e.target.value === '' ? undefined : Number(e.target.value)); }} />
               </div>
               <Button
                 type="button"
