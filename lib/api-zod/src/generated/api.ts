@@ -2164,6 +2164,22 @@ export const PullPackageHoursFromProcasResponse = zod.object({
 
 
 /**
+ * @summary Compare this package's Previously Billed against Procas billing history
+ */
+export const CheckPackageTieOutWithProcasParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CheckPackageTieOutWithProcasResponse = zod.object({
+  "previouslyBilled": zod.number().describe('The package\'s current Previously Billed value'),
+  "procasBilled": zod.number().describe('Total non-voided invoices in Procas BillingHistory before the period start'),
+  "difference": zod.number().describe('previouslyBilled - procasBilled'),
+  "matches": zod.boolean().describe('True when the two values agree within a cent'),
+  "source": zod.string().nullable().describe('How the package\'s Previously Billed was originally set (procas\/manual\/null)')
+})
+
+
+/**
  * @summary Add a timesheet entry
  */
 export const CreateTimesheetEntryParams = zod.object({

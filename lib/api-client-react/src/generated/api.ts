@@ -85,6 +85,7 @@ import type {
   SearchResult,
   Signature,
   SignatureUpload,
+  TieOutCheckResult,
   TimeImportUpload,
   TimesheetEntry,
   TimesheetEntryInput,
@@ -5226,6 +5227,76 @@ export const usePullPackageHoursFromProcas = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getPullPackageHoursFromProcasMutationOptions(options));
+    }
+
+export const getCheckPackageTieOutWithProcasUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/procas-tie-out`
+}
+
+/**
+ * @summary Compare this package's Previously Billed against Procas billing history
+ */
+export const checkPackageTieOutWithProcas = async (id: number, options?: RequestInit): Promise<TieOutCheckResult> => {
+
+  return customFetch<TieOutCheckResult>(getCheckPackageTieOutWithProcasUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCheckPackageTieOutWithProcasMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkPackageTieOutWithProcas>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkPackageTieOutWithProcas>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['checkPackageTieOutWithProcas'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkPackageTieOutWithProcas>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  checkPackageTieOutWithProcas(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckPackageTieOutWithProcasMutationResult = NonNullable<Awaited<ReturnType<typeof checkPackageTieOutWithProcas>>>
+
+    export type CheckPackageTieOutWithProcasMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Compare this package's Previously Billed against Procas billing history
+ */
+export const useCheckPackageTieOutWithProcas = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkPackageTieOutWithProcas>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof checkPackageTieOutWithProcas>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCheckPackageTieOutWithProcasMutationOptions(options));
     }
 
 export const getCreateTimesheetEntryUrl = (id: number,) => {

@@ -1181,6 +1181,19 @@ export interface PullPackageHoursResult {
   warnings: string[];
 }
 
+export interface TieOutCheckResult {
+  /** The package's current Previously Billed value */
+  previouslyBilled: number;
+  /** Total non-voided invoices in Procas BillingHistory before the period start */
+  procasBilled: number;
+  /** previouslyBilled - procasBilled */
+  difference: number;
+  /** True when the two values agree within a cent */
+  matches: boolean;
+  /** How the package's Previously Billed was originally set (procas/manual/null) */
+  source: string | null;
+}
+
 export type TimesheetEntryLocation = typeof TimesheetEntryLocation[keyof typeof TimesheetEntryLocation];
 
 

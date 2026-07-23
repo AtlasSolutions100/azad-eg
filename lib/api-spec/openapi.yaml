@@ -1216,6 +1216,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/PullPackageHoursResult"
 
+  /packages/{id}/procas-tie-out:
+    post:
+      operationId: checkPackageTieOutWithProcas
+      tags: [packages]
+      summary: Compare this package's Previously Billed against Procas billing history
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Tie-out comparison result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TieOutCheckResult"
+
   /packages/{id}/entries:
     post:
       operationId: createTimesheetEntry
@@ -2622,6 +2637,26 @@ components:
         warnings:
           type: array
           items: { type: string }
+    TieOutCheckResult:
+      type: object
+      required: [previouslyBilled, procasBilled, difference, matches, source]
+      properties:
+        previouslyBilled:
+          type: number
+          description: The package's current Previously Billed value
+        procasBilled:
+          type: number
+          description: Total non-voided invoices in Procas BillingHistory before the period start
+        difference:
+          type: number
+          description: previouslyBilled - procasBilled
+        matches:
+          type: boolean
+          description: True when the two values agree within a cent
+        source:
+          type: string
+          nullable: true
+          description: How the package's Previously Billed was originally set (procas/manual/null)
     TimesheetEntry:
       type: object
       required:

@@ -3,7 +3,9 @@ import {
   useUpdatePackage,
   useListSignatures,
   useGetPackageValidations,
+  useCheckPackageTieOutWithProcas,
   type PackageDetail,
+  type TieOutCheckResult,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +57,31 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
   const overBudget = budgetStatus.overBudget;
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+
+  // Tie-out check: compare Previously Billed against Procas BillingHistory on
+  // demand. Result is kept locally and cleared when the package changes.
+  const tieOutCheck = useCheckPackageTieOutWithProcas();
+  const [tieOut, setTieOut] = useState<TieOutCheckResult | null>(null);
+  // The check compares the SAVED package value, so clear a stale result when
+  // the package changes or the user edits Previously Billed locally.
+  useEffect(() => setTieOut(null), [pkg.id]);
+  const editedSincePkg = form.previouslyBilled !== pkg.previouslyBilled;
+  useEffect(() => {
+    if (editedSincePkg) setTieOut(null);
+  }, [editedSincePkg]);
+
+  const runTieOut = async () => {
+    try {
+      const result = await tieOutCheck.mutateAsync({ id: pkg.id });
+      setTieOut(result);
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Tie-out check failed",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+  };
 
   useEffect(() => {
     setForm({
@@ -205,6 +232,33 @@ export default function InvoiceTab({ detail }: { detail: PackageDetail }) {
                     setForm({ ...form, previouslyBilled: Number(e.target.value) })
                   }
                 />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={runTieOut}
+                    disabled={tieOutCheck.isPending}
+                    data-testid="button-tie-out-check"
+                  >
+                    {tieOutCheck.isPending ? "Checking…" : "Check vs Procas"}
+                  </Button>
+                  {tieOut && tieOut.matches && (
+                    <span className="flex items-center gap-1 text-xs text-green-700" data-testid="text-tie-out-match">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Ties out with Procas ({formatCurrency(tieOut.procasBilled)})
+                    </span>
+                  )}
+                  {tieOut && !tieOut.matches && (
+                    <span className="flex items-center gap-1 text-xs text-destructive" data-testid="text-tie-out-mismatch">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Procas shows {formatCurrency(tieOut.procasBilled)} (
+                      {tieOut.difference > 0 ? "+" : "−"}
+                      {formatCurrency(Math.abs(tieOut.difference))} vs this package)
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Other Direct Costs</Label>

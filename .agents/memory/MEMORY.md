@@ -5,6 +5,7 @@
 - [Excel export repair warning](excel-export-defined-names.md) — templates carry broken external/`#REF!` named ranges; strip them before write or Excel shows a "Removed Records: Named range" repair prompt.
 - [Employee rate effective dates](employee-rate-effective-dates.md) — labor-row split keys off distinct entry rates; every rate assignment must go through effectiveRate() with a week/period as-of date.
 - [Multi-employee package contributors](multi-employee-packages.md) — key contributors by employeeId (name only as legacy fallback); name-only grouping merges people who share a name.
+- [Procas GLDetail empty](procas-gldetail-empty.md) — Labor Journal table returns zero rows on this feed; Timesheet is the effective hours source until Procas enables GL export.
 - [Procas OData test mocks](procas-odata-testing.md) — decode `+` to spaces before matching $filter text in fetch mocks, or every assertion silently misses.
 - [Playwright e2e on NixOS with Clerk](playwright-e2e-nixos-clerk.md) — bundled Chromium won't launch; use Nix chromium executablePath, Clerk test-mode email_code sign-in.
 - [Stale composite dist types](stale-composite-dist.md) — rebuild lib/api-client-react with `tsc -b` after schema changes; stale dist .d.ts hides/creates artifact type errors.

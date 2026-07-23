@@ -106,6 +106,7 @@ export * from './searchResultType';
 export * from './signature';
 export * from './signatureUpload';
 export * from './statusCount';
+export * from './tieOutCheckResult';
 export * from './timeImportUpload';
 export * from './timeImportUploadSource';
 export * from './timesheetCategory';

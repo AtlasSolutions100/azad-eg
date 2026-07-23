@@ -47,6 +47,7 @@ import {
   ReplaceBilledLineItemsBody,
   ReplaceBilledLineItemsResponse,
   PullPackageHoursFromProcasResponse,
+  CheckPackageTieOutWithProcasResponse,
 } from "@workspace/api-zod";
 import {
   listBilledLineItems,
@@ -610,6 +611,56 @@ router.post("/packages/:id/procas-hours", async (req, res): Promise<void> => {
       replacedCount: result.replacedCount,
       weeksCreated: result.weeksCreated,
       warnings: result.warnings,
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Procas tie-out check: compare the package's Previously Billed against what
+// Procas BillingHistory says was invoiced for this job before the period start.
+// ---------------------------------------------------------------------------
+
+router.post("/packages/:id/procas-tie-out", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkg) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
+  if (!wp) {
+    res.status(404).json({ error: "Work plan not found" });
+    return;
+  }
+  const conn = await getProcasConnection();
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!creds) {
+    res.status(409).json({ error: "Procas is not connected. Connect it from the header indicator first." });
+    return;
+  }
+  let procasBilled: number;
+  try {
+    procasBilled = await fetchPreviouslyBilledFromProcas(
+      creds,
+      wp.jobNumber.trim(),
+      pkg.payPeriodStart,
+    );
+  } catch {
+    res.status(502).json({ error: "Could not reach Procas billing history. Try again in a moment." });
+    return;
+  }
+  const previouslyBilled = pkg.previouslyBilled;
+  const difference = previouslyBilled - procasBilled;
+  // "Ties out" means agreeing within a cent: round the difference to whole
+  // cents to avoid floating-point noise, then allow at most one cent apart.
+  const matches = Math.abs(Math.round(difference * 100)) <= 1;
+  res.json(
+    CheckPackageTieOutWithProcasResponse.parse({
+      previouslyBilled,
+      procasBilled,
+      difference,
+      matches,
+      source: pkg.previouslyBilledSource ?? null,
     }),
   );
 });
