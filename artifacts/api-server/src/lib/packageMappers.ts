@@ -40,6 +40,7 @@ export function toApiTimesheetEntry(e: TimesheetEntryRow) {
     totalHours,
     rate: e.rate,
     amount: round2(totalHours * e.rate),
+    source: e.source,
     taskNo: e.taskNo,
     notes: e.notes,
   };

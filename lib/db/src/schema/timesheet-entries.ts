@@ -25,6 +25,9 @@ export const timesheetEntriesTable = pgTable("timesheet_entries", {
   hoursSat: doublePrecision("hours_sat").notNull().default(0),
   hoursSun: doublePrecision("hours_sun").notNull().default(0),
   rate: doublePrecision("rate").notNull().default(0),
+  // Where this entry came from: "manual" (typed in) or "procas" (auto-pulled).
+  // Procas re-pulls replace only source="procas" rows, never manual ones.
+  source: text("source").notNull().default("manual"),
   taskNo: text("task_no"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

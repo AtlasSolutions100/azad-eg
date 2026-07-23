@@ -34,6 +34,9 @@ export const workPlansTable = pgTable("work_plans", {
   contactPerson: text("contact_person"),
   bartProjectNumbers: text("bart_project_numbers"),
   terms: text("terms"),
+  // Procas project code (or prefix) this work plan maps to, e.g. "10007".
+  // Used to pull labor hours from the Procas OData feed; null = not mapped.
+  procasProject: text("procas_project"),
   billingCycle: text("billing_cycle").notNull().default("whole_month"),
   status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

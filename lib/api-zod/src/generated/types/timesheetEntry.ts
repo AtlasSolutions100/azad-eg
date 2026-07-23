@@ -7,6 +7,7 @@
  */
 import type { TimesheetCategory } from './timesheetCategory';
 import type { TimesheetEntryLocation } from './timesheetEntryLocation';
+import type { TimesheetEntrySource } from './timesheetEntrySource';
 
 export interface TimesheetEntry {
   id: number;
@@ -28,6 +29,7 @@ export interface TimesheetEntry {
   totalHours: number;
   rate: number;
   amount: number;
+  source: TimesheetEntrySource;
   /** @nullable */
   taskNo?: string | null;
   /** @nullable */

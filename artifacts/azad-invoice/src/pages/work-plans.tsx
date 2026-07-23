@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, useListPackages, getListPackagesQueryKey, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
+import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, useListPackages, useListProcasProjects, getListPackagesQueryKey, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 export default function WorkPlans() {
   const { data: plans, isLoading } = useListWorkPlans();
+  const { data: procasProjects } = useListProcasProjects();
   const createPlan = useCreateWorkPlan();
   const updatePlan = useUpdateWorkPlan();
   const deletePlan = useDeleteWorkPlan();
@@ -93,6 +94,7 @@ export default function WorkPlans() {
       agreementNo: plan.agreementNo ?? undefined,
       poNumber: plan.poNumber ?? undefined,
       wspProjectNo: plan.wspProjectNo ?? undefined,
+      procasProject: plan.procasProject ?? undefined,
       totalBudget: plan.totalBudget,
       budgetLabor: plan.budgetLabor ?? undefined,
       budgetOverhead: plan.budgetOverhead ?? undefined,
@@ -202,6 +204,21 @@ export default function WorkPlans() {
             <div className="space-y-2">
               <Label>WSP Project No</Label>
               <Input value={formData.wspProjectNo || ''} onChange={e => setFormData({...formData, wspProjectNo: e.target.value})} />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label>Procas Project (for pulling labor hours)</Label>
+              <Input
+                list="procas-projects"
+                placeholder={procasProjects ? "Type to search Procas projects…" : "Connect Procas to load projects"}
+                value={formData.procasProject || ''}
+                onChange={e => setFormData({...formData, procasProject: e.target.value === '' ? null : e.target.value.split(' — ')[0].trim()})}
+              />
+              <datalist id="procas-projects">
+                {(procasProjects ?? []).map(p => (
+                  <option key={p.project} value={p.project}>{`${p.project} — ${p.description}`}</option>
+                ))}
+              </datalist>
+              <p className="text-xs text-[#5F5F5F]">Timesheet hours booked under this Procas project (including its sub-tasks) can be pulled into billing packages.</p>
             </div>
             <div className="col-span-2 border-t pt-4">
               <p className="text-sm font-medium text-[#333333]">Burden rates (drive Fringe, Overhead, Fixed Fee &amp; FCCM in every document)</p>

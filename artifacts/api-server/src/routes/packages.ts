@@ -46,6 +46,7 @@ import {
   ListBilledLineItemsResponse,
   ReplaceBilledLineItemsBody,
   ReplaceBilledLineItemsResponse,
+  PullPackageHoursFromProcasResponse,
 } from "@workspace/api-zod";
 import {
   listBilledLineItems,
@@ -74,6 +75,7 @@ import { resolveSignaturePath } from "../lib/excel";
 import { evaluateBudgetStatus } from "../lib/financials";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import { fetchPreviouslyBilledFromProcas } from "../lib/procasSync";
+import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
 import { effectiveRate, loadRateChanges } from "../lib/employeeRates";
@@ -573,6 +575,43 @@ router.delete("/packages/:id/weeks/:weekId", async (req, res): Promise<void> => 
     return;
   }
   res.sendStatus(204);
+});
+
+// ---------------------------------------------------------------------------
+// Procas hours pull
+// ---------------------------------------------------------------------------
+
+router.post("/packages/:id/procas-hours", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkg) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
+  if (!wp) {
+    res.status(404).json({ error: "Work plan not found" });
+    return;
+  }
+  const conn = await getProcasConnection();
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!creds) {
+    res.status(409).json({ error: "Procas is not connected. Connect it from the header indicator first." });
+    return;
+  }
+  const result = await pullPackageHoursFromProcas(pkg, wp, creds);
+  if (!result.ok) {
+    res.status(422).json({ error: result.error ?? "Procas pull failed." });
+    return;
+  }
+  res.json(
+    PullPackageHoursFromProcasResponse.parse({
+      importedCount: result.importedCount,
+      replacedCount: result.replacedCount,
+      weeksCreated: result.weeksCreated,
+      warnings: result.warnings,
+    }),
+  );
 });
 
 // ---------------------------------------------------------------------------

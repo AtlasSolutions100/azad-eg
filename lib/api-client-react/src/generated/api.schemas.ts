@@ -107,6 +107,11 @@ export interface WorkPlan {
   bartProjectNumbers?: string | null;
   /** @nullable */
   terms?: string | null;
+  /**
+     * Procas project code this work plan pulls labor hours from.
+     * @nullable
+     */
+  procasProject?: string | null;
   billingCycle: WorkPlanBillingCycle;
   status: WorkPlanStatus;
   createdAt: string;
@@ -161,6 +166,8 @@ export interface WorkPlanInput {
   contactPerson?: string;
   bartProjectNumbers?: string;
   terms?: string;
+  /** @nullable */
+  procasProject?: string | null;
   billingCycle: WorkPlanInputBillingCycle;
 }
 
@@ -221,6 +228,8 @@ export interface WorkPlanUpdate {
   contactPerson?: string;
   bartProjectNumbers?: string;
   terms?: string;
+  /** @nullable */
+  procasProject?: string | null;
   billingCycle?: WorkPlanUpdateBillingCycle;
   status?: WorkPlanUpdateStatus;
 }
@@ -1158,12 +1167,34 @@ export interface PackageWeekUpdate {
   sortOrder?: number;
 }
 
+export interface ProcasProject {
+  project: string;
+  description: string;
+  activeForBilling: boolean;
+  isClosed: boolean;
+}
+
+export interface PullPackageHoursResult {
+  importedCount: number;
+  replacedCount: number;
+  weeksCreated: number;
+  warnings: string[];
+}
+
 export type TimesheetEntryLocation = typeof TimesheetEntryLocation[keyof typeof TimesheetEntryLocation];
 
 
 export const TimesheetEntryLocation = {
   home: 'home',
   field: 'field',
+} as const;
+
+export type TimesheetEntrySource = typeof TimesheetEntrySource[keyof typeof TimesheetEntrySource];
+
+
+export const TimesheetEntrySource = {
+  manual: 'manual',
+  procas: 'procas',
 } as const;
 
 export type TimesheetCategory = typeof TimesheetCategory[keyof typeof TimesheetCategory];
@@ -1198,6 +1229,7 @@ export interface TimesheetEntry {
   totalHours: number;
   rate: number;
   amount: number;
+  source: TimesheetEntrySource;
   /** @nullable */
   taskNo?: string | null;
   /** @nullable */

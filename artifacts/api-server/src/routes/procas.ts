@@ -8,12 +8,15 @@ import {
   GetProcasSchedulerRunsResponse,
   UpdateProcasSchedulerBody,
   UpdateProcasSchedulerResponse,
+  ListProcasProjectsResponse,
 } from "@workspace/api-zod";
 import {
   getProcasConnection,
   getProcasConnectionState,
   saveProcasConnection,
   pingProcas,
+  credsFromConnection,
+  fetchProcasTable,
 } from "../lib/procas";
 import {
   getSchedulerState,
@@ -202,6 +205,32 @@ router.post("/procas/refresh", async (_req, res): Promise<void> => {
       : `On-demand Procas refresh: ${state.lastSynced} synced, ${state.lastFailed} failed`,
   });
   res.json(GetProcasSchedulerResponse.parse(await schedulerPayload(state)));
+});
+
+// Lists the projects available in the connected Procas company so a work
+// plan can be linked to the Procas project it should pull hours from.
+router.get("/procas/projects", async (_req, res): Promise<void> => {
+  const conn = await getProcasConnection();
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!creds) {
+    res.status(409).json({ error: "Procas is not connected." });
+    return;
+  }
+  try {
+    const rows = await fetchProcasTable(creds, "Project");
+    const projects = rows
+      .map((r) => ({
+        project: typeof r.Project === "string" ? r.Project.trim() : "",
+        description: typeof r.ProjectDesc === "string" ? r.ProjectDesc.trim() : "",
+        activeForBilling: r.ActiveForBilling === true,
+        isClosed: r.IsClosed === true,
+      }))
+      .filter((p) => p.project.length > 0)
+      .sort((a, b) => a.project.localeCompare(b.project));
+    res.json(ListProcasProjectsResponse.parse(projects));
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : "Failed to list Procas projects." });
+  }
 });
 
 export default router;

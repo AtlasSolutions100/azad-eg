@@ -69,6 +69,7 @@ import type {
   PackageWeekInput,
   PackageWeekUpdate,
   ProcasConnectInput,
+  ProcasProject,
   ProcasSchedulerInput,
   ProcasSchedulerRun,
   ProcasSchedulerStatus,
@@ -77,6 +78,7 @@ import type {
   ProgressReportFileUpload,
   ProgressReportFileUploadResult,
   ProgressReportInput,
+  PullPackageHoursResult,
   ReferenceEntry,
   ReferenceEntryUpdate,
   SearchParams,
@@ -4414,6 +4416,83 @@ export const useRefreshProcasNow = <TError = ErrorType<unknown>,
       return useMutation(getRefreshProcasNowMutationOptions(options));
     }
 
+export const getListProcasProjectsUrl = () => {
+
+
+
+
+  return `/api/procas/projects`
+}
+
+/**
+ * @summary List projects available in the connected Procas company
+ */
+export const listProcasProjects = async ( options?: RequestInit): Promise<ProcasProject[]> => {
+
+  return customFetch<ProcasProject[]>(getListProcasProjectsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProcasProjectsQueryKey = () => {
+    return [
+    `/api/procas/projects`
+    ] as const;
+    }
+
+
+export const getListProcasProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listProcasProjects>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProcasProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProcasProjectsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProcasProjects>>> = ({ signal }) => listProcasProjects({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProcasProjects>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProcasProjectsQueryResult = NonNullable<Awaited<ReturnType<typeof listProcasProjects>>>
+export type ListProcasProjectsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List projects available in the connected Procas company
+ */
+
+export function useListProcasProjects<TData = Awaited<ReturnType<typeof listProcasProjects>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProcasProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProcasProjectsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getListPackagesUrl = (params?: ListPackagesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -5077,6 +5156,76 @@ export const useDeletePackageWeek = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getDeletePackageWeekMutationOptions(options));
+    }
+
+export const getPullPackageHoursFromProcasUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/procas-hours`
+}
+
+/**
+ * @summary Pull labor hours for this package's pay period live from Procas
+ */
+export const pullPackageHoursFromProcas = async (id: number, options?: RequestInit): Promise<PullPackageHoursResult> => {
+
+  return customFetch<PullPackageHoursResult>(getPullPackageHoursFromProcasUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPullPackageHoursFromProcasMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullPackageHoursFromProcas>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pullPackageHoursFromProcas>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['pullPackageHoursFromProcas'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pullPackageHoursFromProcas>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  pullPackageHoursFromProcas(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PullPackageHoursFromProcasMutationResult = NonNullable<Awaited<ReturnType<typeof pullPackageHoursFromProcas>>>
+
+    export type PullPackageHoursFromProcasMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pull labor hours for this package's pay period live from Procas
+ */
+export const usePullPackageHoursFromProcas = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pullPackageHoursFromProcas>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pullPackageHoursFromProcas>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getPullPackageHoursFromProcasMutationOptions(options));
     }
 
 export const getCreateTimesheetEntryUrl = (id: number,) => {

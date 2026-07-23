@@ -48,5 +48,7 @@ export interface WorkPlanInput {
   contactPerson?: string;
   bartProjectNumbers?: string;
   terms?: string;
+  /** @nullable */
+  procasProject?: string | null;
   billingCycle: WorkPlanInputBillingCycle;
 }

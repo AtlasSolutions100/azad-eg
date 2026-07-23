@@ -100,6 +100,7 @@ export const ListWorkPlansResponseItem = zod.object({
   "contactPerson": zod.string().nullish(),
   "bartProjectNumbers": zod.string().nullish(),
   "terms": zod.string().nullish(),
+  "procasProject": zod.string().nullish().describe('Procas project code this work plan pulls labor hours from.'),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -145,6 +146,7 @@ export const CreateWorkPlanBody = zod.object({
   "contactPerson": zod.string().optional(),
   "bartProjectNumbers": zod.string().optional(),
   "terms": zod.string().optional(),
+  "procasProject": zod.string().nullish(),
   "billingCycle": zod.enum(['whole_month', 'last_friday'])
 })
 
@@ -178,6 +180,7 @@ export const CreateWorkPlanResponse = zod.object({
   "contactPerson": zod.string().nullish(),
   "bartProjectNumbers": zod.string().nullish(),
   "terms": zod.string().nullish(),
+  "procasProject": zod.string().nullish().describe('Procas project code this work plan pulls labor hours from.'),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -221,6 +224,7 @@ export const GetWorkPlanResponse = zod.object({
   "contactPerson": zod.string().nullish(),
   "bartProjectNumbers": zod.string().nullish(),
   "terms": zod.string().nullish(),
+  "procasProject": zod.string().nullish().describe('Procas project code this work plan pulls labor hours from.'),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -269,6 +273,7 @@ export const UpdateWorkPlanBody = zod.object({
   "contactPerson": zod.string().optional(),
   "bartProjectNumbers": zod.string().optional(),
   "terms": zod.string().optional(),
+  "procasProject": zod.string().nullish(),
   "billingCycle": zod.enum(['whole_month', 'last_friday']).optional(),
   "status": zod.enum(['active', 'archived']).optional()
 })
@@ -303,6 +308,7 @@ export const UpdateWorkPlanResponse = zod.object({
   "contactPerson": zod.string().nullish(),
   "bartProjectNumbers": zod.string().nullish(),
   "terms": zod.string().nullish(),
+  "procasProject": zod.string().nullish().describe('Procas project code this work plan pulls labor hours from.'),
   "billingCycle": zod.enum(['whole_month', 'last_friday']),
   "status": zod.enum(['active', 'archived']),
   "createdAt": zod.string()
@@ -1639,6 +1645,18 @@ export const RefreshProcasNowResponse = zod.object({
 
 
 /**
+ * @summary List projects available in the connected Procas company
+ */
+export const ListProcasProjectsResponseItem = zod.object({
+  "project": zod.string(),
+  "description": zod.string(),
+  "activeForBilling": zod.boolean(),
+  "isClosed": zod.boolean()
+})
+export const ListProcasProjectsResponse = zod.array(ListProcasProjectsResponseItem)
+
+
+/**
  * @summary List packages
  */
 export const ListPackagesQueryParams = zod.object({
@@ -1913,6 +1931,7 @@ export const GetPackageResponse = zod.object({
   "totalHours": zod.number(),
   "rate": zod.number(),
   "amount": zod.number(),
+  "source": zod.enum(['manual', 'procas']),
   "taskNo": zod.string().nullish(),
   "notes": zod.string().nullish()
 })),
@@ -2130,6 +2149,21 @@ export const DeletePackageWeekResponse = zod.void()
 
 
 /**
+ * @summary Pull labor hours for this package's pay period live from Procas
+ */
+export const PullPackageHoursFromProcasParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const PullPackageHoursFromProcasResponse = zod.object({
+  "importedCount": zod.number(),
+  "replacedCount": zod.number(),
+  "weeksCreated": zod.number(),
+  "warnings": zod.array(zod.string())
+})
+
+
+/**
  * @summary Add a timesheet entry
  */
 export const CreateTimesheetEntryParams = zod.object({
@@ -2178,6 +2212,7 @@ export const CreateTimesheetEntryResponse = zod.object({
   "totalHours": zod.number(),
   "rate": zod.number(),
   "amount": zod.number(),
+  "source": zod.enum(['manual', 'procas']),
   "taskNo": zod.string().nullish(),
   "notes": zod.string().nullish()
 })
@@ -2233,6 +2268,7 @@ export const UpdateTimesheetEntryResponse = zod.object({
   "totalHours": zod.number(),
   "rate": zod.number(),
   "amount": zod.number(),
+  "source": zod.enum(['manual', 'procas']),
   "taskNo": zod.string().nullish(),
   "notes": zod.string().nullish()
 })

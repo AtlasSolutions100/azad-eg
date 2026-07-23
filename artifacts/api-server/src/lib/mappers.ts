@@ -34,6 +34,7 @@ export function toApiWorkPlan(w: WorkPlan) {
     contactPerson: w.contactPerson,
     bartProjectNumbers: w.bartProjectNumbers,
     terms: w.terms,
+    procasProject: w.procasProject,
     createdAt: w.createdAt.toISOString(),
   };
 }

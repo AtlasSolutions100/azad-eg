@@ -86,6 +86,11 @@ export interface WorkPlan {
   bartProjectNumbers?: string | null;
   /** @nullable */
   terms?: string | null;
+  /**
+     * Procas project code this work plan pulls labor hours from.
+     * @nullable
+     */
+  procasProject?: string | null;
   billingCycle: WorkPlanBillingCycle;
   status: WorkPlanStatus;
   createdAt: string;

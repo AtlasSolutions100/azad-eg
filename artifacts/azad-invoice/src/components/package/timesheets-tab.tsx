@@ -4,6 +4,7 @@ import {
   useCreateTimesheetEntry,
   useUpdateTimesheetEntry,
   useDeleteTimesheetEntry,
+  usePullPackageHoursFromProcas,
   useListEmployees,
   type PackageDetail,
   type TimesheetEntry,
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, Edit, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, DownloadCloud, Edit, Loader2, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCurrency, formatHours } from "@/lib/package-ui";
 
@@ -72,6 +73,28 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
   const createEntry = useCreateTimesheetEntry();
   const updateEntry = useUpdateTimesheetEntry();
   const deleteEntry = useDeleteTimesheetEntry();
+  const pullProcasHours = usePullPackageHoursFromProcas();
+
+  const pullFromProcas = async () => {
+    try {
+      const result = await pullProcasHours.mutateAsync({ id: pkg.id });
+      queryClient.invalidateQueries();
+      const parts = [`${result.importedCount} entries imported`];
+      if (result.weeksCreated > 0) parts.push(`${result.weeksCreated} weeks created`);
+      toast({
+        title: "Hours pulled from Procas",
+        description:
+          parts.join(", ") +
+          (result.warnings.length > 0 ? `. ${result.warnings.join(" ")}` : ""),
+      });
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "error" in err && typeof err.error === "string"
+          ? err.error
+          : "Could not pull hours from Procas.";
+      toast({ variant: "destructive", title: "Procas pull failed", description: message });
+    }
+  };
 
   // Week dialog
   const [weekOpen, setWeekOpen] = useState(false);
@@ -223,16 +246,31 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
           Weekly timesheets backing the labor detail. Add weeks and per-employee
           entries.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setWeekForm({ label: `Week ${weeks.length + 1}`, weekStart: "", weekEnd: "" });
-            setWeekOpen(true);
-          }}
-        >
-          <CalendarPlus className="mr-2 h-4 w-4" /> Add Week
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            className="bg-[#1B4D3E] text-white hover:bg-[#163f33]"
+            onClick={pullFromProcas}
+            disabled={pullProcasHours.isPending}
+          >
+            {pullProcasHours.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <DownloadCloud className="mr-2 h-4 w-4" />
+            )}
+            Pull Hours from Procas
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setWeekForm({ label: `Week ${weeks.length + 1}`, weekStart: "", weekEnd: "" });
+              setWeekOpen(true);
+            }}
+          >
+            <CalendarPlus className="mr-2 h-4 w-4" /> Add Week
+          </Button>
+        </div>
       </div>
 
       {sortedWeeks.length === 0 && (

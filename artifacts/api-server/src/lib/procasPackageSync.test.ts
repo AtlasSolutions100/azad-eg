@@ -1,0 +1,216 @@
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import {
+  db,
+  workPlansTable,
+  packagesTable,
+  packageWeeksTable,
+  timesheetEntriesTable,
+} from "@workspace/db";
+import { pullPackageHoursFromProcas } from "./procasPackageSync";
+import type { ProcasCreds } from "./procas";
+
+const creds: ProcasCreds = {
+  companyCode: "AZADEN",
+  username: "u",
+  password: "p",
+};
+
+function odataResponse(rows: unknown[]) {
+  return new Response(JSON.stringify({ value: rows }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+const TS_ROWS = [
+  // Week of Mon 6/1 – Sun 6/7, two days for Boyd (trailing-space name), regular
+  {
+    PersonnelName: "Boyd, Sarah ",
+    Project: "10007.01.01.0.CA",
+    LCItem: "ENG3",
+    LCItemDesc: "Engineer III",
+    PayCode: "R",
+    PayCodeDesc: "Rate 1 Regular",
+    WorkDate: "2026-06-01T00:00:00-04:00",
+    HoursWorked: 8,
+    Status: "Locked",
+    TimePeriodBeginningDate: "2026-06-01T00:00:00-04:00",
+    TimePeriodEndingDate: "2026-06-07T00:00:00-04:00",
+  },
+  {
+    PersonnelName: "Boyd, Sarah ",
+    Project: "10007.01.01.0.CA",
+    LCItem: "ENG3",
+    LCItemDesc: "Engineer III",
+    PayCode: "R",
+    PayCodeDesc: "Rate 1 Regular",
+    WorkDate: "2026-06-03T00:00:00-04:00",
+    HoursWorked: 6.5,
+    Status: "Locked",
+    TimePeriodBeginningDate: "2026-06-01T00:00:00-04:00",
+    TimePeriodEndingDate: "2026-06-07T00:00:00-04:00",
+  },
+  // Same week, overtime row for Boyd → separate entry
+  {
+    PersonnelName: "Boyd, Sarah ",
+    Project: "10007.01.01.0.CA",
+    LCItem: "ENG3",
+    LCItemDesc: "Engineer III",
+    PayCode: "O",
+    PayCodeDesc: "Rate 1 Overtime",
+    WorkDate: "2026-06-03T00:00:00-04:00",
+    HoursWorked: 2,
+    Status: "Locked",
+    TimePeriodBeginningDate: "2026-06-01T00:00:00-04:00",
+    TimePeriodEndingDate: "2026-06-07T00:00:00-04:00",
+  },
+  // Second week, unsubmitted status → warning, no billing rate for LC → warning
+  {
+    PersonnelName: "Johnson, Travis  ",
+    Project: "10007.00.00.00.CA",
+    LCItem: "PM",
+    LCItemDesc: "Program Manager",
+    PayCode: "R",
+    PayCodeDesc: "Rate 1 Regular",
+    WorkDate: "2026-06-09T00:00:00-04:00",
+    HoursWorked: 4,
+    Status: "Unsubmitted",
+    TimePeriodBeginningDate: "2026-06-08T00:00:00-04:00",
+    TimePeriodEndingDate: "2026-06-14T00:00:00-04:00",
+  },
+];
+
+const BILLING_ROWS = [
+  {
+    Project: "10007",
+    LCItem: "ENG3",
+    BillingRate: 141.19,
+    BillingDateBeginning: "2026-01-01T00:00:00-05:00",
+    BillingDateEnding: "2026-12-31T00:00:00-05:00",
+  },
+];
+
+let workPlanId: number;
+let packageId: number;
+
+describe("pullPackageHoursFromProcas", () => {
+  beforeAll(async () => {
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({
+        code: "TEST-PROCAS-PULL",
+        title: "Procas pull test",
+        client: "Test",
+        jobNumber: "TEST",
+        totalBudget: 1000,
+        billingCycle: "whole_month",
+        procasProject: "10007",
+      })
+      .returning();
+    workPlanId = wp.id;
+    const [pkg] = await db
+      .insert(packagesTable)
+      .values({
+        workPlanId,
+        payPeriodStart: "2026-06-01",
+        payPeriodEnd: "2026-06-14",
+      })
+      .returning();
+    packageId = pkg.id;
+  });
+
+  afterAll(async () => {
+    await db.delete(packagesTable).where(eq(packagesTable.id, packageId));
+    await db.delete(workPlansTable).where(eq(workPlansTable.id, workPlanId));
+    vi.restoreAllMocks();
+  });
+
+  it("imports aggregated weekly entries, creates weeks, and is idempotent", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      // Query strings encode spaces as '+' or '%20'; normalize both before matching.
+      const url = decodeURIComponent(String(input)).replace(/\+/g, " ");
+      expect(url).toContain("startswith(Project, '10007')");
+      if (url.includes("/Timesheet")) {
+        expect(url).toContain("WorkDate ge 2026-06-01");
+        return odataResponse(TS_ROWS);
+      }
+      if (url.includes("/BillingItem")) return odataResponse(BILLING_ROWS);
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, packageId));
+    const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, workPlanId));
+
+    const result = await pullPackageHoursFromProcas(pkg, wp, creds);
+    expect(result.ok).toBe(true);
+    expect(result.importedCount).toBe(3);
+    expect(result.replacedCount).toBe(0);
+    expect(result.weeksCreated).toBe(2);
+    expect(result.warnings.join(" ")).toMatch(/Unsubmitted/);
+    expect(result.warnings.join(" ")).toMatch(/Program Manager/);
+
+    const weeks = await db
+      .select()
+      .from(packageWeeksTable)
+      .where(eq(packageWeeksTable.packageId, packageId));
+    expect(weeks.map((w) => w.weekStart).sort()).toEqual(["2026-06-01", "2026-06-08"]);
+
+    const entries = await db
+      .select()
+      .from(timesheetEntriesTable)
+      .where(eq(timesheetEntriesTable.packageId, packageId));
+    expect(entries).toHaveLength(3);
+    expect(entries.every((e) => e.source === "procas")).toBe(true);
+
+    const regular = entries.find((e) => e.employeeName === "Boyd, Sarah" && e.category === "regular");
+    expect(regular).toBeDefined();
+    expect(regular!.hoursMon).toBe(8);
+    expect(regular!.hoursWed).toBe(6.5);
+    expect(regular!.rate).toBe(141.19);
+
+    const ot = entries.find((e) => e.employeeName === "Boyd, Sarah" && e.category === "ot");
+    expect(ot).toBeDefined();
+    expect(ot!.hoursWed).toBe(2);
+
+    const pm = entries.find((e) => e.employeeName === "Johnson, Travis");
+    expect(pm).toBeDefined();
+    expect(pm!.hoursTue).toBe(4);
+    expect(pm!.rate).toBe(0);
+
+    // Add a manual entry, re-pull: procas entries replaced, manual preserved.
+    await db.insert(timesheetEntriesTable).values({
+      packageId,
+      weekId: weeks[0].id,
+      employeeName: "Manual Person",
+      classification: "Manual",
+      category: "regular",
+      location: "home",
+      hoursMon: 1,
+      rate: 100,
+      source: "manual",
+    });
+
+    const again = await pullPackageHoursFromProcas(pkg, wp, creds);
+    expect(again.ok).toBe(true);
+    expect(again.replacedCount).toBe(3);
+    expect(again.importedCount).toBe(3);
+    expect(again.weeksCreated).toBe(0);
+
+    const after = await db
+      .select()
+      .from(timesheetEntriesTable)
+      .where(eq(timesheetEntriesTable.packageId, packageId));
+    expect(after).toHaveLength(4);
+    expect(after.filter((e) => e.source === "manual")).toHaveLength(1);
+  });
+
+  it("fails clearly when the work plan has no Procas project", async () => {
+    const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, packageId));
+    const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, workPlanId));
+    const result = await pullPackageHoursFromProcas(pkg, { ...wp, procasProject: null }, creds);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not linked to a Procas project/);
+  });
+});

@@ -49,6 +49,8 @@ export interface WorkPlanUpdate {
   contactPerson?: string;
   bartProjectNumbers?: string;
   terms?: string;
+  /** @nullable */
+  procasProject?: string | null;
   billingCycle?: WorkPlanUpdateBillingCycle;
   status?: WorkPlanUpdateStatus;
 }
