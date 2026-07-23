@@ -1,0 +1,167 @@
+Prompt for Replit:
+We are building an automation dashboard for Azad Engineering whose sole purpose is to bill BART accurately every pay period.
+Core objective:
+
+Pull the most accurate hours possible from Procas (read-only OData API). Prefer Labor Journal hours (finalized for invoicing) over raw timesheet hours.
+Compile complete, accurate packages by Job / Work Plan.
+Generate one clean multi-tab Excel + one single multi-page PDF that matches Azad’s exact client-ready format so they can bill BART with zero manual cleanup.
+
+Current state of the dashboard:
+
+Packages are shown as tiles (example: “Travis Johnson” under Job 6M8142 / B.50-03).
+Each tile shows summary metrics (Total Hours, Labor Total, This Period, Total to Date, % Expended).
+Inside a package there are tabs: Overview, Invoice, Sub Calc, Progress Report, Labor Attachment, Timesheets.
+Export button produces “Export Package (Excel + PDF)”.
+
+
+1. Audit Procas Data Accuracy + Field-Level Change Tracking
+Please audit how we are currently pulling data from Procas and map it against the fields that must change every billing period. Confirm we are using the correct tables/fields and identify any gaps.
+Tab 1 — Invoice Cover / Summary
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FieldUpdate ruleAutomation noteInvoice dateUpdated each cycleDate field — captureInvoice numberFirst segment stays constant; suffix incrementsPrefix static, sequence variableBilling period (start / end)Two variants: (a) full calendar month, (b) period ending last Friday of the monthDate fields — capture both. Julie will supply a cheat sheet mapping which invoices use which ruleAmount due this invoiceCurrently auto-calculated from invoice total via Excel formulaMay not need direct entry; if manual entry is required, this is the field
+Tab 2 — Labor / Cost Detail
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FieldUpdate ruleAutomation noteAmount this periodHighlighted fieldDerivedTotal labor before overhead & profitSingle driver input — entering this calculates all downstream line itemsKey input fieldHours worked (per person)Updated each cycle; could be formula-drivenCan source from timesheets / ProcasPreviously billedEntire column = prior month's "Amount to date" valuesRequires month-over-month carry-forward — automation must retain prior period totals
+Tab 3 — Progress Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FieldUpdate ruleAutomation noteBilling period dates / monthUpdated each cycleDate fields — captureProgress report bodyCurrently pulled from a separate spreadsheetExternal data source — needs integration pathTotal hours per employee, per roleCurrently calculated from timesheetsMust tie out — this figure must match the corresponding hours figure on the labor detail tab
+Tab 4 — Timesheets
+
+Must be completed weekly, per employee, for each week in the month.
+Partial months are normal (e.g., most employees did not work the first week of May) — automation must handle non-full months.
+BART invoices: week begins on Saturday. Other invoice types may differ — confirm.
+Required format elements:
+Signature blocks (retain)
+Hours broken out by role
+PTO and vacation as separate fields
+
+Formatting/coloring may differ from current Excel; field structure is what matters.
+
+Date Fields to Capture (consolidated)
+
+Invoice date
+Billing period start
+Billing period end — full month or last Friday of month (per cheat sheet)
+Progress report period / month
+Timesheet week-start date — Saturday for BART; confirm convention for others
+Prior billing month reference (drives "previously billed" carry-forward)
+
+Please tell us:
+
+Which of these fields can be reliably pulled from Procas today?
+Which fields still require manual input or external sources?
+How should we best structure the data model so that Previously Billed, Total to Date, and Remaining Balance carry forward correctly every cycle?
+
+
+2. Evaluate the Current Tile Structure
+Looking at the current flow and tile design, is this the best way to support Azad’s goal?
+
+Should tiles remain organized primarily by person (e.g. Travis Johnson)?
+Or should they be organized primarily by Job / Work Plan / Invoice with people nested underneath?
+Is the current set of summary metrics and tabs optimal for accuracy and speed when Julie needs to review and export every pay period?
+
+Give a clear recommendation: keep the current structure, modify it, or redesign it — and explain why.
+
+3. End-to-End Recommendation
+Propose the ideal flow so that:
+
+Hours come in accurately from Procas each pay period
+The package is compiled perfectly (hours → labor attachment → sub calc → invoice → progress report → timesheets)
+Previously Billed / Total to Date / Remaining Balance auto-carry forward correctly by Work Plan
+One click produces a clean multi-tab Excel + one multi-page PDF that matches Azad’s exact visual and data standards for BART
+
+
+4. Ask Clarifying Questions
+Ask me any questions you need about:
+
+How Azad currently uses Procas day-to-day
+Which fields are non-negotiable for accuracy
+Preferred organization of packages (Job-first vs Person-first)
+Edge cases (rate changes mid-period, multiple people on one Work Plan, OT rules, amendments, partial months, etc.)
+The cheat sheet for billing period rules (full month vs last Friday)
+Progress report source and preferred upload method
+Anything else that would help us reach 100% accuracy and full automation
+
+Be direct and practical. Our goal is a dashboard Julie can trust completely so the entire BART billing process becomes automated and error-free.
