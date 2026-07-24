@@ -24,10 +24,49 @@ export interface PackageSummary {
   employeeName?: string | null;
   /** Employees contributing to this invoice, from timesheet entries. */
   employees: PackageEmployeeContribution[];
-  workPlanId: number;
+  /**
+     * Null while the package has no work plan attached yet.
+     * @nullable
+     */
+  workPlanId: number | null;
   workPlanCode: string;
   jobNumber: string;
   client: string;
+  /**
+     * Procas job this package bills against when no work plan is linked.
+     * @nullable
+     */
+  procasProject?: string | null;
+  /**
+     * Client display name for work-plan-less packages.
+     * @nullable
+     */
+  clientName?: string | null;
+  /**
+     * Package-level budget ceiling; null = not tracked.
+     * @nullable
+     */
+  totalBudget?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  fringeRate?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  overheadRate?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  fixedFeeRate?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  fccmRate?: number | null;
   payPeriodStart: string;
   payPeriodEnd: string;
   /** @nullable */

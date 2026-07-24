@@ -9,7 +9,22 @@
 export interface PackageInput {
   /** Optional legacy primary employee; contributors come from timesheet entries. */
   employeeId?: number;
-  workPlanId: number;
+  /** Optional — a package can be started before its work plan exists. When omitted, procasProject is required so billing has a job to hang off. */
+  workPlanId?: number;
+  /** Procas job number to bill against when no work plan is linked. */
+  procasProject?: string;
+  /** Client display name for work-plan-less packages (defaults from Procas). */
+  clientName?: string;
+  /** Optional budget ceiling for work-plan-less packages. */
+  totalBudget?: number;
+  /** Override %, wins over work plan / Procas. */
+  fringeRate?: number;
+  /** Override %, wins over work plan / Procas. */
+  overheadRate?: number;
+  /** Override %, wins over work plan / Procas. */
+  fixedFeeRate?: number;
+  /** Override %, wins over work plan / Procas. */
+  fccmRate?: number;
   payPeriodStart: string;
   payPeriodEnd: string;
   invoiceNumber?: string;

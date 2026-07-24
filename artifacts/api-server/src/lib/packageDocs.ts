@@ -14,9 +14,9 @@ import type {
   PackageProgressReportRow,
   LaborOverrideRow,
   BilledLineItemRow,
-  WorkPlan,
   Employee,
 } from "@workspace/db";
+import type { EffectiveWorkPlan } from "./billingProfile";
 
 export type PackageDocKind = "invoice" | "subcalc" | "progress" | "labor" | "timesheets";
 
@@ -24,7 +24,12 @@ export interface PackageDocContext {
   pkg: PackageRow;
   /** Legacy primary employee, or null for job-level (multi-employee) packages. */
   employee: Pick<Employee, "name" | "classification"> | null;
-  workPlan: WorkPlan;
+  /**
+   * The package's effective billing profile — a real work plan when one is
+   * linked, otherwise a view synthesized from the package's own billing
+   * fields (see billingProfile.ts).
+   */
+  workPlan: EffectiveWorkPlan;
   weeks: PackageWeekRow[];
   entries: TimesheetEntryRow[];
   progress: PackageProgressReportRow | null;

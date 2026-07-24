@@ -17,7 +17,23 @@ export const packagesTable = pgTable(
   {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").references(() => employeesTable.id),
-  workPlanId: integer("work_plan_id").notNull().references(() => workPlansTable.id),
+  // Nullable: a package can be started before its work plan exists ("work
+  // plan pending"). Billing rates then come from the package-level override
+  // columns below (typically pre-filled from Procas Billing Setup).
+  workPlanId: integer("work_plan_id").references(() => workPlansTable.id),
+  // Procas project (job number) this package bills against when no work plan
+  // is linked yet. Mirrors work_plans.procas_project.
+  procasProject: text("procas_project"),
+  // Display-only client name for work-plan-less packages.
+  clientName: text("client_name"),
+  // Optional budget ceiling for work-plan-less packages; null = unknown.
+  totalBudget: doublePrecision("total_budget"),
+  // Package-level rate overrides (percent, e.g. 8 = 8%). Null = inherit from
+  // the linked work plan (or 0 when no work plan). Non-null always wins.
+  fringeRate: doublePrecision("fringe_rate"),
+  overheadRate: doublePrecision("overhead_rate"),
+  fixedFeeRate: doublePrecision("fixed_fee_rate"),
+  fccmRate: doublePrecision("fccm_rate"),
   payPeriodStart: date("pay_period_start", { mode: "string" }).notNull(),
   payPeriodEnd: date("pay_period_end", { mode: "string" }).notNull(),
   invoiceNumber: text("invoice_number"),

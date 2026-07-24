@@ -410,7 +410,7 @@ describe("PATCH /api/packages/:id over-budget approval", () => {
   async function seedOverBudgetDraft(): Promise<number> {
     const pkgId = await seedPackage("draft");
     const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
-    await db.update(workPlansTable).set({ totalBudget: 1 }).where(eq(workPlansTable.id, pkg.workPlanId));
+    await db.update(workPlansTable).set({ totalBudget: 1 }).where(eq(workPlansTable.id, pkg.workPlanId!));
     return pkgId;
   }
 
@@ -500,7 +500,7 @@ function sanitizeFilePart(value: string): string {
 async function expectedFileBase(pkgId: number): Promise<string> {
   const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId!));
-  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId!));
   const parts = [emp.name, wp.jobNumber].map((p) => sanitizeFilePart(p ?? "")).filter((p) => p.length > 0);
   return parts.join("_") || `Package-${pkgId}`;
 }
@@ -549,7 +549,7 @@ describe("export filenames follow EmployeeName_Job#_DocumentName", () => {
     async () => {
       const pkgId = await seedPackage("draft");
       const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
-      await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId));
+      await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId!));
       const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId!));
 
       const res = await request(app)
@@ -570,7 +570,7 @@ describe("export filenames follow EmployeeName_Job#_DocumentName", () => {
     async () => {
       const pkgId = await seedPackage("draft");
       const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, pkgId));
-      await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId));
+      await db.update(workPlansTable).set({ jobNumber: "" }).where(eq(workPlansTable.id, pkg.workPlanId!));
       await db.update(employeesTable).set({ name: "" }).where(eq(employeesTable.id, pkg.employeeId!));
       // File names now derive contributor names from timesheet entries, so
       // blank those out too to exercise the ultimate Package-<id> fallback.

@@ -130,7 +130,7 @@ interface AggEntry {
  */
 export async function pullPackageHoursFromProcas(
   pkg: PackageRow,
-  workPlan: WorkPlan,
+  workPlan: Pick<WorkPlan, "procasProject">,
   creds: ProcasCreds,
 ): Promise<PullHoursResult> {
   const warnings: string[] = [];

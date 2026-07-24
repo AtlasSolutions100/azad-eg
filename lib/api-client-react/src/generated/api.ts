@@ -40,6 +40,7 @@ import type {
   EmployeeUpdate,
   GenerateInput,
   GeneratedFile,
+  GetProcasBillingRatesParams,
   HealthStatus,
   ImportResult,
   Invoice,
@@ -68,6 +69,7 @@ import type {
   PackageWeek,
   PackageWeekInput,
   PackageWeekUpdate,
+  ProcasBillingRates,
   ProcasConnectInput,
   ProcasProject,
   ProcasSchedulerInput,
@@ -4482,6 +4484,90 @@ export function useListProcasProjects<TData = Awaited<ReturnType<typeof listProc
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListProcasProjectsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetProcasBillingRatesUrl = (params: GetProcasBillingRatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/procas/billing-rates?${stringifiedParams}` : `/api/procas/billing-rates`
+}
+
+/**
+ * @summary Get Billing Setup rates for one Procas project
+ */
+export const getProcasBillingRates = async (params: GetProcasBillingRatesParams, options?: RequestInit): Promise<ProcasBillingRates> => {
+
+  return customFetch<ProcasBillingRates>(getGetProcasBillingRatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProcasBillingRatesQueryKey = (params?: GetProcasBillingRatesParams,) => {
+    return [
+    `/api/procas/billing-rates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetProcasBillingRatesQueryOptions = <TData = Awaited<ReturnType<typeof getProcasBillingRates>>, TError = ErrorType<unknown>>(params: GetProcasBillingRatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasBillingRates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProcasBillingRatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProcasBillingRates>>> = ({ signal }) => getProcasBillingRates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProcasBillingRates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProcasBillingRatesQueryResult = NonNullable<Awaited<ReturnType<typeof getProcasBillingRates>>>
+export type GetProcasBillingRatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get Billing Setup rates for one Procas project
+ */
+
+export function useGetProcasBillingRates<TData = Awaited<ReturnType<typeof getProcasBillingRates>>, TError = ErrorType<unknown>>(
+ params: GetProcasBillingRatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProcasBillingRates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProcasBillingRatesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

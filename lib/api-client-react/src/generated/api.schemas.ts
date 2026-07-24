@@ -1062,10 +1062,49 @@ export interface PackageSummary {
   employeeName?: string | null;
   /** Employees contributing to this invoice, from timesheet entries. */
   employees: PackageEmployeeContribution[];
-  workPlanId: number;
+  /**
+     * Null while the package has no work plan attached yet.
+     * @nullable
+     */
+  workPlanId: number | null;
   workPlanCode: string;
   jobNumber: string;
   client: string;
+  /**
+     * Procas job this package bills against when no work plan is linked.
+     * @nullable
+     */
+  procasProject?: string | null;
+  /**
+     * Client display name for work-plan-less packages.
+     * @nullable
+     */
+  clientName?: string | null;
+  /**
+     * Package-level budget ceiling; null = not tracked.
+     * @nullable
+     */
+  totalBudget?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  fringeRate?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  overheadRate?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  fixedFeeRate?: number | null;
+  /**
+     * Package-level override %, wins over the work plan.
+     * @nullable
+     */
+  fccmRate?: number | null;
   payPeriodStart: string;
   payPeriodEnd: string;
   /** @nullable */
@@ -1099,7 +1138,22 @@ export interface PackageSummary {
 export interface PackageInput {
   /** Optional legacy primary employee; contributors come from timesheet entries. */
   employeeId?: number;
-  workPlanId: number;
+  /** Optional — a package can be started before its work plan exists. When omitted, procasProject is required so billing has a job to hang off. */
+  workPlanId?: number;
+  /** Procas job number to bill against when no work plan is linked. */
+  procasProject?: string;
+  /** Client display name for work-plan-less packages (defaults from Procas). */
+  clientName?: string;
+  /** Optional budget ceiling for work-plan-less packages. */
+  totalBudget?: number;
+  /** Override %, wins over work plan / Procas. */
+  fringeRate?: number;
+  /** Override %, wins over work plan / Procas. */
+  overheadRate?: number;
+  /** Override %, wins over work plan / Procas. */
+  fixedFeeRate?: number;
+  /** Override %, wins over work plan / Procas. */
+  fccmRate?: number;
   payPeriodStart: string;
   payPeriodEnd: string;
   invoiceNumber?: string;
@@ -1120,6 +1174,15 @@ export const PackageUpdateStatus = {
 } as const;
 
 export interface PackageUpdate {
+  /** Attach (or switch) the work plan for this package. */
+  workPlanId?: number;
+  procasProject?: string;
+  clientName?: string;
+  totalBudget?: number;
+  fringeRate?: number;
+  overheadRate?: number;
+  fixedFeeRate?: number;
+  fccmRate?: number;
   payPeriodStart?: string;
   payPeriodEnd?: string;
   invoiceNumber?: string;
@@ -1172,6 +1235,22 @@ export interface ProcasProject {
   description: string;
   activeForBilling: boolean;
   isClosed: boolean;
+}
+
+/**
+ * Billing Setup percentages for one Procas project. Null fields mean Procas has no value on file.
+ */
+export interface ProcasBillingRates {
+  /** @nullable */
+  fringeRate: number | null;
+  /** @nullable */
+  overheadRate: number | null;
+  /** @nullable */
+  fixedFeeRate: number | null;
+  /** @nullable */
+  fccmRate: number | null;
+  /** @nullable */
+  client: string | null;
 }
 
 export interface PullPackageHoursResult {
@@ -1493,6 +1572,10 @@ to?: string;
  * Only budget-override entries
  */
 overridesOnly?: boolean;
+};
+
+export type GetProcasBillingRatesParams = {
+project: string;
 };
 
 export type ListPackagesParams = {

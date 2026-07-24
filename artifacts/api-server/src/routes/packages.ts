@@ -75,7 +75,8 @@ import {
 import { resolveSignaturePath } from "../lib/excel";
 import { evaluateBudgetStatus } from "../lib/financials";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
-import { fetchPreviouslyBilledFromProcas } from "../lib/procasSync";
+import { fetchPreviouslyBilledFromProcas, fetchBillingRatesFromProcas } from "../lib/procasSync";
+import { effectiveWorkPlan } from "../lib/billingProfile";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
@@ -103,8 +104,10 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     pkg.employeeId != null
       ? await db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId)).then((r) => r[0] ?? null)
       : null;
-  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
-  if (!wp) return null;
+  const wp =
+    pkg.workPlanId != null
+      ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : null;
   const [weeks, entries, progressRows, overrides, billedLineItems] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, packageId)),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, packageId)),
@@ -122,7 +125,9 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
   return {
     pkg,
     employee: emp ? { name: emp.name, classification: emp.classification } : null,
-    workPlan: wp,
+    // Packages may not have a work plan yet — documents then render with the
+    // package-level billing profile and blank contract fields.
+    workPlan: effectiveWorkPlan(pkg, wp),
     weeks,
     entries,
     progress: progressRows[0] ?? null,
@@ -139,16 +144,19 @@ function parseId(raw: string | string[]): number {
 }
 
 /**
- * Loads the work plan a package references (required) plus the legacy primary
- * employee when one is set. `emp` is null for job-level packages whose
- * contributors come solely from timesheet entries.
+ * Loads the work plan a package references (null when the package was started
+ * before its work plan exists) plus the legacy primary employee when one is
+ * set. `emp` is null for job-level packages whose contributors come solely
+ * from timesheet entries.
  */
-async function loadContext(pkg: { employeeId: number | null; workPlanId: number }) {
+async function loadContext(pkg: { employeeId: number | null; workPlanId: number | null }) {
   const [emp, wp] = await Promise.all([
     pkg.employeeId == null
       ? Promise.resolve(null)
       : db.select().from(employeesTable).where(eq(employeesTable.id, pkg.employeeId)).then((r) => r[0] ?? null),
-    db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0]),
+    pkg.workPlanId == null
+      ? Promise.resolve(null)
+      : db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null),
   ]);
   return { emp, wp };
 }
@@ -187,14 +195,11 @@ router.get("/packages", async (req, res): Promise<void> => {
     entriesMap.set(e.packageId, arr);
   }
 
-  const summaries = pkgs
-    .map((p) => {
-      const emp = p.employeeId != null ? empMap.get(p.employeeId) ?? null : null;
-      const wp = wpMap.get(p.workPlanId);
-      if (!wp) return null;
-      return toApiPackageSummary(p, emp, wp, weekCountMap.get(p.id) ?? 0, entriesMap.get(p.id) ?? []);
-    })
-    .filter((s): s is NonNullable<typeof s> => s !== null);
+  const summaries = pkgs.map((p) => {
+    const emp = p.employeeId != null ? empMap.get(p.employeeId) ?? null : null;
+    const wp = p.workPlanId != null ? wpMap.get(p.workPlanId) ?? null : null;
+    return toApiPackageSummary(p, emp, effectiveWorkPlan(p, wp), weekCountMap.get(p.id) ?? 0, entriesMap.get(p.id) ?? []);
+  });
 
   res.json(ListPackagesResponse.parse(summaries));
 });
@@ -207,29 +212,66 @@ router.post("/packages", async (req, res): Promise<void> => {
   }
   const { emp, wp } = await loadContext({
     employeeId: parsed.data.employeeId ?? null,
-    workPlanId: parsed.data.workPlanId,
+    workPlanId: parsed.data.workPlanId ?? null,
   });
   if (parsed.data.employeeId != null && !emp) {
     res.status(400).json({ error: "Employee not found" });
     return;
   }
-  if (!wp) {
+  if (parsed.data.workPlanId != null && !wp) {
     res.status(400).json({ error: "Work plan not found" });
     return;
   }
+  // A work plan is optional — a package can be started before its work plan
+  // exists, anchored to a Procas job instead. But it needs at least one of
+  // the two so billing has something to hang off.
+  const procasProject = parsed.data.procasProject?.trim() || null;
+  if (!wp && !procasProject) {
+    res.status(400).json({
+      error: "Pick a work plan or a Procas job number so the package knows what it bills against.",
+    });
+    return;
+  }
+  const billingJob = wp ? wp.jobNumber.trim() : procasProject;
+
+  const conn = await getProcasConnection().catch(() => null);
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+
+  // Rate overrides: explicit values from the caller win. For work-plan-less
+  // packages with no explicit rates, pre-fill from Procas Billing Setup so
+  // the invoice math starts from the authoritative percentages.
+  let { fringeRate, overheadRate, fixedFeeRate, fccmRate } = parsed.data;
+  let clientName = parsed.data.clientName?.trim() || null;
+  const noExplicitRates =
+    fringeRate == null && overheadRate == null && fixedFeeRate == null && fccmRate == null;
+  if (!wp && procasProject && creds && (noExplicitRates || !clientName)) {
+    try {
+      const rates = await fetchBillingRatesFromProcas(creds, procasProject);
+      if (rates) {
+        if (noExplicitRates) {
+          fringeRate = rates.fringeRate ?? undefined;
+          overheadRate = rates.overheadRate ?? undefined;
+          fixedFeeRate = rates.fixedFeeRate ?? undefined;
+          fccmRate = rates.fccmRate ?? undefined;
+        }
+        if (!clientName) clientName = rates.client;
+      }
+    } catch {
+      // Procas being unreachable must never block package creation.
+    }
+  }
+
   // Previously Billed default: an explicit value from the caller is a manual
   // entry; otherwise, when Procas is connected, default it from BillingHistory
   // (what Procas has already invoiced for this job before the period start).
   let previouslyBilled = parsed.data.previouslyBilled ?? 0;
   let previouslyBilledSource: string | null = parsed.data.previouslyBilled != null ? "manual" : null;
-  if (parsed.data.previouslyBilled == null) {
+  if (parsed.data.previouslyBilled == null && billingJob) {
     try {
-      const conn = await getProcasConnection();
-      const creds = conn?.connected ? credsFromConnection(conn) : null;
       if (creds) {
         const fromProcas = await fetchPreviouslyBilledFromProcas(
           creds,
-          wp.jobNumber.trim(),
+          billingJob,
           parsed.data.payPeriodStart,
         );
         // BillingHistory is authoritative — including a legitimate $0.
@@ -247,7 +289,14 @@ router.post("/packages", async (req, res): Promise<void> => {
       .insert(packagesTable)
       .values({
         employeeId: parsed.data.employeeId ?? null,
-        workPlanId: parsed.data.workPlanId,
+        workPlanId: parsed.data.workPlanId ?? null,
+        procasProject,
+        clientName,
+        totalBudget: parsed.data.totalBudget ?? null,
+        fringeRate: fringeRate ?? null,
+        overheadRate: overheadRate ?? null,
+        fixedFeeRate: fixedFeeRate ?? null,
+        fccmRate: fccmRate ?? null,
         payPeriodStart: parsed.data.payPeriodStart,
         payPeriodEnd: parsed.data.payPeriodEnd,
         invoiceNumber: parsed.data.invoiceNumber,
@@ -275,33 +324,38 @@ router.post("/packages", async (req, res): Promise<void> => {
     }
     throw err;
   }
+  const view = effectiveWorkPlan(row, wp);
   // Mandatory per-line carry-forward: pull Billed Line Items forward from the
   // last approved invoice for this work plan (Previous += prior Total,
   // Current resets to 0). Carry-forward is part of the creation contract — if
   // seed data exists but cannot be applied, creation must fail rather than
-  // silently produce a package with wrong Previous Invoiced figures.
-  try {
-    const seeded = await seedBilledLineItemsFromLastApproved(row.id, row.workPlanId);
-    if (seeded.length > 0) {
-      await recordAudit({
-        action: "carried forward billed line items",
-        entityType: "package",
-        entityId: row.id,
-        description: `${seeded.length} line item(s) carried forward from the last approved ${wp.code} invoice`,
-      });
+  // silently produce a package with wrong Previous Invoiced figures. Only
+  // applies when a work plan is linked — work-plan-less packages have no
+  // prior approved invoices to carry from.
+  if (row.workPlanId != null) {
+    try {
+      const seeded = await seedBilledLineItemsFromLastApproved(row.id, row.workPlanId);
+      if (seeded.length > 0) {
+        await recordAudit({
+          action: "carried forward billed line items",
+          entityType: "package",
+          entityId: row.id,
+          description: `${seeded.length} line item(s) carried forward from the last approved ${view.code} invoice`,
+        });
+      }
+    } catch (err) {
+      // Roll back the freshly created package so a retry starts clean.
+      await db.delete(packagesTable).where(eq(packagesTable.id, row.id));
+      throw err;
     }
-  } catch (err) {
-    // Roll back the freshly created package so a retry starts clean.
-    await db.delete(packagesTable).where(eq(packagesTable.id, row.id));
-    throw err;
   }
   await recordAudit({
     action: "created package",
     entityType: "package",
     entityId: row.id,
-    description: `${emp ? `${emp.name} — ` : ""}${wp.code} (${row.payPeriodStart} → ${row.payPeriodEnd})`,
+    description: `${emp ? `${emp.name} — ` : ""}${view.code} (${row.payPeriodStart} → ${row.payPeriodEnd})`,
   });
-  res.status(201).json(CreatePackageResponse.parse(toApiPackageSummary(row, emp, wp, 0, [])));
+  res.status(201).json(CreatePackageResponse.parse(toApiPackageSummary(row, emp, view, 0, [])));
 });
 
 router.get("/packages/grouped", async (_req, res): Promise<void> => {
@@ -325,37 +379,44 @@ router.get("/packages/grouped", async (_req, res): Promise<void> => {
   }
 
   type Summary = ReturnType<typeof toApiPackageSummary>;
-  // client -> workPlanId -> summaries (job-first: each package is one invoice
-  // for a job; contributing employees live inside the summary).
-  const grouped = new Map<string, Map<number, Summary[]>>();
+  type JobGroup = {
+    workPlanId: number;
+    workPlanCode: string;
+    jobNumber: string;
+    client: string;
+    packages: Summary[];
+  };
+  // client -> job key -> group (job-first: each package is one invoice for a
+  // job; contributing employees live inside the summary). Packages without a
+  // work plan group by their Procas job under the package's client name, with
+  // workPlanId 0 marking "no work plan yet".
+  const grouped = new Map<string, Map<string, JobGroup>>();
   for (const p of pkgs) {
     const emp = p.employeeId != null ? empMap.get(p.employeeId) ?? null : null;
-    const wp = wpMap.get(p.workPlanId);
-    if (!wp) continue;
-    const summary = toApiPackageSummary(p, emp, wp, weekCountMap.get(p.id) ?? 0, entriesMap.get(p.id) ?? []);
-    const byJob = grouped.get(wp.client) ?? new Map<number, Summary[]>();
-    const arr = byJob.get(p.workPlanId) ?? [];
-    arr.push(summary);
-    byJob.set(p.workPlanId, arr);
-    grouped.set(wp.client, byJob);
+    const wp = p.workPlanId != null ? wpMap.get(p.workPlanId) ?? null : null;
+    const view = effectiveWorkPlan(p, wp);
+    const summary = toApiPackageSummary(p, emp, view, weekCountMap.get(p.id) ?? 0, entriesMap.get(p.id) ?? []);
+    const jobKey = wp ? `wp:${wp.id}` : `job:${view.jobNumber}`;
+    const byJob = grouped.get(view.client) ?? new Map<string, JobGroup>();
+    const group =
+      byJob.get(jobKey) ??
+      {
+        workPlanId: wp ? wp.id : 0,
+        workPlanCode: view.code,
+        jobNumber: view.jobNumber,
+        client: view.client,
+        packages: [],
+      };
+    group.packages.push(summary);
+    byJob.set(jobKey, group);
+    grouped.set(view.client, byJob);
   }
 
   const result = [...grouped.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([client, byJob]) => ({
       client,
-      jobs: [...byJob.entries()]
-        .map(([workPlanId, summaries]) => {
-          const wp = wpMap.get(workPlanId)!;
-          return {
-            workPlanId,
-            workPlanCode: wp.code,
-            jobNumber: wp.jobNumber,
-            client: wp.client,
-            packages: summaries,
-          };
-        })
-        .sort((a, b) => a.jobNumber.localeCompare(b.jobNumber)),
+      jobs: [...byJob.values()].sort((a, b) => a.jobNumber.localeCompare(b.jobNumber)),
     }));
 
   res.json(ListPackagesGroupedResponse.parse(result));
@@ -373,10 +434,7 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
     return;
   }
   const { emp, wp } = await loadContext(pkg);
-  if (!wp) {
-    res.status(404).json({ error: "Package references a missing work plan" });
-    return;
-  }
+  const view = effectiveWorkPlan(pkg, wp);
   const [weeks, entries, progress, overrides, billedItems] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, id)).orderBy(asc(packageWeeksTable.sortOrder), asc(packageWeeksTable.id)),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)).orderBy(asc(timesheetEntriesTable.id)),
@@ -385,14 +443,14 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
     listBilledLineItems(id),
   ]);
 
-  const rollup = buildPackageRollup(entries, wp, {
+  const rollup = buildPackageRollup(entries, view, {
     previouslyBilled: pkg.previouslyBilled,
     otherDirectCosts: pkg.otherDirectCosts,
   });
 
   res.json(
     GetPackageResponse.parse({
-      package: toApiPackageSummary(pkg, emp, wp, weeks.length, entries),
+      package: toApiPackageSummary(pkg, emp, view, weeks.length, entries),
       billedLineItems: billedItems.map(toApiBilledLineItem),
       billingSummary: computeBillingSummary(billedItems),
       weeks: weeks.map(toApiWeek),
@@ -428,13 +486,32 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
   // A package becomes "billed" the moment its status flips to approved. If that
   // transition pushes (or leaves) the package over its work plan budget, block
   // it unless the biller explicitly overrides, and record the override.
+  // Attaching (or switching) a work plan must point at a real one.
+  if (updateFields.workPlanId != null) {
+    const [wpNew] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, updateFields.workPlanId));
+    if (!wpNew) {
+      res.status(400).json({ error: "Work plan not found" });
+      return;
+    }
+  }
+
   const approving = updateFields.status === "approved" && existing.status !== "approved" && existing.status !== "exported";
   let overBudget: ReturnType<typeof evaluateBudgetStatus> | null = null;
   if (approving) {
-    const [wpForBudget] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, existing.workPlanId));
-    if (wpForBudget) {
+    const budgetWpId = updateFields.workPlanId ?? existing.workPlanId;
+    const wpForBudget =
+      budgetWpId != null
+        ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, budgetWpId)).then((r) => r[0] ?? null)
+        : null;
+    // Evaluate the budget against the package state this PATCH will produce,
+    // not the pre-update row — the same call may change the budget or rates.
+    const prospective = { ...existing, ...updateFields };
+    const budgetView = effectiveWorkPlan(prospective, wpForBudget);
+    // Budget gate only applies when a budget is actually tracked; a
+    // work-plan-less package with no known ceiling can't be "over budget".
+    if (budgetView.totalBudget > 0) {
       const entries = await db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id));
-      const rollup = buildPackageRollup(entries, wpForBudget, {
+      const rollup = buildPackageRollup(entries, budgetView, {
         previouslyBilled: updateFields.previouslyBilled ?? existing.previouslyBilled,
         otherDirectCosts: updateFields.otherDirectCosts ?? existing.otherDirectCosts,
       });
@@ -470,10 +547,7 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
     .where(eq(packagesTable.id, id))
     .returning();
   const { emp, wp } = await loadContext(row);
-  if (!wp) {
-    res.status(404).json({ error: "Package references a missing work plan" });
-    return;
-  }
+  const view = effectiveWorkPlan(row, wp);
   const [weekCount, entries] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, id)).then((r) => r.length),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)),
@@ -491,7 +565,7 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
         `remaining ${overBudget.remainingBalance}).` + (reason ? ` Reason: ${reason}` : ""),
     });
   }
-  res.json(UpdatePackageResponse.parse(toApiPackageSummary(row, emp, wp, weekCount, entries)));
+  res.json(UpdatePackageResponse.parse(toApiPackageSummary(row, emp, view, weekCount, entries)));
 });
 
 router.delete("/packages/:id", async (req, res): Promise<void> => {
@@ -589,18 +663,17 @@ router.post("/packages/:id/procas-hours", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package not found" });
     return;
   }
-  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
-  if (!wp) {
-    res.status(404).json({ error: "Work plan not found" });
-    return;
-  }
+  const wp =
+    pkg.workPlanId != null
+      ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : null;
   const conn = await getProcasConnection();
   const creds = conn?.connected ? credsFromConnection(conn) : null;
   if (!creds) {
     res.status(409).json({ error: "Procas is not connected. Connect it from the header indicator first." });
     return;
   }
-  const result = await pullPackageHoursFromProcas(pkg, wp, creds);
+  const result = await pullPackageHoursFromProcas(pkg, effectiveWorkPlan(pkg, wp), creds);
   if (!result.ok) {
     res.status(422).json({ error: result.error ?? "Procas pull failed." });
     return;
@@ -627,9 +700,13 @@ router.post("/packages/:id/procas-tie-out", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package not found" });
     return;
   }
-  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
-  if (!wp) {
-    res.status(404).json({ error: "Work plan not found" });
+  const wp =
+    pkg.workPlanId != null
+      ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : null;
+  const tieOutJob = effectiveWorkPlan(pkg, wp).jobNumber.trim();
+  if (!tieOutJob) {
+    res.status(422).json({ error: "This package has no job number to tie out against." });
     return;
   }
   const conn = await getProcasConnection();
@@ -642,7 +719,7 @@ router.post("/packages/:id/procas-tie-out", async (req, res): Promise<void> => {
   try {
     procasBilled = await fetchPreviouslyBilledFromProcas(
       creds,
-      wp.jobNumber.trim(),
+      tieOutJob,
       pkg.payPeriodStart,
     );
   } catch {
@@ -979,13 +1056,12 @@ router.get("/packages/:id/rollup", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package not found" });
     return;
   }
-  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
-  if (!wp) {
-    res.status(404).json({ error: "Work plan not found" });
-    return;
-  }
+  const wp =
+    pkg.workPlanId != null
+      ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : null;
   const entries = await db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id));
-  const rollup = buildPackageRollup(entries, wp, {
+  const rollup = buildPackageRollup(entries, effectiveWorkPlan(pkg, wp), {
     previouslyBilled: pkg.previouslyBilled,
     otherDirectCosts: pkg.otherDirectCosts,
   });
@@ -999,7 +1075,10 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Package not found" });
     return;
   }
-  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId));
+  const wp =
+    pkg.workPlanId != null
+      ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : null;
   const [weeks, entries] = await Promise.all([
     db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, id)),
     db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)),
@@ -1028,8 +1107,11 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
     }
   }
 
-  if (wp) {
-    const rollup = buildPackageRollup(entries, wp, {
+  const view = effectiveWorkPlan(pkg, wp);
+  if (pkg.workPlanId != null && !wp) {
+    flags.push({ severity: "error", field: "workPlan", message: "Package references a missing work plan." });
+  } else if (view.totalBudget > 0) {
+    const rollup = buildPackageRollup(entries, view, {
       previouslyBilled: pkg.previouslyBilled,
       otherDirectCosts: pkg.otherDirectCosts,
     });
@@ -1041,8 +1123,8 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
     } else if (budget.level === "approaching") {
       flags.push({ severity: "info", field: "budget", message: budget.message });
     }
-  } else {
-    flags.push({ severity: "error", field: "workPlan", message: "Package references a missing work plan." });
+  } else if (!wp) {
+    flags.push({ severity: "info", field: "workPlan", message: "No work plan linked yet — rates come from this package's billing settings." });
   }
 
   const isValid = !flags.some((f) => f.severity === "error");

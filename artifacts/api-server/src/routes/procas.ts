@@ -9,6 +9,7 @@ import {
   UpdateProcasSchedulerBody,
   UpdateProcasSchedulerResponse,
   ListProcasProjectsResponse,
+  GetProcasBillingRatesResponse,
 } from "@workspace/api-zod";
 import {
   getProcasConnection,
@@ -28,6 +29,7 @@ import {
   MAX_INTERVAL_MS,
   type ProcasSchedulerState,
 } from "../lib/procasScheduler";
+import { fetchBillingRatesFromProcas } from "../lib/procasSync";
 import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
@@ -230,6 +232,32 @@ router.get("/procas/projects", async (_req, res): Promise<void> => {
     res.json(ListProcasProjectsResponse.parse(projects));
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : "Failed to list Procas projects." });
+  }
+});
+
+// Billing Setup rates for one Procas project — used to pre-fill (and let the
+// user override) fringe/OH/fee/FCCM when starting a package without a work plan.
+router.get("/procas/billing-rates", async (req, res): Promise<void> => {
+  const project = typeof req.query.project === "string" ? req.query.project.trim() : "";
+  if (!project) {
+    res.status(400).json({ error: "A project query parameter is required." });
+    return;
+  }
+  const conn = await getProcasConnection();
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!creds) {
+    res.status(409).json({ error: "Procas is not connected." });
+    return;
+  }
+  try {
+    const rates = await fetchBillingRatesFromProcas(creds, project);
+    if (!rates) {
+      res.status(404).json({ error: `Procas has no billing setup for project ${project}.` });
+      return;
+    }
+    res.json(GetProcasBillingRatesResponse.parse(rates));
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : "Failed to fetch Procas billing rates." });
   }
 });
 

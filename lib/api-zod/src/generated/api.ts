@@ -1657,6 +1657,22 @@ export const ListProcasProjectsResponse = zod.array(ListProcasProjectsResponseIt
 
 
 /**
+ * @summary Get Billing Setup rates for one Procas project
+ */
+export const GetProcasBillingRatesQueryParams = zod.object({
+  "project": zod.coerce.string()
+})
+
+export const GetProcasBillingRatesResponse = zod.object({
+  "fringeRate": zod.number().nullable(),
+  "overheadRate": zod.number().nullable(),
+  "fixedFeeRate": zod.number().nullable(),
+  "fccmRate": zod.number().nullable(),
+  "client": zod.string().nullable()
+}).describe('Billing Setup percentages for one Procas project. Null fields mean Procas has no value on file.')
+
+
+/**
  * @summary List packages
  */
 export const ListPackagesQueryParams = zod.object({
@@ -1675,10 +1691,17 @@ export const ListPackagesResponseItem = zod.object({
   "hours": zod.number(),
   "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
 })).describe('Employees contributing to this invoice, from timesheet entries.'),
-  "workPlanId": zod.number(),
+  "workPlanId": zod.number().nullable().describe('Null while the package has no work plan attached yet.'),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
   "client": zod.string(),
+  "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
+  "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
+  "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fixedFeeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fccmRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
   "invoiceNumber": zod.string().nullish(),
@@ -1716,7 +1739,14 @@ export const ListPackagesResponse = zod.array(ListPackagesResponseItem)
  */
 export const CreatePackageBody = zod.object({
   "employeeId": zod.number().optional().describe('Optional legacy primary employee; contributors come from timesheet entries.'),
-  "workPlanId": zod.number(),
+  "workPlanId": zod.number().optional().describe('Optional — a package can be started before its work plan exists. When omitted, procasProject is required so billing has a job to hang off.'),
+  "procasProject": zod.string().optional().describe('Procas job number to bill against when no work plan is linked.'),
+  "clientName": zod.string().optional().describe('Client display name for work-plan-less packages (defaults from Procas).'),
+  "totalBudget": zod.number().optional().describe('Optional budget ceiling for work-plan-less packages.'),
+  "fringeRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
+  "overheadRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
+  "fixedFeeRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
+  "fccmRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
   "invoiceNumber": zod.string().optional(),
@@ -1736,10 +1766,17 @@ export const CreatePackageResponse = zod.object({
   "hours": zod.number(),
   "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
 })).describe('Employees contributing to this invoice, from timesheet entries.'),
-  "workPlanId": zod.number(),
+  "workPlanId": zod.number().nullable().describe('Null while the package has no work plan attached yet.'),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
   "client": zod.string(),
+  "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
+  "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
+  "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fixedFeeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fccmRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
   "invoiceNumber": zod.string().nullish(),
@@ -1791,10 +1828,17 @@ export const ListPackagesGroupedResponseItem = zod.object({
   "hours": zod.number(),
   "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
 })).describe('Employees contributing to this invoice, from timesheet entries.'),
-  "workPlanId": zod.number(),
+  "workPlanId": zod.number().nullable().describe('Null while the package has no work plan attached yet.'),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
   "client": zod.string(),
+  "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
+  "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
+  "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fixedFeeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fccmRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
   "invoiceNumber": zod.string().nullish(),
@@ -1847,10 +1891,17 @@ export const GetPackageResponse = zod.object({
   "hours": zod.number(),
   "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
 })).describe('Employees contributing to this invoice, from timesheet entries.'),
-  "workPlanId": zod.number(),
+  "workPlanId": zod.number().nullable().describe('Null while the package has no work plan attached yet.'),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
   "client": zod.string(),
+  "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
+  "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
+  "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fixedFeeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fccmRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
   "invoiceNumber": zod.string().nullish(),
@@ -2006,6 +2057,14 @@ export const UpdatePackageParams = zod.object({
 })
 
 export const UpdatePackageBody = zod.object({
+  "workPlanId": zod.number().optional().describe('Attach (or switch) the work plan for this package.'),
+  "procasProject": zod.string().optional(),
+  "clientName": zod.string().optional(),
+  "totalBudget": zod.number().optional(),
+  "fringeRate": zod.number().optional(),
+  "overheadRate": zod.number().optional(),
+  "fixedFeeRate": zod.number().optional(),
+  "fccmRate": zod.number().optional(),
   "payPeriodStart": zod.string().optional(),
   "payPeriodEnd": zod.string().optional(),
   "invoiceNumber": zod.string().optional(),
@@ -2035,10 +2094,17 @@ export const UpdatePackageResponse = zod.object({
   "hours": zod.number(),
   "laborCost": zod.number().describe('Straight-time labor (hours x rate) before burden.')
 })).describe('Employees contributing to this invoice, from timesheet entries.'),
-  "workPlanId": zod.number(),
+  "workPlanId": zod.number().nullable().describe('Null while the package has no work plan attached yet.'),
   "workPlanCode": zod.string(),
   "jobNumber": zod.string(),
   "client": zod.string(),
+  "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
+  "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
+  "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fixedFeeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
+  "fccmRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "payPeriodStart": zod.string(),
   "payPeriodEnd": zod.string(),
   "invoiceNumber": zod.string().nullish(),

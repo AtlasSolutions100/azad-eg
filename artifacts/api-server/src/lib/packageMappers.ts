@@ -154,9 +154,13 @@ export function buildPackageRollup(
   );
   const previouslyBilled = round2(opts.previouslyBilled ?? 0);
   const totalToDate = round2(totalThisPeriod + previouslyBilled);
+  // Budget <= 0 means "no budget tracked" (e.g. a package started before its
+  // work plan exists): remaining/percent stay neutral instead of going
+  // negative against a phantom $0 ceiling.
   const budget = workPlan.totalBudget;
-  const remainingBalance = round2(budget - totalToDate);
-  const percentExpended = budget > 0 ? round2((totalToDate / budget) * 100) : 0;
+  const hasBudget = budget > 0;
+  const remainingBalance = hasBudget ? round2(budget - totalToDate) : 0;
+  const percentExpended = hasBudget ? round2((totalToDate / budget) * 100) : 0;
 
   const financials: {
     label: string;
@@ -183,7 +187,7 @@ export function buildPackageRollup(
   financials.push({
     label: "Remaining Balance",
     amount: remainingBalance,
-    note: `${percentExpended}% of budget expended`,
+    note: hasBudget ? `${percentExpended}% of budget expended` : "No budget tracked",
     emphasis: true,
   });
 
@@ -283,6 +287,13 @@ export function toApiPackageSummary(
     workPlanCode: workPlan.code,
     jobNumber: workPlan.jobNumber,
     client: workPlan.client,
+    procasProject: pkg.procasProject,
+    clientName: pkg.clientName,
+    totalBudget: pkg.totalBudget,
+    fringeRate: pkg.fringeRate,
+    overheadRate: pkg.overheadRate,
+    fixedFeeRate: pkg.fixedFeeRate,
+    fccmRate: pkg.fccmRate,
     payPeriodStart: pkg.payPeriodStart,
     payPeriodEnd: pkg.payPeriodEnd,
     invoiceNumber: pkg.invoiceNumber,

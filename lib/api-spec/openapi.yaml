@@ -1037,6 +1037,24 @@ paths:
                 items:
                   $ref: "#/components/schemas/ProcasProject"
 
+  /procas/billing-rates:
+    get:
+      operationId: getProcasBillingRates
+      tags: [reference]
+      summary: Get Billing Setup rates for one Procas project
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Billing rates for the project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcasBillingRates"
+
   /packages:
     get:
       operationId: listPackages
@@ -2493,10 +2511,25 @@ components:
           description: Employees contributing to this invoice, from timesheet entries.
           items:
             $ref: "#/components/schemas/PackageEmployeeContribution"
-        workPlanId: { type: integer }
+        workPlanId:
+          type: ["integer", "null"]
+          description: Null while the package has no work plan attached yet.
         workPlanCode: { type: string }
         jobNumber: { type: string }
         client: { type: string }
+        procasProject:
+          type: ["string", "null"]
+          description: Procas job this package bills against when no work plan is linked.
+        clientName:
+          type: ["string", "null"]
+          description: Client display name for work-plan-less packages.
+        totalBudget:
+          type: ["number", "null"]
+          description: Package-level budget ceiling; null = not tracked.
+        fringeRate: { type: ["number", "null"], description: "Package-level override %, wins over the work plan." }
+        overheadRate: { type: ["number", "null"], description: "Package-level override %, wins over the work plan." }
+        fixedFeeRate: { type: ["number", "null"], description: "Package-level override %, wins over the work plan." }
+        fccmRate: { type: ["number", "null"], description: "Package-level override %, wins over the work plan." }
         payPeriodStart: { type: string }
         payPeriodEnd: { type: string }
         invoiceNumber: { type: ["string", "null"] }
@@ -2542,12 +2575,28 @@ components:
           description: Straight-time labor (hours x rate) before burden.
     PackageInput:
       type: object
-      required: [workPlanId, payPeriodStart, payPeriodEnd]
+      required: [payPeriodStart, payPeriodEnd]
       properties:
         employeeId:
           type: integer
           description: Optional legacy primary employee; contributors come from timesheet entries.
-        workPlanId: { type: integer }
+        workPlanId:
+          type: integer
+          description: >-
+            Optional — a package can be started before its work plan exists.
+            When omitted, procasProject is required so billing has a job to
+            hang off.
+        procasProject:
+          type: string
+          description: Procas job number to bill against when no work plan is linked.
+        clientName:
+          type: string
+          description: Client display name for work-plan-less packages (defaults from Procas).
+        totalBudget: { type: number, description: "Optional budget ceiling for work-plan-less packages." }
+        fringeRate: { type: number, description: "Override %, wins over work plan / Procas." }
+        overheadRate: { type: number, description: "Override %, wins over work plan / Procas." }
+        fixedFeeRate: { type: number, description: "Override %, wins over work plan / Procas." }
+        fccmRate: { type: number, description: "Override %, wins over work plan / Procas." }
         payPeriodStart: { type: string }
         payPeriodEnd: { type: string }
         invoiceNumber: { type: string }
@@ -2558,6 +2607,16 @@ components:
     PackageUpdate:
       type: object
       properties:
+        workPlanId:
+          type: integer
+          description: Attach (or switch) the work plan for this package.
+        procasProject: { type: string }
+        clientName: { type: string }
+        totalBudget: { type: number }
+        fringeRate: { type: number }
+        overheadRate: { type: number }
+        fixedFeeRate: { type: number }
+        fccmRate: { type: number }
         payPeriodStart: { type: string }
         payPeriodEnd: { type: string }
         invoiceNumber: { type: string }
@@ -2627,6 +2686,18 @@ components:
         description: { type: string }
         activeForBilling: { type: boolean }
         isClosed: { type: boolean }
+    ProcasBillingRates:
+      type: object
+      required: [fringeRate, overheadRate, fixedFeeRate, fccmRate, client]
+      description: >-
+        Billing Setup percentages for one Procas project. Null fields mean
+        Procas has no value on file.
+      properties:
+        fringeRate: { type: ["number", "null"] }
+        overheadRate: { type: ["number", "null"] }
+        fixedFeeRate: { type: ["number", "null"] }
+        fccmRate: { type: ["number", "null"] }
+        client: { type: ["string", "null"] }
     PullPackageHoursResult:
       type: object
       required: [importedCount, replacedCount, weeksCreated, warnings]

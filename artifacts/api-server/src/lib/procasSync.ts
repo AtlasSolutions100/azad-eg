@@ -116,6 +116,43 @@ export async function fetchPreviouslyBilledFromProcas(
   return rows.reduce((sum, r) => sum + toNum(r.TotalBillingAmount), 0);
 }
 
+// --- Billing Setup rates for one Procas project ---
+
+export interface ProcasBillingRates {
+  fringeRate: number | null;
+  overheadRate: number | null;
+  fixedFeeRate: number | null;
+  fccmRate: number | null;
+  client: string | null;
+}
+
+// Pulls the Billing Setup percentages (BillingAccount) plus the client name
+// for a single Procas project. Used to pre-fill rates when a package is
+// created without a work plan. Null fields mean Procas has no value (> 0).
+export async function fetchBillingRatesFromProcas(
+  creds: ProcasCreds,
+  project: string,
+): Promise<ProcasBillingRates | null> {
+  const [accounts, projects] = await Promise.all([
+    fetchProcasTable(creds, "BillingAccount", { filter: `Project eq ${odataString(project)}` }),
+    fetchProcasTable(creds, "Project", { filter: `Project eq ${odataString(project)}` }),
+  ]);
+  const acct = accounts[0];
+  const proj = projects[0];
+  if (!acct && !proj) return null;
+  const pct = (v: unknown): number | null => {
+    const n = toNum(v);
+    return n > 0 ? n : null;
+  };
+  return {
+    fringeRate: acct ? pct(acct.FringePercent) : null,
+    overheadRate: acct ? pct(acct.OverheadPercent) : null,
+    fixedFeeRate: acct ? pct(acct.FeePercent) : null,
+    fccmRate: acct ? pct(acct.FacilitiesPercent) : null,
+    client: proj ? toStr(proj.ClientDesc) || toStr(proj.Client) || null : null,
+  };
+}
+
 // --- Reference data sync (employees + work plan rates) ---
 
 export interface ReferenceSyncResult {

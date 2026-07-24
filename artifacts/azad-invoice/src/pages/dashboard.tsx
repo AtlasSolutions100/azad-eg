@@ -5,6 +5,8 @@ import {
   useCreatePackage,
   useListEmployees,
   useListWorkPlans,
+  useListProcasProjects,
+  getProcasBillingRates,
   type PackageSummary,
   type PackageClientGroup,
   type PackageInput,
@@ -237,9 +239,45 @@ export default function Dashboard() {
     invoiceDate: new Date().toISOString().split("T")[0],
   });
 
+  // Procas projects power the "no work plan yet" path; the list only loads
+  // when the create dialog is open (and quietly stays empty if Procas is
+  // not connected — the user can still type a job number by hand).
+  const { data: procasProjects } = useListProcasProjects({
+    query: {
+      enabled: createOpen,
+      retry: false,
+      queryKey: ["procas-projects"],
+    },
+  });
+  const [ratesLoading, setRatesLoading] = useState(false);
+
+  // When a Procas job is picked, pre-fill rates + client from Billing Setup.
+  // Values land in the form fields so the user can override any of them.
+  const handlePickProcasJob = async (project: string) => {
+    setForm((f) => ({ ...f, procasProject: project }));
+    setRatesLoading(true);
+    try {
+      const rates = await getProcasBillingRates({ project });
+      setForm((f) => ({
+        ...f,
+        procasProject: project,
+        fringeRate: rates.fringeRate ?? undefined,
+        overheadRate: rates.overheadRate ?? undefined,
+        fixedFeeRate: rates.fixedFeeRate ?? undefined,
+        fccmRate: rates.fccmRate ?? undefined,
+        clientName: rates.client ?? f.clientName,
+      }));
+    } catch {
+      // No billing setup / Procas unreachable — the user enters rates by hand.
+    } finally {
+      setRatesLoading(false);
+    }
+  };
+
   const handleCreatePackage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.workPlanId || !form.payPeriodStart || !form.payPeriodEnd) return;
+    if (!form.workPlanId && !form.procasProject) return;
+    if (!form.payPeriodStart || !form.payPeriodEnd) return;
     try {
       const res = await createPackage.mutateAsync({ data: form as PackageInput });
       setCreateOpen(false);
@@ -355,31 +393,121 @@ export default function Dashboard() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Work Plan</Label>
+            <Label>Work Plan (optional)</Label>
             <Select
-              value={form.workPlanId ? String(form.workPlanId) : undefined}
+              value={form.workPlanId ? String(form.workPlanId) : "none"}
               onValueChange={(val) =>
-                setForm({ ...form, workPlanId: Number(val) })
+                setForm((f) =>
+                  val === "none"
+                    ? { ...f, workPlanId: undefined }
+                    : {
+                        // Picking a real work plan clears the Procas-only
+                        // fields, otherwise stale hidden overrides would
+                        // silently beat the work plan's rates on the server.
+                        ...f,
+                        workPlanId: Number(val),
+                        procasProject: undefined,
+                        clientName: undefined,
+                        fringeRate: undefined,
+                        overheadRate: undefined,
+                        fixedFeeRate: undefined,
+                        fccmRate: undefined,
+                        totalBudget: undefined,
+                      },
+                )
               }
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select a work plan" />
+                <SelectValue placeholder="No work plan yet — attach later" />
               </SelectTrigger>
               <SelectContent>
-                {workPlans && workPlans.length > 0 ? (
-                  workPlans.map((wp) => (
-                    <SelectItem key={wp.id} value={String(wp.id)}>
-                      {wp.code} - {wp.title}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <div className="px-2 py-1.5 text-xs text-[#5F5F5F]">
-                    No work plans yet. Add one on the Work Plans page first.
-                  </div>
-                )}
+                <SelectItem value="none">
+                  No work plan yet — bill by Procas job
+                </SelectItem>
+                {workPlans?.map((wp) => (
+                  <SelectItem key={wp.id} value={String(wp.id)}>
+                    {wp.code} - {wp.title}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
+          {!form.workPlanId && (
+            <div className="space-y-4 rounded-md border border-dashed border-border bg-gray-50/60 p-3">
+              <div className="space-y-2">
+                <Label>Procas Job Number</Label>
+                {procasProjects && procasProjects.length > 0 ? (
+                  <Select
+                    value={form.procasProject || undefined}
+                    onValueChange={handlePickProcasJob}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pick the Procas job to bill against" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {procasProjects.map((p) => (
+                        <SelectItem key={p.project} value={p.project}>
+                          {p.project}
+                          {p.description ? ` — ${p.description}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    placeholder="e.g. 22-1234"
+                    value={form.procasProject || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, procasProject: e.target.value })
+                    }
+                  />
+                )}
+                <p className="text-xs text-[#5F5F5F]">
+                  {ratesLoading
+                    ? "Pulling billing rates from Procas…"
+                    : "Rates below pull from Procas Billing Setup — edit any of them if needed."}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Client (optional)</Label>
+                <Input
+                  value={form.clientName || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, clientName: e.target.value })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {(
+                  [
+                    ["Overhead %", "overheadRate"],
+                    ["Fixed Fee %", "fixedFeeRate"],
+                    ["FCCM %", "fccmRate"],
+                    ["Fringe %", "fringeRate"],
+                  ] as const
+                ).map(([label, field]) => (
+                  <div key={field} className="space-y-2">
+                    <Label>{label}</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form[field] ?? ""}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          [field]:
+                            e.target.value === ""
+                              ? undefined
+                              : Number(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Pay Period Start</Label>
@@ -439,7 +567,7 @@ export default function Dashboard() {
             className="w-full bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
             disabled={
               createPackage.isPending ||
-              !form.workPlanId ||
+              (!form.workPlanId && !form.procasProject) ||
               !form.payPeriodStart ||
               !form.payPeriodEnd
             }
@@ -598,7 +726,7 @@ export default function Dashboard() {
                 <AccordionContent className="border-t border-border bg-gray-50/60 px-5 py-4">
                   <div className="space-y-5">
                     {group.jobs.map((job) => (
-                      <div key={job.workPlanId}>
+                      <div key={job.workPlanId ? `wp-${job.workPlanId}` : `job-${job.jobNumber}`}>
                         <div className="mb-3 flex items-center gap-2">
                           <Briefcase className="h-4 w-4 text-[#5F5F5F]" />
                           <span className="font-mono text-sm font-semibold text-[#333333]">

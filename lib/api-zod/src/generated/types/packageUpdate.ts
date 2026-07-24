@@ -9,6 +9,15 @@ import type { DocStatus } from './docStatus';
 import type { PackageUpdateStatus } from './packageUpdateStatus';
 
 export interface PackageUpdate {
+  /** Attach (or switch) the work plan for this package. */
+  workPlanId?: number;
+  procasProject?: string;
+  clientName?: string;
+  totalBudget?: number;
+  fringeRate?: number;
+  overheadRate?: number;
+  fixedFeeRate?: number;
+  fccmRate?: number;
   payPeriodStart?: string;
   payPeriodEnd?: string;
   invoiceNumber?: string;
