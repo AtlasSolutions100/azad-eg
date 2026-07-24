@@ -5,6 +5,7 @@ import {
   useUpdateProcasScheduler,
   useRefreshProcasNow,
   useGetProcasSchedulerRuns,
+  useConnectProcas,
   getGetProcasStatusQueryKey,
   getGetProcasSchedulerQueryKey,
   getGetProcasSchedulerRunsQueryKey,
@@ -121,6 +122,40 @@ export default function ProcasIndicator() {
     }
   };
 
+  // Reconnect form — lets a biller re-enter Procas credentials directly if
+  // the stored connection is ever lost, instead of needing an engineer.
+  const connectProcas = useConnectProcas();
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [companyCode, setCompanyCode] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companyCode.trim() || !username.trim() || !password) return;
+    try {
+      await connectProcas.mutateAsync({
+        data: { companyCode: companyCode.trim(), username: username.trim(), password },
+      });
+      await refreshStatus();
+      setConnectOpen(false);
+      setPassword("");
+      toast({
+        title: "Procas connected",
+        description: "Credentials verified — live data is flowing again.",
+      });
+    } catch (err) {
+      toast({
+        title: "Could not connect",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Procas rejected the credentials. Double-check the company code, username, and password.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleSaveInterval = async () => {
     const minutes = Number(intervalMinutes);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
@@ -223,6 +258,82 @@ export default function ProcasIndicator() {
                 ? "The saved Procas credential can't be read anymore, so live pulls and automatic refreshes have stopped. Contact your administrator to restore the connection."
                 : "Procas is not running right now. Live pulls and automatic refreshes are paused until the connection is restored."}
           </p>
+          {!running && (
+            <div className="space-y-2">
+              {!connectOpen ? (
+                <Button
+                  size="sm"
+                  className="w-full bg-[#CFAF42] text-white hover:bg-[#CFAF42]/90"
+                  onClick={() => setConnectOpen(true)}
+                  data-testid="procas-connect-open"
+                >
+                  Connect to Procas
+                </Button>
+              ) : (
+                <form onSubmit={handleConnect} className="space-y-2 rounded-md border border-[#EDE6CF] bg-[#FBF8EF] p-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Company code</Label>
+                    <Input
+                      value={companyCode}
+                      onChange={(e) => setCompanyCode(e.target.value)}
+                      placeholder="e.g. AZADEN"
+                      autoComplete="off"
+                      data-testid="procas-connect-company"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Username</Label>
+                    <Input
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="you@company.com"
+                      autoComplete="off"
+                      data-testid="procas-connect-username"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Password</Label>
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                      data-testid="procas-connect-password"
+                    />
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-[#8A8A8A]">
+                    Credentials are verified against the Procas data feed before being
+                    saved, and are stored encrypted.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="flex-1 bg-[#CFAF42] text-white hover:bg-[#CFAF42]/90"
+                      disabled={
+                        connectProcas.isPending ||
+                        !companyCode.trim() ||
+                        !username.trim() ||
+                        !password
+                      }
+                      data-testid="procas-connect-submit"
+                    >
+                      {connectProcas.isPending ? "Connecting…" : "Connect"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConnectOpen(false)}
+                      disabled={connectProcas.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
           {running && (
             <div className="space-y-3">
               {status?.companyCode && (
