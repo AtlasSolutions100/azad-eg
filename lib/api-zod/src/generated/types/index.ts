@@ -130,6 +130,7 @@ export * from './workPlanBillingCycle';
 export * from './workPlanInput';
 export * from './workPlanInputBillingCycle';
 export * from './workPlanStatus';
+export * from './workPlanSyncResult';
 export * from './workPlanUpdate';
 export * from './workPlanUpdateBillingCycle';
 export * from './workPlanUpdateStatus';

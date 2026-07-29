@@ -251,6 +251,8 @@ export default function Dashboard() {
   const [multiConfirmed, setMultiConfirmed] = useState(false);
   // Manual fallback when the work plan / job is not in Procas yet.
   const [manualEntry, setManualEntry] = useState(false);
+  // The full Procas library can be long — the wizard filters it client-side.
+  const [wpSearch, setWpSearch] = useState("");
 
   // Procas projects power the "no work plan yet" path; the list only loads
   // when the create dialog is open (and quietly stays empty if Procas is
@@ -263,6 +265,20 @@ export default function Dashboard() {
     },
   });
   const [ratesLoading, setRatesLoading] = useState(false);
+
+  const filteredWizardPlans = useMemo(() => {
+    if (!workPlans) return workPlans;
+    const q = wpSearch.trim().toLowerCase();
+    if (!q) return workPlans;
+    return workPlans.filter(
+      (wp) =>
+        // Keep the currently selected plan visible so its label still renders.
+        wp.id === form.workPlanId ||
+        [wp.code, wp.title, wp.client, wp.jobNumber].some((v) =>
+          v.toLowerCase().includes(q),
+        ),
+    );
+  }, [workPlans, wpSearch, form.workPlanId]);
 
   // Guards against out-of-order responses when the user switches work plans
   // quickly: only the latest detection request may update state.
@@ -359,6 +375,7 @@ export default function Dashboard() {
     setDetectLoading(false);
     setMultiConfirmed(false);
     setManualEntry(false);
+    setWpSearch("");
   };
 
   const handleCreatePackage = async (e: React.FormEvent) => {
@@ -487,6 +504,11 @@ export default function Dashboard() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Work Plan</Label>
+                <Input
+                  placeholder="Type to filter the work plan list…"
+                  value={wpSearch}
+                  onChange={(e) => setWpSearch(e.target.value)}
+                />
                 <Select
                   value={form.workPlanId ? String(form.workPlanId) : undefined}
                   onValueChange={handleSelectWorkPlan}
@@ -495,7 +517,12 @@ export default function Dashboard() {
                     <SelectValue placeholder="Pick the work plan that drives this package" />
                   </SelectTrigger>
                   <SelectContent>
-                    {workPlans?.map((wp) => (
+                    {filteredWizardPlans?.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-[#9a9a9a]">
+                        No work plans match “{wpSearch}”.
+                      </div>
+                    )}
+                    {filteredWizardPlans?.map((wp) => (
                       <SelectItem key={wp.id} value={String(wp.id)}>
                         {wp.code} - {wp.title}
                       </SelectItem>

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, useListPackages, useListProcasProjects, getListPackagesQueryKey, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
+import { useEffect, useMemo, useState } from "react";
+import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, useListPackages, useListProcasProjects, useSyncWorkPlansFromProcas, getListPackagesQueryKey, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Edit } from "lucide-react";
+import { Trash2, Edit, RefreshCw, Search } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 export default function WorkPlans() {
   const { data: plans, isLoading } = useListWorkPlans();
@@ -16,7 +17,39 @@ export default function WorkPlans() {
   const createPlan = useCreateWorkPlan();
   const updatePlan = useUpdateWorkPlan();
   const deletePlan = useDeleteWorkPlan();
+  const syncFromProcas = useSyncWorkPlansFromProcas();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+
+  // The Procas library can be long — filter by any visible column so Julie
+  // can find the right plan quickly.
+  const filteredPlans = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return plans;
+    return plans?.filter((p) =>
+      [p.code, p.title, p.client, p.jobNumber, p.procasProject ?? ""].some((v) =>
+        v.toLowerCase().includes(q),
+      ),
+    );
+  }, [plans, search]);
+
+  const handleSyncFromProcas = async () => {
+    try {
+      const result = await syncFromProcas.mutateAsync();
+      queryClient.invalidateQueries();
+      toast({
+        title: "Work plans refreshed from Procas",
+        description: `${result.created} new plan(s) added, ${result.updated} refreshed — ${result.total} projects in the Procas library.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't refresh from Procas",
+        description: err instanceof Error ? err.message : "Check the Procas connection and try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -152,9 +185,36 @@ export default function WorkPlans() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold tracking-tight text-[#333333]">Work Plans</h1>
-        <Button onClick={handleOpenCreate} className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white">
-          Add Work Plan
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSyncFromProcas}
+            disabled={syncFromProcas.isPending}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncFromProcas.isPending ? "animate-spin" : ""}`} />
+            {syncFromProcas.isPending ? "Refreshing…" : "Refresh from Procas"}
+          </Button>
+          <Button onClick={handleOpenCreate} className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white">
+            Add Work Plan
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9a9a9a]" />
+          <Input
+            className="pl-8"
+            placeholder="Search by code, title, client, or job number…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {!isLoading && plans && (
+          <span className="whitespace-nowrap text-sm text-[#9a9a9a]">
+            {filteredPlans?.length ?? 0} of {plans.length} work plans
+          </span>
+        )}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -344,14 +404,16 @@ export default function WorkPlans() {
                   <TableCell><Skeleton className="h-8 w-16 ml-auto" /></TableCell>
                 </TableRow>
               ))
-            ) : plans?.length === 0 ? (
+            ) : filteredPlans?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  No work plans found.
+                  {search.trim()
+                    ? "No work plans match your search."
+                    : "No work plans yet — use “Refresh from Procas” to pull the full library."}
                 </TableCell>
               </TableRow>
             ) : (
-              plans?.map((plan) => (
+              filteredPlans?.map((plan) => (
                 <TableRow key={plan.id}>
                   <TableCell className="font-medium">{plan.code}</TableCell>
                   <TableCell>{plan.title}</TableCell>

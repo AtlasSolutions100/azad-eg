@@ -68,6 +68,16 @@ export const SearchResponse = zod.array(SearchResponseItem)
 
 
 /**
+ * @summary Import the full Procas project library as work plans
+ */
+export const SyncWorkPlansFromProcasResponse = zod.object({
+  "created": zod.number(),
+  "updated": zod.number(),
+  "total": zod.number().describe('Projects seen in the Procas library.')
+}).describe('Summary of a Procas project-library import into work plans.')
+
+
+/**
  * @summary List work plans
  */
 export const ListWorkPlansResponseItem = zod.object({

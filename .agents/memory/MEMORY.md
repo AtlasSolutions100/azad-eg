@@ -1,4 +1,5 @@
 - [Web→API auth needs Bearer token, not just cookie](auth-bearer-token.md) — Clerk session cookie isn't sent from the canvas iframe / cross-origin; wire setAuthTokenGetter or every API call 401s.
+- [Work-plan library import ownership](workplan-library-import.md) — imports only refresh `source='procas'` rows; biller edits flip ownership to manual; partial unique index makes imports race-safe.
 - [Work-plan-optional packages](workplan-optional-packages.md) — package rate overrides always beat linked work-plan values; hide-the-fields UIs must clear them, and PATCH gates must use prospective state.
 - [Package billing document engine](package-billing-engine.md) — 5 docs fill real uploaded xlsx templates from timesheet rollups; work-plan overheadRate/fccmRate are nullable and yield $0 unless set in the form.
 - [Reference-workbook export engine](reference-workbook-engine.md) — exports mutate Julie's populated ground-truth xlsx; write every cell unconditionally or template values leak; rates ÷100; hidden sheets skip PDF.

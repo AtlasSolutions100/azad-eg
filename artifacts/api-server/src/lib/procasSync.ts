@@ -162,6 +162,107 @@ export interface ReferenceSyncResult {
   warnings: string[];
 }
 
+export interface WorkPlanImportResult {
+  created: number;
+  updated: number;
+  total: number;
+}
+
+// Imports the full Procas project library as work plans so the Workplans tab
+// mirrors what Procas has. New projects become work plans (code/title/client/
+// status straight from Procas, rates from Billing Setup when present);
+// previously imported ones get their Procas-owned fields refreshed. Manually
+// created plans are matched by job number / Procas link and left alone here —
+// their rates are refreshed by syncReferenceFromProcas.
+export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<WorkPlanImportResult> {
+  const [projects, billingAccounts] = await Promise.all([
+    fetchProcasTable(creds, "Project"),
+    fetchProcasTable(creds, "BillingAccount"),
+  ]);
+  const acctByProject = new Map<string, Record<string, unknown>>();
+  for (const ba of billingAccounts) {
+    const proj = toStr(ba.Project);
+    if (proj && !acctByProject.has(proj)) acctByProject.set(proj, ba);
+  }
+
+  const existing = await db.select().from(workPlansTable);
+  // A Procas project is "already represented" when a plan links to it via
+  // procasProject, or a manual plan's job number / code matches it. Only
+  // rows imported from Procas (source = "procas") get their display fields
+  // refreshed — manually created or manually edited plans are never touched.
+  const importedByProject = new Map<string, typeof existing[number]>();
+  const claimed = new Set<string>();
+  for (const wp of existing) {
+    const link = wp.procasProject?.trim();
+    if (link && wp.source === "procas" && !importedByProject.has(link)) {
+      importedByProject.set(link, wp);
+    }
+    if (link) claimed.add(link);
+    claimed.add(wp.jobNumber.trim());
+    claimed.add(wp.code.trim());
+  }
+
+  let created = 0;
+  let updated = 0;
+  let total = 0;
+  for (const pr of projects) {
+    const code = toStr(pr.Project);
+    if (!code) continue;
+    total += 1;
+    const title = toStr(pr.ProjectDesc) || code;
+    const client = toStr(pr.ClientDesc) || toStr(pr.Client) || "Unknown client";
+    const status = pr.IsClosed === true ? "archived" : "active";
+    const budget = toNum(pr.ObligatedAmount) > 0 ? toNum(pr.ObligatedAmount) : toNum(pr.EstimatedTotal);
+    const linked = importedByProject.get(code);
+    if (linked) {
+      // Refresh the Procas-owned display fields on imported/linked plans.
+      const changes: Partial<typeof workPlansTable.$inferInsert> = {};
+      if (title !== linked.title) changes.title = title;
+      if (client !== linked.client) changes.client = client;
+      if (status !== linked.status) changes.status = status;
+      // Budget: only fill when the local plan has none, so manual budget
+      // decompositions Julie entered are never stomped.
+      if (linked.totalBudget === 0 && budget > 0) changes.totalBudget = budget;
+      if (Object.keys(changes).length > 0) {
+        await db.update(workPlansTable).set(changes).where(eq(workPlansTable.id, linked.id));
+        updated += 1;
+      }
+      continue;
+    }
+    if (claimed.has(code) || claimed.has(toStr(pr.ContractNumber))) continue;
+    const acct = acctByProject.get(code);
+    const fringe = acct ? toNum(acct.FringePercent) : 0;
+    const overhead = acct ? toNum(acct.OverheadPercent) : 0;
+    const fee = acct ? toNum(acct.FeePercent) : 0;
+    const fccm = acct ? toNum(acct.FacilitiesPercent) : 0;
+    // onConflictDoNothing on the partial unique index makes concurrent runs
+    // (scheduler cycle vs manual refresh) race-safe.
+    const inserted = await db
+      .insert(workPlansTable)
+      .values({
+        code,
+        title,
+        client,
+        jobNumber: code,
+        totalBudget: budget,
+        procasProject: code,
+        status,
+        source: "procas",
+        ...(fringe > 0 ? { fringeRate: fringe } : {}),
+        ...(overhead > 0 ? { overheadRate: overhead } : {}),
+        ...(fee > 0 ? { fixedFeeRate: fee } : {}),
+        ...(fccm > 0 ? { fccmRate: fccm } : {}),
+      })
+      .onConflictDoNothing()
+      .returning({ id: workPlansTable.id });
+    if (inserted.length > 0) {
+      created += 1;
+      claimed.add(code);
+    }
+  }
+  return { created, updated, total };
+}
+
 // Pulls the approved reference tables and folds them into existing entities:
 // Personnel -> employees (name, classification, active, payroll pay rate),
 // Item default billing rates for new employees, and Billing Setup percentages

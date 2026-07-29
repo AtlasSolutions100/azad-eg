@@ -79,6 +79,25 @@ paths:
                 items:
                   $ref: "#/components/schemas/SearchResult"
 
+  /work-plans/sync-procas:
+    post:
+      operationId: syncWorkPlansFromProcas
+      tags: [work-plans]
+      summary: Import the full Procas project library as work plans
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkPlanSyncResult"
+        "409":
+          description: Procas is not connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /work-plans:
     get:
       operationId: listWorkPlans
@@ -2728,6 +2747,14 @@ components:
         description: { type: string }
         activeForBilling: { type: boolean }
         isClosed: { type: boolean }
+    WorkPlanSyncResult:
+      type: object
+      required: [created, updated, total]
+      description: Summary of a Procas project-library import into work plans.
+      properties:
+        created: { type: integer }
+        updated: { type: integer }
+        total: { type: integer, description: "Projects seen in the Procas library." }
     ProcasWorkPlanEmployee:
       type: object
       required: [name, hours]

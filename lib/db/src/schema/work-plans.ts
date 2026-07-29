@@ -1,4 +1,5 @@
-import { pgTable, serial, text, doublePrecision, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, doublePrecision, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const workPlansTable = pgTable("work_plans", {
   id: serial("id").primaryKey(),
@@ -39,8 +40,19 @@ export const workPlansTable = pgTable("work_plans", {
   procasProject: text("procas_project"),
   billingCycle: text("billing_cycle").notNull().default("whole_month"),
   status: text("status").notNull().default("active"),
+  // "manual" = created/edited by a biller (Procas import never touches its
+  // display fields); "procas" = imported from the Procas project library and
+  // kept in sync with it. Manual edits flip it back to "manual".
+  source: text("source").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // One imported work plan per Procas project — makes the library import
+  // idempotent even under concurrent runs (scheduler vs manual refresh).
+  // Manually created plans may still share a Procas prefix freely.
+  uniqueIndex("work_plans_procas_import_unique")
+    .on(t.procasProject)
+    .where(sql`${t.source} = 'procas' and ${t.procasProject} is not null`),
+]);
 
 export type WorkPlan = typeof workPlansTable.$inferSelect;
 export type InsertWorkPlan = typeof workPlansTable.$inferInsert;

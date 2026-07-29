@@ -38,6 +38,7 @@ import type {
   EmployeeRateChange,
   EmployeeRateChangeInput,
   EmployeeUpdate,
+  Error,
   GenerateInput,
   GeneratedFile,
   GetProcasBillingRatesParams,
@@ -97,6 +98,7 @@ import type {
   ValidationResult,
   WorkPlan,
   WorkPlanInput,
+  WorkPlanSyncResult,
   WorkPlanUpdate
 } from './api.schemas';
 
@@ -365,6 +367,76 @@ export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = E
 
 
 
+
+export const getSyncWorkPlansFromProcasUrl = () => {
+
+
+
+
+  return `/api/work-plans/sync-procas`
+}
+
+/**
+ * @summary Import the full Procas project library as work plans
+ */
+export const syncWorkPlansFromProcas = async ( options?: RequestInit): Promise<WorkPlanSyncResult> => {
+
+  return customFetch<WorkPlanSyncResult>(getSyncWorkPlansFromProcasUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getSyncWorkPlansFromProcasMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncWorkPlansFromProcas>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncWorkPlansFromProcas>>, TError,void, TContext> => {
+
+const mutationKey = ['syncWorkPlansFromProcas'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncWorkPlansFromProcas>>, void> = () => {
+
+
+          return  syncWorkPlansFromProcas(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncWorkPlansFromProcasMutationResult = NonNullable<Awaited<ReturnType<typeof syncWorkPlansFromProcas>>>
+
+    export type SyncWorkPlansFromProcasMutationError = ErrorType<Error>
+
+    /**
+ * @summary Import the full Procas project library as work plans
+ */
+export const useSyncWorkPlansFromProcas = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncWorkPlansFromProcas>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncWorkPlansFromProcas>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getSyncWorkPlansFromProcasMutationOptions(options));
+    }
 
 export const getListWorkPlansUrl = () => {
 

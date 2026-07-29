@@ -1254,6 +1254,16 @@ export interface ProcasProject {
 }
 
 /**
+ * Summary of a Procas project-library import into work plans.
+ */
+export interface WorkPlanSyncResult {
+  created: number;
+  updated: number;
+  /** Projects seen in the Procas library. */
+  total: number;
+}
+
+/**
  * One employee who charged time to a Procas project (a work plan's charge code), with total hours in the queried window.
  */
 export interface ProcasWorkPlanEmployee {

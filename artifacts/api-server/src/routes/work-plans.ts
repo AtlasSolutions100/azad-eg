@@ -9,10 +9,36 @@ import {
   CreateWorkPlanResponse,
   UpdateWorkPlanResponse,
 } from "@workspace/api-zod";
+import { SyncWorkPlansFromProcasResponse } from "@workspace/api-zod";
 import { toApiWorkPlan } from "../lib/mappers";
 import { recordAudit } from "../lib/audit";
+import { getProcasConnection, credsFromConnection } from "../lib/procas";
+import { importWorkPlansFromProcas } from "../lib/procasSync";
 
 const router: IRouter = Router();
+
+// Pulls the complete Procas project library into the work-plans list so the
+// Workplans tab (and the create-package wizard) always offers every plan
+// Procas knows about.
+router.post("/work-plans/sync-procas", async (_req, res): Promise<void> => {
+  const conn = await getProcasConnection();
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!creds) {
+    res.status(409).json({ error: "Procas is not connected." });
+    return;
+  }
+  try {
+    const result = await importWorkPlansFromProcas(creds);
+    await recordAudit({
+      action: "imported work plans from Procas",
+      entityType: "workPlan",
+      description: `Procas library import: ${result.created} added, ${result.updated} refreshed (${result.total} projects in Procas)`,
+    });
+    res.json(SyncWorkPlansFromProcasResponse.parse(result));
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : "Failed to import work plans from Procas." });
+  }
+});
 
 router.get("/work-plans", async (_req, res): Promise<void> => {
   const rows = await db.select().from(workPlansTable).orderBy(workPlansTable.code);
@@ -47,7 +73,17 @@ router.patch("/work-plans/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [row] = await db.update(workPlansTable).set(parsed.data).where(eq(workPlansTable.id, id)).returning();
+  // A biller editing a Procas-imported plan's display fields takes ownership:
+  // flip source to "manual" so future library imports never stomp the edit.
+  const editsProcasOwnedFields =
+    parsed.data.title !== undefined ||
+    parsed.data.client !== undefined ||
+    parsed.data.status !== undefined;
+  const [row] = await db
+    .update(workPlansTable)
+    .set(editsProcasOwnedFields ? { ...parsed.data, source: "manual" } : parsed.data)
+    .where(eq(workPlansTable.id, id))
+    .returning();
   if (!row) {
     res.status(404).json({ error: "Work plan not found" });
     return;

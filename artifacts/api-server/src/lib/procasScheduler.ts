@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { inArray, eq, desc, notInArray, sql } from "drizzle-orm";
 import { getProcasConnection, credsFromConnection } from "./procas";
-import { syncInvoiceFromProcas, syncReferenceFromProcas } from "./procasSync";
+import { syncInvoiceFromProcas, syncReferenceFromProcas, importWorkPlansFromProcas } from "./procasSync";
 import { logger } from "./logger";
 
 // A fixed 64-bit key identifying the Procas sync cycle advisory lock. Any
@@ -373,6 +373,14 @@ export async function runProcasSyncCycle(): Promise<{ skipped: boolean; synced: 
     return { skipped: true, synced: 0, failed: 0 };
   }
 
+  // Import the Procas project library first so brand-new work plans exist
+  // before the rate refresh runs. Each pre-sync step is isolated so one
+  // failing never blocks the others.
+  try {
+    await importWorkPlansFromProcas(creds);
+  } catch (e) {
+    logger.warn({ err: e }, "Procas work-plan library import failed; continuing with reference sync");
+  }
   // Refresh reference data (employees, work plan rates) once per cycle before
   // per-invoice labor pulls so new personnel and rates are in place.
   try {
