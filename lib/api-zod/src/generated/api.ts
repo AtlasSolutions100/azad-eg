@@ -1541,7 +1541,7 @@ export const GetProcasStatusResponse = zod.object({
 
 
 export const ConnectProcasBody = zod.object({
-  "companyCode": zod.string().min(1),
+  "companyCode": zod.string().min(1).optional().describe('Optional override; the server defaults to the company embedded in the Procas data-feed URL (PROCAS_COMPANY_CODE, normally AZADEN).'),
   "username": zod.string().min(1),
   "password": zod.string().min(1)
 })

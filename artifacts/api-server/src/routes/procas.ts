@@ -18,6 +18,7 @@ import {
   getProcasConnectionState,
   saveProcasConnection,
   pingProcas,
+  defaultProcasCompanyCode,
   credsFromConnection,
   fetchProcasTable,
 } from "../lib/procas";
@@ -96,7 +97,10 @@ router.post("/procas/connect", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { companyCode, username, password } = parsed.data;
+  // Company code is fixed by the Procas data-feed URL (…/v1/AZADEN), so the
+  // form no longer asks for it; an explicit value is accepted as an override.
+  const { username, password } = parsed.data;
+  const companyCode = parsed.data.companyCode?.trim() || defaultProcasCompanyCode();
 
   const ping = await pingProcas({ companyCode, username, password });
   if (!ping.ok) {

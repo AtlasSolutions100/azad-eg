@@ -16,6 +16,12 @@ export function procasBaseUrl(): string {
   return (process.env.PROCAS_BASE_URL ?? DEFAULT_BASE).replace(/\/+$/, "");
 }
 
+// The company segment of the data-feed URL (…/ProcasData/v1/<company>). It is
+// fixed per customer, so the connect form no longer asks billers for it.
+export function defaultProcasCompanyCode(): string {
+  return process.env.PROCAS_COMPANY_CODE?.trim() || "AZADEN";
+}
+
 export interface ProcasCreds {
   companyCode: string;
   username: string;
@@ -280,6 +286,35 @@ export async function reencryptProcasConnectionIfNeeded(): Promise<boolean> {
     .update(procasConnectionTable)
     .set({ password: encryptSecret(plaintext) })
     .where(eq(procasConnectionTable.id, CONNECTION_ID));
+  return true;
+}
+
+// Self-healing reconnect: if no live connection is stored (fresh database,
+// accidental disconnect, or an unreadable credential after a bad key
+// rotation) but PROCAS_USERNAME / PROCAS_PASSWORD secrets are configured,
+// verify them against the data feed and restore the connection row.
+// Returns true when a connection was (re)established.
+export async function autoConnectProcasFromEnv(): Promise<boolean> {
+  const username = process.env.PROCAS_USERNAME?.trim();
+  const password = process.env.PROCAS_PASSWORD;
+  if (!username || !password) return false;
+
+  const { conn, credentialUnreadable } = await getProcasConnectionState();
+  if (conn?.connected && conn.password && !credentialUnreadable) return false;
+
+  const companyCode = defaultProcasCompanyCode();
+  const ping = await pingProcas({ companyCode, username, password });
+  if (!ping.ok) {
+    console.error("[procas] Auto-reconnect from stored secrets failed:", ping.error);
+    return false;
+  }
+  await saveProcasConnection({
+    connected: true,
+    companyCode,
+    username,
+    password,
+    lastSyncAt: conn?.lastSyncAt ?? null,
+  });
   return true;
 }
 

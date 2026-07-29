@@ -126,16 +126,16 @@ export default function ProcasIndicator() {
   // the stored connection is ever lost, instead of needing an engineer.
   const connectProcas = useConnectProcas();
   const [connectOpen, setConnectOpen] = useState(false);
-  const [companyCode, setCompanyCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!companyCode.trim() || !username.trim() || !password) return;
+    if (!username.trim() || !password) return;
     try {
+      // Company code comes from the fixed data-feed URL on the server side.
       await connectProcas.mutateAsync({
-        data: { companyCode: companyCode.trim(), username: username.trim(), password },
+        data: { username: username.trim(), password },
       });
       await refreshStatus();
       setConnectOpen(false);
@@ -272,16 +272,6 @@ export default function ProcasIndicator() {
               ) : (
                 <form onSubmit={handleConnect} className="space-y-2 rounded-md border border-[#EDE6CF] bg-[#FBF8EF] p-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Company code</Label>
-                    <Input
-                      value={companyCode}
-                      onChange={(e) => setCompanyCode(e.target.value)}
-                      placeholder="e.g. AZADEN"
-                      autoComplete="off"
-                      data-testid="procas-connect-company"
-                    />
-                  </div>
-                  <div className="space-y-1">
                     <Label className="text-xs">Username</Label>
                     <Input
                       value={username}
@@ -310,12 +300,7 @@ export default function ProcasIndicator() {
                       type="submit"
                       size="sm"
                       className="flex-1 bg-[#CFAF42] text-white hover:bg-[#CFAF42]/90"
-                      disabled={
-                        connectProcas.isPending ||
-                        !companyCode.trim() ||
-                        !username.trim() ||
-                        !password
-                      }
+                      disabled={connectProcas.isPending || !username.trim() || !password}
                       data-testid="procas-connect-submit"
                     >
                       {connectProcas.isPending ? "Connecting…" : "Connect"}

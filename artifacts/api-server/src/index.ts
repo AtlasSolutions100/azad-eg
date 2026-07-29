@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { ensureDirs } from "./lib/paths";
 import { seedDatabase } from "./lib/seed";
 import { startProcasScheduler } from "./lib/procasScheduler";
-import { reencryptProcasConnectionIfNeeded } from "./lib/procas";
+import { reencryptProcasConnectionIfNeeded, autoConnectProcasFromEnv } from "./lib/procas";
 import { backfillTimesheetEmployeeIds } from "./lib/employeeResolve";
 import { pruneGeneratedFiles } from "./lib/generatedCleanup";
 
@@ -42,6 +42,17 @@ app.listen(port, async (err) => {
     }
   } catch (rotateErr) {
     logger.error({ err: rotateErr }, "Failed to re-encrypt stored Procas credential");
+  }
+
+  try {
+    // If the connection was ever lost (fresh database, disconnect, unreadable
+    // credential), silently restore it from the PROCAS_USERNAME /
+    // PROCAS_PASSWORD secrets so live data keeps flowing without manual help.
+    if (await autoConnectProcasFromEnv()) {
+      logger.info("Procas connection restored automatically from stored secrets");
+    }
+  } catch (reconnectErr) {
+    logger.error({ err: reconnectErr }, "Procas auto-reconnect from secrets failed");
   }
 
   try {

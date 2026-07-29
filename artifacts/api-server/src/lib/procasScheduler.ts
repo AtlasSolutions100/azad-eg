@@ -9,7 +9,7 @@ import {
   type PoolClient,
 } from "@workspace/db";
 import { inArray, eq, desc, notInArray, sql } from "drizzle-orm";
-import { getProcasConnection, credsFromConnection } from "./procas";
+import { getProcasConnection, credsFromConnection, autoConnectProcasFromEnv } from "./procas";
 import { syncInvoiceFromProcas, syncReferenceFromProcas, importWorkPlansFromProcas } from "./procasSync";
 import { logger } from "./logger";
 
@@ -367,8 +367,22 @@ export async function safeRecordSkippedTick(reason: SkipReason): Promise<void> {
 // mode (not connected). Each open invoice is pulled independently so one
 // failure does not abort the rest of the batch.
 export async function runProcasSyncCycle(): Promise<{ skipped: boolean; synced: number; failed: number }> {
-  const conn = await getProcasConnection();
-  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  let conn = await getProcasConnection();
+  let creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!conn || !creds) {
+    // Self-heal: if the connection row was lost (fresh DB, disconnect), try
+    // restoring it from the PROCAS_USERNAME/PROCAS_PASSWORD secrets before
+    // giving up on this cycle.
+    try {
+      if (await autoConnectProcasFromEnv()) {
+        logger.info("Procas connection restored automatically from stored secrets");
+        conn = await getProcasConnection();
+        creds = conn?.connected ? credsFromConnection(conn) : null;
+      }
+    } catch (e) {
+      logger.warn({ err: e }, "Procas auto-reconnect from secrets failed");
+    }
+  }
   if (!conn || !creds) {
     return { skipped: true, synced: 0, failed: 0 };
   }

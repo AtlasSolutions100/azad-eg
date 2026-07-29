@@ -25,3 +25,4 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
+PROCAS_COMPANY_CODE = "AZADEN"

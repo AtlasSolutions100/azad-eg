@@ -898,8 +898,11 @@ export interface ProcasStatus {
 }
 
 export interface ProcasConnectInput {
-  /** @minLength 1 */
-  companyCode: string;
+  /**
+     * Optional override; the server defaults to the company embedded in the Procas data-feed URL (PROCAS_COMPANY_CODE, normally AZADEN).
+     * @minLength 1
+     */
+  companyCode?: string;
   /** @minLength 1 */
   username: string;
   /** @minLength 1 */

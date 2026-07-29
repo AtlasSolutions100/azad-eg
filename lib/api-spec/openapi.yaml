@@ -2395,9 +2395,14 @@ components:
 
     ProcasConnectInput:
       type: object
-      required: [companyCode, username, password]
+      required: [username, password]
       properties:
-        companyCode: { type: string, minLength: 1 }
+        companyCode:
+          type: string
+          minLength: 1
+          description: >-
+            Optional override; the server defaults to the company embedded in
+            the Procas data-feed URL (PROCAS_COMPANY_CODE, normally AZADEN).
         username: { type: string, minLength: 1 }
         password: { type: string, minLength: 1 }
 
