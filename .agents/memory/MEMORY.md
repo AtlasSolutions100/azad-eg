@@ -3,6 +3,7 @@
 - [Work-plan-optional packages](workplan-optional-packages.md) — package rate overrides always beat linked work-plan values; hide-the-fields UIs must clear them, and PATCH gates must use prospective state.
 - [Package billing document engine](package-billing-engine.md) — 5 docs fill real uploaded xlsx templates from timesheet rollups; work-plan overheadRate/fccmRate are nullable and yield $0 unless set in the form.
 - [Reference-workbook export engine](reference-workbook-engine.md) — exports mutate Julie's populated ground-truth xlsx; write every cell unconditionally or template values leak; rates ÷100; hidden sheets skip PDF.
+- [Procas auto-reconnect](procas-auto-reconnect.md) — company code fixed (AZADEN) so form asks only user+password; PROCAS_USERNAME/PASSWORD secrets self-heal a lost connection at startup and each sync cycle.
 - [Procas key rotation](procas-key-rotation.md) — PROCAS_ENC_KEY_OLD is decrypt-only; startup + lazy read re-seal ciphertext under the new PROCAS_ENC_KEY, so rotation is zero-downtime.
 - [Excel export repair warning](excel-export-defined-names.md) — templates carry broken external/`#REF!` named ranges; strip them before write or Excel shows a "Removed Records: Named range" repair prompt.
 - [Employee rate effective dates](employee-rate-effective-dates.md) — labor-row split keys off distinct entry rates; every rate assignment must go through effectiveRate() with a week/period as-of date.

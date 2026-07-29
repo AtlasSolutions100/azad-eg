@@ -7,7 +7,7 @@ import {
   type LineItemRow,
   type ProcasConnectionRow,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   fetchProcasTable,
   credsFromConnection,
@@ -224,8 +224,15 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       // decompositions Julie entered are never stomped.
       if (linked.totalBudget === 0 && budget > 0) changes.totalBudget = budget;
       if (Object.keys(changes).length > 0) {
-        await db.update(workPlansTable).set(changes).where(eq(workPlansTable.id, linked.id));
-        updated += 1;
+        // Guard on source at write time: if a biller edited this plan while
+        // the import was running (flipping it to manual), the stale snapshot
+        // must not stomp their change.
+        const rows = await db
+          .update(workPlansTable)
+          .set(changes)
+          .where(and(eq(workPlansTable.id, linked.id), eq(workPlansTable.source, "procas")))
+          .returning({ id: workPlansTable.id });
+        if (rows.length > 0) updated += 1;
       }
       continue;
     }
