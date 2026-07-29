@@ -241,7 +241,7 @@ export default function Dashboard() {
   const [form, setForm] = useState<Partial<PackageInput>>({
     invoiceDate: new Date().toISOString().split("T")[0],
   });
-  // Wizard: 0 = Owner, 1 = Prime, 2 = Work Plan, 3 = Period & details.
+  // Wizard: 0 = Owner & Prime (one screen), 1 = Work Plan, 2 = Period & details.
   const [step, setStep] = useState(0);
   // Employees auto-detected from Procas for the selected work plan / job.
   const [detected, setDetected] = useState<ProcasWorkPlanEmployee[] | null>(null);
@@ -265,6 +265,25 @@ export default function Dashboard() {
     },
   });
   const [ratesLoading, setRatesLoading] = useState(false);
+
+  // Dropdown suggestions for Owner (government agencies) and Prime
+  // (contractors Azad bills through). Known common values are merged with
+  // anything already used on existing packages, and free typing still works.
+  const OWNER_SUGGESTIONS = ["BART", "CalTrans"];
+  const PRIME_SUGGESTIONS = ["AECOM", "WSP", "Parsons", "T.Y. Lin", "Azad (we are the prime)"];
+  const { ownerOptions, primeOptions } = useMemo(() => {
+    const owners = new Set(OWNER_SUGGESTIONS);
+    const primes = new Set(PRIME_SUGGESTIONS);
+    for (const g of groups ?? []) {
+      for (const j of g.jobs) {
+        for (const p of j.packages) {
+          if (p.owner?.trim()) owners.add(p.owner.trim());
+          if (p.prime?.trim()) primes.add(p.prime.trim());
+        }
+      }
+    }
+    return { ownerOptions: [...owners], primeOptions: [...primes] };
+  }, [groups]);
 
   const filteredWizardPlans = useMemo(() => {
     if (!workPlans) return workPlans;
@@ -467,40 +486,54 @@ export default function Dashboard() {
         <DialogHeader>
           <DialogTitle>Create Package</DialogTitle>
           <p className="text-xs text-[#9a9a9a]">
-            Step {step + 1} of 4 —{" "}
-            {["Owner", "Prime", "Work Plan", "Pay Period & Details"][step]}
+            Step {step + 1} of 3 —{" "}
+            {["Owner & Prime", "Work Plan", "Pay Period & Details"][step]}
           </p>
         </DialogHeader>
         <form onSubmit={handleCreatePackage} className="space-y-4">
           {step === 0 && (
-            <div className="space-y-2">
-              <Label>Owner</Label>
-              <Input
-                autoFocus
-                placeholder="Project owner / agency, e.g. BART"
-                value={form.owner || ""}
-                onChange={(e) => setForm({ ...form, owner: e.target.value })}
-              />
-              <p className="text-xs text-[#5F5F5F]">
-                Who the work ultimately belongs to. Leave blank if not known yet.
-              </p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Owner</Label>
+                <Input
+                  autoFocus
+                  list="owner-suggestions"
+                  placeholder="Pick or type the owner / agency, e.g. BART"
+                  value={form.owner || ""}
+                  onChange={(e) => setForm({ ...form, owner: e.target.value })}
+                />
+                <datalist id="owner-suggestions">
+                  {ownerOptions.map((o) => (
+                    <option key={o} value={o} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-[#5F5F5F]">
+                  The government agency the work ultimately belongs to (e.g.
+                  BART, CalTrans). Leave blank if not known yet.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Prime</Label>
+                <Input
+                  list="prime-suggestions"
+                  placeholder="Pick or type the prime, e.g. T.Y. Lin"
+                  value={form.prime || ""}
+                  onChange={(e) => setForm({ ...form, prime: e.target.value })}
+                />
+                <datalist id="prime-suggestions">
+                  {primeOptions.map((o) => (
+                    <option key={o} value={o} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-[#5F5F5F]">
+                  The prime contractor this package bills through (AECOM, WSP,
+                  Parsons, T.Y. Lin…). Azad is usually the sub; if Azad is the
+                  prime on this contract, choose “Azad (we are the prime)”.
+                </p>
+              </div>
             </div>
           )}
           {step === 1 && (
-            <div className="space-y-2">
-              <Label>Prime</Label>
-              <Input
-                autoFocus
-                placeholder="Prime contractor, e.g. T.Y. Lin"
-                value={form.prime || ""}
-                onChange={(e) => setForm({ ...form, prime: e.target.value })}
-              />
-              <p className="text-xs text-[#5F5F5F]">
-                The prime this package bills through. Leave blank if not known yet.
-              </p>
-            </div>
-          )}
-          {step === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Work Plan</Label>
@@ -690,7 +723,7 @@ export default function Dashboard() {
               )}
             </div>
           )}
-          {step === 3 && (
+          {step === 2 && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -761,17 +794,32 @@ export default function Dashboard() {
             ) : (
               <span />
             )}
-            {step < 3 ? (
+            {step < 2 ? (
               <Button
                 type="button"
                 className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
                 disabled={
-                  step === 2 &&
+                  step === 1 &&
                   ((!form.workPlanId && !form.procasProject) ||
                     detectLoading ||
                     (!!detected && detected.length > 1 && !multiConfirmed))
                 }
-                onClick={() => setStep((s) => s + 1)}
+                onClick={() =>
+                  setStep((s) => {
+                    // BART bills whole months: entering the final step
+                    // pre-fills the pay period with the current full month.
+                    // Both dates stay editable for overrides.
+                    if (s === 1 && !form.payPeriodStart && !form.payPeriodEnd) {
+                      const now = new Date();
+                      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+                      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                      const iso = (d: Date) =>
+                        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                      setForm((f) => ({ ...f, payPeriodStart: iso(first), payPeriodEnd: iso(last) }));
+                    }
+                    return s + 1;
+                  })
+                }
               >
                 Next
               </Button>
