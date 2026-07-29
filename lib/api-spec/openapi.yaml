@@ -1055,6 +1055,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcasBillingRates"
 
+  /procas/work-plan-employees:
+    get:
+      operationId: listProcasWorkPlanEmployees
+      tags: [reference]
+      summary: List employees who charged time to a Procas project (work plan charge code)
+      parameters:
+        - name: project
+          in: query
+          required: true
+          schema: { type: string }
+        - name: start
+          in: query
+          schema: { type: string }
+          description: ISO date lower bound; defaults to 12 months back.
+        - name: end
+          in: query
+          schema: { type: string }
+          description: ISO date upper bound; defaults to today.
+      responses:
+        "200":
+          description: Employees who charged time to the project
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcasWorkPlanEmployee"
+
   /packages:
     get:
       operationId: listPackages
@@ -2523,6 +2551,12 @@ components:
         clientName:
           type: ["string", "null"]
           description: Client display name for work-plan-less packages.
+        owner:
+          type: ["string", "null"]
+          description: Project owner / agency the work belongs to (e.g. BART).
+        prime:
+          type: ["string", "null"]
+          description: Prime contractor this package bills through.
         totalBudget:
           type: ["number", "null"]
           description: Package-level budget ceiling; null = not tracked.
@@ -2592,6 +2626,12 @@ components:
         clientName:
           type: string
           description: Client display name for work-plan-less packages (defaults from Procas).
+        owner:
+          type: string
+          description: Project owner / agency the work belongs to (e.g. BART).
+        prime:
+          type: string
+          description: Prime contractor this package bills through.
         totalBudget: { type: number, description: "Optional budget ceiling for work-plan-less packages." }
         fringeRate: { type: number, description: "Override %, wins over work plan / Procas." }
         overheadRate: { type: number, description: "Override %, wins over work plan / Procas." }
@@ -2612,6 +2652,8 @@ components:
           description: Attach (or switch) the work plan for this package.
         procasProject: { type: string }
         clientName: { type: string }
+        owner: { type: string }
+        prime: { type: string }
         totalBudget: { type: number }
         fringeRate: { type: number }
         overheadRate: { type: number }
@@ -2686,6 +2728,18 @@ components:
         description: { type: string }
         activeForBilling: { type: boolean }
         isClosed: { type: boolean }
+    ProcasWorkPlanEmployee:
+      type: object
+      required: [name, hours]
+      description: >-
+        One employee who charged time to a Procas project (a work plan's
+        charge code), with total hours in the queried window.
+      properties:
+        employeeId:
+          type: ["integer", "null"]
+          description: Matching local employee id, when the Procas name resolves.
+        name: { type: string }
+        hours: { type: number }
     ProcasBillingRates:
       type: object
       required: [fringeRate, overheadRate, fixedFeeRate, fccmRate, client]

@@ -15,6 +15,10 @@ export interface PackageInput {
   procasProject?: string;
   /** Client display name for work-plan-less packages (defaults from Procas). */
   clientName?: string;
+  /** Project owner / agency the work belongs to (e.g. BART). */
+  owner?: string;
+  /** Prime contractor this package bills through. */
+  prime?: string;
   /** Optional budget ceiling for work-plan-less packages. */
   totalBudget?: number;
   /** Override %, wins over work plan / Procas. */

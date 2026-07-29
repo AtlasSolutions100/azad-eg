@@ -26,6 +26,10 @@ export const packagesTable = pgTable(
   procasProject: text("procas_project"),
   // Display-only client name for work-plan-less packages.
   clientName: text("client_name"),
+  // Project owner / agency the work ultimately belongs to (e.g. "BART").
+  owner: text("owner"),
+  // Prime contractor this package bills through (e.g. "T.Y. Lin").
+  prime: text("prime"),
   // Optional budget ceiling for work-plan-less packages; null = unknown.
   totalBudget: doublePrecision("total_budget"),
   // Package-level rate overrides (percent, e.g. 8 = 8%). Null = inherit from

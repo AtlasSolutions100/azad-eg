@@ -292,6 +292,8 @@ router.post("/packages", async (req, res): Promise<void> => {
         workPlanId: parsed.data.workPlanId ?? null,
         procasProject,
         clientName,
+        owner: parsed.data.owner?.trim() || null,
+        prime: parsed.data.prime?.trim() || null,
         totalBudget: parsed.data.totalBudget ?? null,
         fringeRate: fringeRate ?? null,
         overheadRate: overheadRate ?? null,

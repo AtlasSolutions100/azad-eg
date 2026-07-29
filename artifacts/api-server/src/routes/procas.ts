@@ -10,7 +10,9 @@ import {
   UpdateProcasSchedulerResponse,
   ListProcasProjectsResponse,
   GetProcasBillingRatesResponse,
+  ListProcasWorkPlanEmployeesResponse,
 } from "@workspace/api-zod";
+import { db, employeesTable } from "@workspace/db";
 import {
   getProcasConnection,
   getProcasConnectionState,
@@ -258,6 +260,67 @@ router.get("/procas/billing-rates", async (req, res): Promise<void> => {
     res.json(GetProcasBillingRatesResponse.parse(rates));
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : "Failed to fetch Procas billing rates." });
+  }
+});
+
+// Lists the distinct employees who charged time to a Procas project (a work
+// plan's charge code). Powers the create-package wizard: picking a work plan
+// auto-detects its contributors instead of requiring manual employee selection.
+router.get("/procas/work-plan-employees", async (req, res): Promise<void> => {
+  const project = typeof req.query.project === "string" ? req.query.project.trim() : "";
+  if (!project) {
+    res.status(400).json({ error: "A project query parameter is required." });
+    return;
+  }
+  const isoDate = (v: unknown): string | null =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  const end = isoDate(req.query.end) ?? new Date().toISOString().slice(0, 10);
+  const start =
+    isoDate(req.query.start) ??
+    new Date(new Date(`${end}T00:00:00Z`).getTime() - 365 * 24 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+  const conn = await getProcasConnection();
+  const creds = conn?.connected ? credsFromConnection(conn) : null;
+  if (!creds) {
+    res.status(409).json({ error: "Procas is not connected." });
+    return;
+  }
+  try {
+    // Same prefix policy as the hours pull: Procas books time at leaf task
+    // codes like "10007.01.01.0.CA" while work plans map the root project.
+    const filter =
+      `startswith(Project, '${project.replace(/'/g, "''")}')` +
+      ` and WorkDate ge ${start}T00:00:00Z and WorkDate le ${end}T23:59:59Z`;
+    const rows = await fetchProcasTable(creds, "Timesheet", { filter });
+    const totals = new Map<string, { name: string; hours: number }>();
+    for (const r of rows) {
+      const name =
+        (typeof r.PersonnelName === "string" && r.PersonnelName.trim()) ||
+        (typeof r.Personnel === "string" && r.Personnel.trim()) ||
+        "";
+      const hours = typeof r.HoursWorked === "number" ? r.HoursWorked : Number(r.HoursWorked);
+      if (!name || !Number.isFinite(hours) || hours === 0) continue;
+      const key = name.toLowerCase();
+      const cur = totals.get(key);
+      if (cur) cur.hours += hours;
+      else totals.set(key, { name, hours });
+    }
+    const employees = await db.select().from(employeesTable);
+    const empByName = new Map(employees.map((e) => [e.name.trim().toLowerCase(), e.id]));
+    const result = [...totals.values()]
+      .map((t) => ({
+        employeeId: empByName.get(t.name.trim().toLowerCase()) ?? null,
+        name: t.name,
+        hours: Math.round(t.hours * 100) / 100,
+      }))
+      .sort((a, b) => b.hours - a.hours);
+    res.json(ListProcasWorkPlanEmployeesResponse.parse(result));
+  } catch (e) {
+    res.status(502).json({
+      error: e instanceof Error ? e.message : "Failed to list Procas work plan employees.",
+    });
   }
 });
 

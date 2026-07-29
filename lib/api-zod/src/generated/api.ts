@@ -1673,6 +1673,23 @@ export const GetProcasBillingRatesResponse = zod.object({
 
 
 /**
+ * @summary List employees who charged time to a Procas project (work plan charge code)
+ */
+export const ListProcasWorkPlanEmployeesQueryParams = zod.object({
+  "project": zod.coerce.string(),
+  "start": zod.coerce.string().optional().describe('ISO date lower bound; defaults to 12 months back.'),
+  "end": zod.coerce.string().optional().describe('ISO date upper bound; defaults to today.')
+})
+
+export const ListProcasWorkPlanEmployeesResponseItem = zod.object({
+  "employeeId": zod.number().nullish().describe('Matching local employee id, when the Procas name resolves.'),
+  "name": zod.string(),
+  "hours": zod.number()
+}).describe('One employee who charged time to a Procas project (a work plan\'s charge code), with total hours in the queried window.')
+export const ListProcasWorkPlanEmployeesResponse = zod.array(ListProcasWorkPlanEmployeesResponseItem)
+
+
+/**
  * @summary List packages
  */
 export const ListPackagesQueryParams = zod.object({
@@ -1697,6 +1714,8 @@ export const ListPackagesResponseItem = zod.object({
   "client": zod.string(),
   "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
   "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "owner": zod.string().nullish().describe('Project owner \/ agency the work belongs to (e.g. BART).'),
+  "prime": zod.string().nullish().describe('Prime contractor this package bills through.'),
   "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
   "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
@@ -1742,6 +1761,8 @@ export const CreatePackageBody = zod.object({
   "workPlanId": zod.number().optional().describe('Optional — a package can be started before its work plan exists. When omitted, procasProject is required so billing has a job to hang off.'),
   "procasProject": zod.string().optional().describe('Procas job number to bill against when no work plan is linked.'),
   "clientName": zod.string().optional().describe('Client display name for work-plan-less packages (defaults from Procas).'),
+  "owner": zod.string().optional().describe('Project owner \/ agency the work belongs to (e.g. BART).'),
+  "prime": zod.string().optional().describe('Prime contractor this package bills through.'),
   "totalBudget": zod.number().optional().describe('Optional budget ceiling for work-plan-less packages.'),
   "fringeRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
   "overheadRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
@@ -1772,6 +1793,8 @@ export const CreatePackageResponse = zod.object({
   "client": zod.string(),
   "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
   "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "owner": zod.string().nullish().describe('Project owner \/ agency the work belongs to (e.g. BART).'),
+  "prime": zod.string().nullish().describe('Prime contractor this package bills through.'),
   "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
   "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
@@ -1834,6 +1857,8 @@ export const ListPackagesGroupedResponseItem = zod.object({
   "client": zod.string(),
   "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
   "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "owner": zod.string().nullish().describe('Project owner \/ agency the work belongs to (e.g. BART).'),
+  "prime": zod.string().nullish().describe('Prime contractor this package bills through.'),
   "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
   "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
@@ -1897,6 +1922,8 @@ export const GetPackageResponse = zod.object({
   "client": zod.string(),
   "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
   "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "owner": zod.string().nullish().describe('Project owner \/ agency the work belongs to (e.g. BART).'),
+  "prime": zod.string().nullish().describe('Prime contractor this package bills through.'),
   "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
   "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
@@ -2060,6 +2087,8 @@ export const UpdatePackageBody = zod.object({
   "workPlanId": zod.number().optional().describe('Attach (or switch) the work plan for this package.'),
   "procasProject": zod.string().optional(),
   "clientName": zod.string().optional(),
+  "owner": zod.string().optional(),
+  "prime": zod.string().optional(),
   "totalBudget": zod.number().optional(),
   "fringeRate": zod.number().optional(),
   "overheadRate": zod.number().optional(),
@@ -2100,6 +2129,8 @@ export const UpdatePackageResponse = zod.object({
   "client": zod.string(),
   "procasProject": zod.string().nullish().describe('Procas job this package bills against when no work plan is linked.'),
   "clientName": zod.string().nullish().describe('Client display name for work-plan-less packages.'),
+  "owner": zod.string().nullish().describe('Project owner \/ agency the work belongs to (e.g. BART).'),
+  "prime": zod.string().nullish().describe('Prime contractor this package bills through.'),
   "totalBudget": zod.number().nullish().describe('Package-level budget ceiling; null = not tracked.'),
   "fringeRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),
   "overheadRate": zod.number().nullish().describe('Package-level override %, wins over the work plan.'),

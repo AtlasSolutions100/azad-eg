@@ -43,6 +43,16 @@ export interface PackageSummary {
      */
   clientName?: string | null;
   /**
+     * Project owner / agency the work belongs to (e.g. BART).
+     * @nullable
+     */
+  owner?: string | null;
+  /**
+     * Prime contractor this package bills through.
+     * @nullable
+     */
+  prime?: string | null;
+  /**
      * Package-level budget ceiling; null = not tracked.
      * @nullable
      */

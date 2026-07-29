@@ -1081,6 +1081,16 @@ export interface PackageSummary {
      */
   clientName?: string | null;
   /**
+     * Project owner / agency the work belongs to (e.g. BART).
+     * @nullable
+     */
+  owner?: string | null;
+  /**
+     * Prime contractor this package bills through.
+     * @nullable
+     */
+  prime?: string | null;
+  /**
      * Package-level budget ceiling; null = not tracked.
      * @nullable
      */
@@ -1144,6 +1154,10 @@ export interface PackageInput {
   procasProject?: string;
   /** Client display name for work-plan-less packages (defaults from Procas). */
   clientName?: string;
+  /** Project owner / agency the work belongs to (e.g. BART). */
+  owner?: string;
+  /** Prime contractor this package bills through. */
+  prime?: string;
   /** Optional budget ceiling for work-plan-less packages. */
   totalBudget?: number;
   /** Override %, wins over work plan / Procas. */
@@ -1178,6 +1192,8 @@ export interface PackageUpdate {
   workPlanId?: number;
   procasProject?: string;
   clientName?: string;
+  owner?: string;
+  prime?: string;
   totalBudget?: number;
   fringeRate?: number;
   overheadRate?: number;
@@ -1235,6 +1251,19 @@ export interface ProcasProject {
   description: string;
   activeForBilling: boolean;
   isClosed: boolean;
+}
+
+/**
+ * One employee who charged time to a Procas project (a work plan's charge code), with total hours in the queried window.
+ */
+export interface ProcasWorkPlanEmployee {
+  /**
+     * Matching local employee id, when the Procas name resolves.
+     * @nullable
+     */
+  employeeId?: number | null;
+  name: string;
+  hours: number;
 }
 
 /**
@@ -1576,6 +1605,18 @@ overridesOnly?: boolean;
 
 export type GetProcasBillingRatesParams = {
 project: string;
+};
+
+export type ListProcasWorkPlanEmployeesParams = {
+project: string;
+/**
+ * ISO date lower bound; defaults to 12 months back.
+ */
+start?: string;
+/**
+ * ISO date upper bound; defaults to today.
+ */
+end?: string;
 };
 
 export type ListPackagesParams = {

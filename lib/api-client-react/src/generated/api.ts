@@ -55,6 +55,7 @@ import type {
   ListAuditLogsParams,
   ListInvoicesParams,
   ListPackagesParams,
+  ListProcasWorkPlanEmployeesParams,
   NotFoundResponse,
   PackageClientGroup,
   PackageDetail,
@@ -76,6 +77,7 @@ import type {
   ProcasSchedulerRun,
   ProcasSchedulerStatus,
   ProcasStatus,
+  ProcasWorkPlanEmployee,
   ProgressReport,
   ProgressReportFileUpload,
   ProgressReportFileUploadResult,
@@ -4568,6 +4570,90 @@ export function useGetProcasBillingRates<TData = Awaited<ReturnType<typeof getPr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetProcasBillingRatesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListProcasWorkPlanEmployeesUrl = (params: ListProcasWorkPlanEmployeesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/procas/work-plan-employees?${stringifiedParams}` : `/api/procas/work-plan-employees`
+}
+
+/**
+ * @summary List employees who charged time to a Procas project (work plan charge code)
+ */
+export const listProcasWorkPlanEmployees = async (params: ListProcasWorkPlanEmployeesParams, options?: RequestInit): Promise<ProcasWorkPlanEmployee[]> => {
+
+  return customFetch<ProcasWorkPlanEmployee[]>(getListProcasWorkPlanEmployeesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProcasWorkPlanEmployeesQueryKey = (params?: ListProcasWorkPlanEmployeesParams,) => {
+    return [
+    `/api/procas/work-plan-employees`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListProcasWorkPlanEmployeesQueryOptions = <TData = Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>, TError = ErrorType<unknown>>(params: ListProcasWorkPlanEmployeesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProcasWorkPlanEmployeesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>> = ({ signal }) => listProcasWorkPlanEmployees(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListProcasWorkPlanEmployeesQueryResult = NonNullable<Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>>
+export type ListProcasWorkPlanEmployeesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List employees who charged time to a Procas project (work plan charge code)
+ */
+
+export function useListProcasWorkPlanEmployees<TData = Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>, TError = ErrorType<unknown>>(
+ params: ListProcasWorkPlanEmployeesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listProcasWorkPlanEmployees>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListProcasWorkPlanEmployeesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

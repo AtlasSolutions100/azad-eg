@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   useListPackagesGrouped,
   useCreatePackage,
-  useListEmployees,
   useListWorkPlans,
   useListProcasProjects,
   getProcasBillingRates,
+  listProcasWorkPlanEmployees,
+  type ProcasWorkPlanEmployee,
   type PackageSummary,
   type PackageClientGroup,
   type PackageInput,
@@ -45,6 +46,9 @@ import {
   FileStack,
   Plus,
   AlertTriangle,
+  Users,
+  ChevronLeft,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -228,7 +232,6 @@ function PackageTile({
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { data: groups, isLoading, error } = useListPackagesGrouped();
-  const { data: employees } = useListEmployees();
   const { data: workPlans } = useListWorkPlans();
   const createPackage = useCreatePackage();
   const { toast } = useToast();
@@ -238,6 +241,16 @@ export default function Dashboard() {
   const [form, setForm] = useState<Partial<PackageInput>>({
     invoiceDate: new Date().toISOString().split("T")[0],
   });
+  // Wizard: 0 = Owner, 1 = Prime, 2 = Work Plan, 3 = Period & details.
+  const [step, setStep] = useState(0);
+  // Employees auto-detected from Procas for the selected work plan / job.
+  const [detected, setDetected] = useState<ProcasWorkPlanEmployee[] | null>(null);
+  const [detectLoading, setDetectLoading] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+  // Multi-employee work plans need an explicit "continue" acknowledgement.
+  const [multiConfirmed, setMultiConfirmed] = useState(false);
+  // Manual fallback when the work plan / job is not in Procas yet.
+  const [manualEntry, setManualEntry] = useState(false);
 
   // Procas projects power the "no work plan yet" path; the list only loads
   // when the create dialog is open (and quietly stays empty if Procas is
@@ -250,6 +263,69 @@ export default function Dashboard() {
     },
   });
   const [ratesLoading, setRatesLoading] = useState(false);
+
+  // Guards against out-of-order responses when the user switches work plans
+  // quickly: only the latest detection request may update state.
+  const detectSeq = useRef(0);
+
+  // The work plan drives everything downstream: picking one auto-detects the
+  // employees who charged time to its Procas charge code — no manual
+  // employee selection.
+  const detectEmployees = async (project: string | null | undefined) => {
+    const seq = ++detectSeq.current;
+    setDetected(null);
+    setDetectError(null);
+    setMultiConfirmed(false);
+    const p = project?.trim();
+    if (!p) {
+      setDetectError(
+        "This work plan is not linked to a Procas charge code yet, so employees can't be auto-detected. They'll be added from timesheets instead.",
+      );
+      return;
+    }
+    setDetectLoading(true);
+    try {
+      const rows = await listProcasWorkPlanEmployees({ project: p });
+      if (seq !== detectSeq.current) return;
+      setDetected(rows);
+    } catch (err) {
+      if (seq !== detectSeq.current) return;
+      setDetectError(
+        err instanceof Error
+          ? err.message
+          : "Could not reach Procas to detect employees — they'll be added from timesheets instead.",
+      );
+    } finally {
+      if (seq === detectSeq.current) setDetectLoading(false);
+    }
+  };
+
+  const handleSelectWorkPlan = (val: string) => {
+    if (val === "none") {
+      setForm((f) => ({ ...f, workPlanId: undefined }));
+      setDetected(null);
+      setDetectError(null);
+      setMultiConfirmed(false);
+      return;
+    }
+    const wpId = Number(val);
+    setForm((f) => ({
+      // Picking a real work plan clears the Procas-only fields, otherwise
+      // stale hidden overrides would silently beat the work plan's rates.
+      ...f,
+      workPlanId: wpId,
+      procasProject: undefined,
+      clientName: undefined,
+      fringeRate: undefined,
+      overheadRate: undefined,
+      fixedFeeRate: undefined,
+      fccmRate: undefined,
+      totalBudget: undefined,
+    }));
+    setManualEntry(false);
+    const wp = workPlans?.find((w) => w.id === wpId);
+    void detectEmployees(wp?.procasProject);
+  };
 
   // When a Procas job is picked, pre-fill rates + client from Billing Setup.
   // Values land in the form fields so the user can override any of them.
@@ -272,6 +348,17 @@ export default function Dashboard() {
     } finally {
       setRatesLoading(false);
     }
+    void detectEmployees(project);
+  };
+
+  const resetWizard = () => {
+    setForm({ invoiceDate: new Date().toISOString().split("T")[0] });
+    setStep(0);
+    setDetected(null);
+    setDetectError(null);
+    setDetectLoading(false);
+    setMultiConfirmed(false);
+    setManualEntry(false);
   };
 
   const handleCreatePackage = async (e: React.FormEvent) => {
@@ -281,7 +368,7 @@ export default function Dashboard() {
     try {
       const res = await createPackage.mutateAsync({ data: form as PackageInput });
       setCreateOpen(false);
-      setForm({ invoiceDate: new Date().toISOString().split("T")[0] });
+      resetWizard();
       setLocation(`/packages/${res.id}`);
     } catch (err) {
       console.error(err);
@@ -296,9 +383,7 @@ export default function Dashboard() {
 
   const handleCreateOpenChange = (next: boolean) => {
     setCreateOpen(next);
-    if (!next) {
-      setForm({ invoiceDate: new Date().toISOString().split("T")[0] });
-    }
+    if (!next) resetWizard();
   };
 
   const filtered = useMemo<PackageClientGroup[]>(() => {
@@ -364,216 +449,320 @@ export default function Dashboard() {
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Package</DialogTitle>
+          <p className="text-xs text-[#9a9a9a]">
+            Step {step + 1} of 4 —{" "}
+            {["Owner", "Prime", "Work Plan", "Pay Period & Details"][step]}
+          </p>
         </DialogHeader>
         <form onSubmit={handleCreatePackage} className="space-y-4">
-          <div className="space-y-2">
-            <Label>Employee (optional)</Label>
-            <Select
-              value={form.employeeId ? String(form.employeeId) : "none"}
-              onValueChange={(val) =>
-                setForm({
-                  ...form,
-                  employeeId: val === "none" ? undefined : Number(val),
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All employees (add per timesheet)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">
-                  No primary employee — add people on timesheets
-                </SelectItem>
-                {employees?.map((emp) => (
-                  <SelectItem key={emp.id} value={String(emp.id)}>
-                    {emp.name} — {emp.classification}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Work Plan (optional)</Label>
-            <Select
-              value={form.workPlanId ? String(form.workPlanId) : "none"}
-              onValueChange={(val) =>
-                setForm((f) =>
-                  val === "none"
-                    ? { ...f, workPlanId: undefined }
-                    : {
-                        // Picking a real work plan clears the Procas-only
-                        // fields, otherwise stale hidden overrides would
-                        // silently beat the work plan's rates on the server.
-                        ...f,
-                        workPlanId: Number(val),
-                        procasProject: undefined,
-                        clientName: undefined,
-                        fringeRate: undefined,
-                        overheadRate: undefined,
-                        fixedFeeRate: undefined,
-                        fccmRate: undefined,
-                        totalBudget: undefined,
-                      },
-                )
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="No work plan yet — attach later" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">
-                  No work plan yet — bill by Procas job
-                </SelectItem>
-                {workPlans?.map((wp) => (
-                  <SelectItem key={wp.id} value={String(wp.id)}>
-                    {wp.code} - {wp.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {!form.workPlanId && (
-            <div className="space-y-4 rounded-md border border-dashed border-border bg-gray-50/60 p-3">
+          {step === 0 && (
+            <div className="space-y-2">
+              <Label>Owner</Label>
+              <Input
+                autoFocus
+                placeholder="Project owner / agency, e.g. BART"
+                value={form.owner || ""}
+                onChange={(e) => setForm({ ...form, owner: e.target.value })}
+              />
+              <p className="text-xs text-[#5F5F5F]">
+                Who the work ultimately belongs to. Leave blank if not known yet.
+              </p>
+            </div>
+          )}
+          {step === 1 && (
+            <div className="space-y-2">
+              <Label>Prime</Label>
+              <Input
+                autoFocus
+                placeholder="Prime contractor, e.g. T.Y. Lin"
+                value={form.prime || ""}
+                onChange={(e) => setForm({ ...form, prime: e.target.value })}
+              />
+              <p className="text-xs text-[#5F5F5F]">
+                The prime this package bills through. Leave blank if not known yet.
+              </p>
+            </div>
+          )}
+          {step === 2 && (
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Procas Job Number</Label>
-                {procasProjects && procasProjects.length > 0 ? (
-                  <Select
-                    value={form.procasProject || undefined}
-                    onValueChange={handlePickProcasJob}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pick the Procas job to bill against" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {procasProjects.map((p) => (
-                        <SelectItem key={p.project} value={p.project}>
-                          {p.project}
-                          {p.description ? ` — ${p.description}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    placeholder="e.g. 22-1234"
-                    value={form.procasProject || ""}
-                    onChange={(e) =>
-                      setForm({ ...form, procasProject: e.target.value })
-                    }
-                  />
-                )}
+                <Label>Work Plan</Label>
+                <Select
+                  value={form.workPlanId ? String(form.workPlanId) : undefined}
+                  onValueChange={handleSelectWorkPlan}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick the work plan that drives this package" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workPlans?.map((wp) => (
+                      <SelectItem key={wp.id} value={String(wp.id)}>
+                        {wp.code} - {wp.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-[#5F5F5F]">
-                  {ratesLoading
-                    ? "Pulling billing rates from Procas…"
-                    : "Rates below pull from Procas Billing Setup — edit any of them if needed."}
+                  The work plan number pulls from Procas and drives rates
+                  automatically from Billing Setup.
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label>Client (optional)</Label>
-                <Input
-                  value={form.clientName || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, clientName: e.target.value })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {(
-                  [
-                    ["Overhead %", "overheadRate"],
-                    ["Fixed Fee %", "fixedFeeRate"],
-                    ["FCCM %", "fccmRate"],
-                    ["Fringe %", "fringeRate"],
-                  ] as const
-                ).map(([label, field]) => (
-                  <div key={field} className="space-y-2">
-                    <Label>{label}</Label>
+              {!form.workPlanId && (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-[#8a7326] underline underline-offset-2"
+                  onClick={() => setManualEntry((m) => !m)}
+                >
+                  {manualEntry
+                    ? "Hide manual entry"
+                    : "Work plan not in Procas yet? Enter it manually"}
+                </button>
+              )}
+              {!form.workPlanId && manualEntry && (
+                <div className="space-y-4 rounded-md border border-dashed border-border bg-gray-50/60 p-3">
+                  <div className="space-y-2">
+                    <Label>Procas Job Number</Label>
+                    {procasProjects && procasProjects.length > 0 ? (
+                      <Select
+                        value={form.procasProject || undefined}
+                        onValueChange={handlePickProcasJob}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Pick the Procas job to bill against" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {procasProjects.map((p) => (
+                            <SelectItem key={p.project} value={p.project}>
+                              {p.project}
+                              {p.description ? ` — ${p.description}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        placeholder="e.g. 22-1234"
+                        value={form.procasProject || ""}
+                        onChange={(e) =>
+                          setForm({ ...form, procasProject: e.target.value })
+                        }
+                        onBlur={(e) => {
+                          // Manual entry must run the same employee
+                          // detection (and multi-employee gate) as the
+                          // select path.
+                          const v = e.target.value.trim();
+                          if (v) void detectEmployees(v);
+                        }}
+                      />
+                    )}
+                    <p className="text-xs text-[#5F5F5F]">
+                      {ratesLoading
+                        ? "Pulling billing rates from Procas…"
+                        : "Rates below pull from Procas Billing Setup — edit any of them if needed."}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Client (optional)</Label>
                     <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={form[field] ?? ""}
+                      value={form.clientName || ""}
                       onChange={(e) =>
-                        setForm({
-                          ...form,
-                          [field]:
-                            e.target.value === ""
-                              ? undefined
-                              : Number(e.target.value),
-                        })
+                        setForm({ ...form, clientName: e.target.value })
                       }
                     />
                   </div>
-                ))}
+                  <div className="grid grid-cols-2 gap-4">
+                    {(
+                      [
+                        ["Overhead %", "overheadRate"],
+                        ["Fixed Fee %", "fixedFeeRate"],
+                        ["FCCM %", "fccmRate"],
+                        ["Fringe %", "fringeRate"],
+                      ] as const
+                    ).map(([label, field]) => (
+                      <div key={field} className="space-y-2">
+                        <Label>{label}</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={form[field] ?? ""}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              [field]:
+                                e.target.value === ""
+                                  ? undefined
+                                  : Number(e.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(form.workPlanId || form.procasProject) && (
+                <div className="space-y-2 rounded-md border border-border bg-gray-50/60 p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-[#5F5F5F]">
+                    <Users className="h-3.5 w-3.5" />
+                    Employees charged to this work plan (from Procas)
+                  </p>
+                  {detectLoading ? (
+                    <p className="flex items-center gap-1.5 text-xs text-[#9a9a9a]">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Detecting employees from Procas…
+                    </p>
+                  ) : detectError ? (
+                    <p className="text-xs text-[#8a7326]">{detectError}</p>
+                  ) : detected && detected.length === 0 ? (
+                    <p className="text-xs text-[#9a9a9a]">
+                      No time has been charged to this work plan in the last 12
+                      months. Employees will be added when hours are pulled.
+                    </p>
+                  ) : detected ? (
+                    <ul className="space-y-1">
+                      {detected.map((d) => (
+                        <li
+                          key={d.name}
+                          className="flex items-center justify-between text-sm text-[#333333]"
+                        >
+                          <span>{d.name}</span>
+                          <span className="text-xs text-[#9a9a9a]">
+                            {formatHours(d.hours)} hrs
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              )}
+              {detected && detected.length > 1 && (
+                <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+                  <p className="flex items-start gap-1.5 text-sm text-amber-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    {detected.length} employees are associated with this work
+                    plan — continue?
+                  </p>
+                  {!multiConfirmed ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-400 text-amber-800 hover:bg-amber-100"
+                      onClick={() => setMultiConfirmed(true)}
+                    >
+                      Yes, continue with {detected.length} employees
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-amber-700">
+                      Confirmed — all {detected.length} employees will be
+                      included when hours are pulled.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {step === 3 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Pay Period Start</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={form.payPeriodStart || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, payPeriodStart: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Pay Period End</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={form.payPeriodEnd || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, payPeriodEnd: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Invoice Number (optional)</Label>
+                  <Input
+                    value={form.invoiceNumber || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, invoiceNumber: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Invoice Date (optional)</Label>
+                  <Input
+                    type="date"
+                    value={form.invoiceDate || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, invoiceDate: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Prepared By (optional)</Label>
+                <Input
+                  value={form.preparedBy || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, preparedBy: e.target.value })
+                  }
+                />
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Pay Period Start</Label>
-              <Input
-                type="date"
-                required
-                value={form.payPeriodStart || ""}
-                onChange={(e) =>
-                  setForm({ ...form, payPeriodStart: e.target.value })
+          <div className="flex items-center justify-between gap-2 pt-1">
+            {step > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep((s) => s - 1)}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Back
+              </Button>
+            ) : (
+              <span />
+            )}
+            {step < 3 ? (
+              <Button
+                type="button"
+                className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
+                disabled={
+                  step === 2 &&
+                  ((!form.workPlanId && !form.procasProject) ||
+                    detectLoading ||
+                    (!!detected && detected.length > 1 && !multiConfirmed))
                 }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Pay Period End</Label>
-              <Input
-                type="date"
-                required
-                value={form.payPeriodEnd || ""}
-                onChange={(e) =>
-                  setForm({ ...form, payPeriodEnd: e.target.value })
+                onClick={() => setStep((s) => s + 1)}
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                className="bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
+                disabled={
+                  createPackage.isPending ||
+                  (!form.workPlanId && !form.procasProject) ||
+                  !form.payPeriodStart ||
+                  !form.payPeriodEnd
                 }
-              />
-            </div>
+              >
+                {createPackage.isPending ? "Creating…" : "Create Package"}
+              </Button>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Invoice Number (optional)</Label>
-              <Input
-                value={form.invoiceNumber || ""}
-                onChange={(e) =>
-                  setForm({ ...form, invoiceNumber: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Invoice Date (optional)</Label>
-              <Input
-                type="date"
-                value={form.invoiceDate || ""}
-                onChange={(e) =>
-                  setForm({ ...form, invoiceDate: e.target.value })
-                }
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Prepared By (optional)</Label>
-            <Input
-              value={form.preparedBy || ""}
-              onChange={(e) =>
-                setForm({ ...form, preparedBy: e.target.value })
-              }
-            />
-          </div>
-          <Button
-            type="submit"
-            className="w-full bg-[#CFAF42] hover:bg-[#CFAF42]/90 text-white"
-            disabled={
-              createPackage.isPending ||
-              (!form.workPlanId && !form.procasProject) ||
-              !form.payPeriodStart ||
-              !form.payPeriodEnd
-            }
-          >
-            {createPackage.isPending ? "Creating…" : "Create Package"}
-          </Button>
         </form>
       </DialogContent>
     </Dialog>

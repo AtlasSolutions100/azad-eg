@@ -13,6 +13,8 @@ export interface PackageUpdate {
   workPlanId?: number;
   procasProject?: string;
   clientName?: string;
+  owner?: string;
+  prime?: string;
   totalBudget?: number;
   fringeRate?: number;
   overheadRate?: number;

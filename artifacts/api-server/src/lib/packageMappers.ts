@@ -289,6 +289,8 @@ export function toApiPackageSummary(
     client: workPlan.client,
     procasProject: pkg.procasProject,
     clientName: pkg.clientName,
+    owner: pkg.owner,
+    prime: pkg.prime,
     totalBudget: pkg.totalBudget,
     fringeRate: pkg.fringeRate,
     overheadRate: pkg.overheadRate,
