@@ -1,11 +1,24 @@
-import { Link, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { useState } from "react";
 import {
   useGetPackage,
   useUpdateWorkPlan,
   useUpdatePackage,
+  useDeletePackage,
   getGetPackageQueryKey,
+  getListPackagesQueryKey,
 } from "@workspace/api-client-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +31,7 @@ import {
 } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Building2, CalendarRange, Pencil, User } from "lucide-react";
+import { ArrowLeft, Building2, CalendarRange, Pencil, Trash2, User } from "lucide-react";
 import { format } from "date-fns";
 import {
   PACKAGE_STATUS_STYLES,
@@ -47,8 +60,25 @@ export default function PackageWorkspace() {
   const { data: detail, isLoading, isError } = useGetPackage(id);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const updateWorkPlan = useUpdateWorkPlan();
   const updatePackage = useUpdatePackage();
+  const deletePackage = useDeletePackage();
+
+  const handleDelete = async () => {
+    try {
+      await deletePackage.mutateAsync({ id });
+      await queryClient.invalidateQueries({ queryKey: getListPackagesQueryKey() });
+      toast({ title: "Package deleted" });
+      navigate("/");
+    } catch (err) {
+      toast({
+        title: "Could not delete package",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
   // Inline budget editing: the budget lives on the work plan (pulled from
   // Procas when available); saving here overrides it. Remaining and
   // % Expended recompute server-side on refetch.
@@ -172,7 +202,41 @@ export default function PackageWorkspace() {
             </span>
           </div>
         </div>
-        <ExportBar pkg={pkg} />
+        <div className="flex items-start gap-2">
+          <ExportBar pkg={pkg} />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                data-testid="delete-package"
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" /> Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this package?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently removes the package, its timesheets, and any
+                  attached documents. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  disabled={deletePackage.isPending}
+                  onClick={() => void handleDelete()}
+                  data-testid="confirm-delete-package"
+                >
+                  Delete package
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       {/* Summary cards */}

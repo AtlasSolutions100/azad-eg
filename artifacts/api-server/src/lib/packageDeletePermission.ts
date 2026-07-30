@@ -25,6 +25,9 @@ export function packageDeleteAllowlist(): string[] {
  * the allowlisted mailboxes.
  */
 export async function canDeletePackages(req: Request): Promise<boolean> {
+  // Dev-phase escape hatch: while the team is still building out data, anyone
+  // signed in may delete. Production keeps the verified-email allowlist.
+  if (process.env.NODE_ENV !== "production") return true;
   const auth = getAuth(req);
   const userId = (auth?.sessionClaims?.userId as string | undefined) || auth?.userId;
   if (!userId) return false;
