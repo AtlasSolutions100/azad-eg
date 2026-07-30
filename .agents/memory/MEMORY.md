@@ -12,4 +12,5 @@
 - [Procas OData test mocks](procas-odata-testing.md) — decode `+` to spaces before matching $filter text in fetch mocks, or every assertion silently misses.
 - [Playwright e2e on NixOS with Clerk](playwright-e2e-nixos-clerk.md) — bundled Chromium won't launch; use Nix chromium executablePath, Clerk test-mode email_code sign-in.
 - [Stale composite dist types](stale-composite-dist.md) — rebuild lib/api-client-react with `tsc -b` after schema changes; stale dist .d.ts hides/creates artifact type errors.
+- [Billing accuracy + delete permissions](billing-accuracy-permissions.md) — Previously Billed carry-forward precedence, PTO/holiday $0 everywhere, budget-override trap, verified-email-only delete allowlist.
 - [Procas package hours pull](procas-package-hours-pull.md) — startswith(Project, prefix) mapping, Procas-week aggregation, replace only source=procas rows; "Locked" is a final status.

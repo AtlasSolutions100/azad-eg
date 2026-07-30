@@ -295,6 +295,9 @@ export async function reencryptProcasConnectionIfNeeded(): Promise<boolean> {
 // verify them against the data feed and restore the connection row.
 // Returns true when a connection was (re)established.
 export async function autoConnectProcasFromEnv(): Promise<boolean> {
+  // Unit tests exercise "not connected" paths with mocked fetch; a real
+  // reconnect attempt there would hit the network and hang the suites.
+  if (process.env.NODE_ENV === "test" || process.env.VITEST) return false;
   const username = process.env.PROCAS_USERNAME?.trim();
   const password = process.env.PROCAS_PASSWORD;
   if (!username || !password) return false;

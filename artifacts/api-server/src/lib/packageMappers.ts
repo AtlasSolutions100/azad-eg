@@ -107,6 +107,10 @@ export function buildPackageRollup(
 ) {
   const laborLines = entries.map((e) => {
     const hours = round2(entryTotalHours(e));
+    // PTO/holiday rows are non-billable: their amount is always $0 no matter
+    // what rate is stored on the entry, so every consumer of laborLines
+    // (rollup totals, labor attachment, sub calc) stays consistent.
+    const nonBillable = e.category === "pto" || e.category === "holiday";
     return {
       employeeName: e.employeeName,
       classification: e.classification,
@@ -114,7 +118,7 @@ export function buildPackageRollup(
       location: e.location,
       hours,
       rate: e.rate,
-      amount: round2(hours * e.rate),
+      amount: nonBillable ? 0 : round2(hours * e.rate),
     };
   });
 
@@ -132,6 +136,9 @@ export function buildPackageRollup(
   let straightLabor = 0;
   let otdtPremiumRaw = 0;
   for (const l of laborLines) {
+    // PTO/holiday amounts are already zeroed above, so they contribute no
+    // labor dollars here (mirrors the reference workbook rows 11/12).
+    if (l.category === "pto" || l.category === "holiday") continue;
     const base = l.hours * l.rate;
     straightLabor += base;
     if (l.category === "ot") otdtPremiumRaw += base * 0.5;
@@ -206,6 +213,8 @@ export function buildPackageRollup(
     totalThisPeriod,
     previouslyBilled,
     totalToDate,
+    // Explicit budget (0 = none tracked) so the UI never has to derive it.
+    budget: round2(budget),
     remainingBalance,
     percentExpended,
     // Shared budget signal so package-level UI stays in sync with the

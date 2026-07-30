@@ -16,6 +16,17 @@ vi.mock("@clerk/express", () => ({
     userId: authState.userId,
     sessionClaims: authState.userId ? { name: "Test User" } : undefined,
   }),
+  // The delete-permission gate only trusts VERIFIED emails from the Clerk
+  // profile; "julie" is on the allowlist (see lib/packageDeletePermission.ts).
+  clerkClient: {
+    users: {
+      getUser: async () => ({
+        emailAddresses: [
+          { emailAddress: "julie@azadeng.com", verification: { status: "verified" } },
+        ],
+      }),
+    },
+  },
 }));
 
 const request = (await import("supertest")).default;

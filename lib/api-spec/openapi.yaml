@@ -2678,7 +2678,9 @@ components:
         clientName: { type: string }
         owner: { type: string }
         prime: { type: string }
-        totalBudget: { type: number }
+        totalBudget:
+          type: ["number", "null"]
+          description: Package-level budget override; null clears the override so the work plan's budget applies.
         fringeRate: { type: number }
         overheadRate: { type: number }
         fixedFeeRate: { type: number }
@@ -2988,6 +2990,7 @@ components:
         - totalThisPeriod
         - previouslyBilled
         - totalToDate
+        - budget
         - remainingBalance
         - percentExpended
         - budgetStatus
@@ -3011,6 +3014,9 @@ components:
         totalThisPeriod: { type: number }
         previouslyBilled: { type: number }
         totalToDate: { type: number }
+        budget:
+          type: number
+          description: Effective budget (package override, else work plan). 0 means no budget tracked.
         remainingBalance: { type: number }
         percentExpended: { type: number }
         budgetStatus:

@@ -1197,7 +1197,11 @@ export interface PackageUpdate {
   clientName?: string;
   owner?: string;
   prime?: string;
-  totalBudget?: number;
+  /**
+     * Package-level budget override; null clears the override so the work plan's budget applies.
+     * @nullable
+     */
+  totalBudget?: number | null;
   fringeRate?: number;
   overheadRate?: number;
   fixedFeeRate?: number;
@@ -1508,6 +1512,8 @@ export interface PackageRollup {
   totalThisPeriod: number;
   previouslyBilled: number;
   totalToDate: number;
+  /** Effective budget (package override, else work plan). 0 means no budget tracked. */
+  budget: number;
   remainingBalance: number;
   percentExpended: number;
   budgetStatus: BudgetStatus;

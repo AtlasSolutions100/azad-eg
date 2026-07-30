@@ -23,6 +23,8 @@ export interface PackageRollup {
   totalThisPeriod: number;
   previouslyBilled: number;
   totalToDate: number;
+  /** Effective budget (package override, else work plan). 0 means no budget tracked. */
+  budget: number;
   remainingBalance: number;
   percentExpended: number;
   budgetStatus: BudgetStatus;

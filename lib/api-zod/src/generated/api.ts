@@ -2073,6 +2073,7 @@ export const GetPackageResponse = zod.object({
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
   "totalToDate": zod.number(),
+  "budget": zod.number().describe('Effective budget (package override, else work plan). 0 means no budget tracked.'),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
   "budgetStatus": zod.object({
@@ -2099,7 +2100,7 @@ export const UpdatePackageBody = zod.object({
   "clientName": zod.string().optional(),
   "owner": zod.string().optional(),
   "prime": zod.string().optional(),
-  "totalBudget": zod.number().optional(),
+  "totalBudget": zod.number().nullish().describe('Package-level budget override; null clears the override so the work plan\'s budget applies.'),
   "fringeRate": zod.number().optional(),
   "overheadRate": zod.number().optional(),
   "fixedFeeRate": zod.number().optional(),
@@ -2594,6 +2595,7 @@ export const GetPackageRollupResponse = zod.object({
   "totalThisPeriod": zod.number(),
   "previouslyBilled": zod.number(),
   "totalToDate": zod.number(),
+  "budget": zod.number().describe('Effective budget (package override, else work plan). 0 means no budget tracked.'),
   "remainingBalance": zod.number(),
   "percentExpended": zod.number(),
   "budgetStatus": zod.object({

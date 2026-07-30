@@ -1,5 +1,15 @@
 import { Link, useParams } from "wouter";
-import { useGetPackage } from "@workspace/api-client-react";
+import { useState } from "react";
+import {
+  useGetPackage,
+  useUpdateWorkPlan,
+  useUpdatePackage,
+  getGetPackageQueryKey,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 import {
   Tabs,
   TabsContent,
@@ -8,7 +18,7 @@ import {
 } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Building2, CalendarRange, User } from "lucide-react";
+import { ArrowLeft, Building2, CalendarRange, Pencil, User } from "lucide-react";
 import { format } from "date-fns";
 import {
   PACKAGE_STATUS_STYLES,
@@ -35,6 +45,46 @@ export default function PackageWorkspace() {
   const params = useParams();
   const id = Number(params.id);
   const { data: detail, isLoading, isError } = useGetPackage(id);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const updateWorkPlan = useUpdateWorkPlan();
+  const updatePackage = useUpdatePackage();
+  // Inline budget editing: the budget lives on the work plan (pulled from
+  // Procas when available); saving here overrides it. Remaining and
+  // % Expended recompute server-side on refetch.
+  const [budgetEditing, setBudgetEditing] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
+
+  const saveBudget = async () => {
+    const value = Number(budgetInput);
+    if (!Number.isFinite(value) || value < 0) return;
+    const pkg = detail?.package;
+    if (!pkg) return;
+    try {
+      if (pkg.workPlanId != null) {
+        // Budget belongs to the work plan (three-layer model), so the edit
+        // persists there and every future package for the plan sees it.
+        await updateWorkPlan.mutateAsync({
+          id: pkg.workPlanId,
+          data: { totalBudget: value },
+        });
+        // Clear any package-level override so the work-plan budget actually
+        // takes effect here (overrides beat the work plan in the rollup).
+        await updatePackage.mutateAsync({ id, data: { totalBudget: null } });
+      } else {
+        await updatePackage.mutateAsync({ id, data: { totalBudget: value } });
+      }
+      await queryClient.invalidateQueries({ queryKey: getGetPackageQueryKey(id) });
+      setBudgetEditing(false);
+      toast({ title: "Budget updated", description: "Remaining and % expended recalculated." });
+    } catch (err) {
+      toast({
+        title: "Could not update budget",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -68,14 +118,16 @@ export default function PackageWorkspace() {
   const statusStyle =
     PACKAGE_STATUS_STYLES[pkg.status] ?? PACKAGE_STATUS_STYLES.draft;
 
-  // Budget = billed to date + remaining (exact: remaining is budget − toDate).
-  const budget = rollup.totalToDate + rollup.remainingBalance;
   const summaryCards = [
     { label: "Total Hours", value: formatHours(rollup.totalHours) },
     { label: "Labor Total", value: formatCurrency(rollup.laborTotal) },
     { label: "This Period", value: formatCurrency(rollup.totalThisPeriod) },
     { label: "Total To Date", value: formatCurrency(rollup.totalToDate) },
-    { label: "Budget", value: formatCurrency(budget) },
+    {
+      label: "Budget",
+      value: rollup.budget > 0 ? formatCurrency(rollup.budget) : "Not set",
+      editableBudget: true,
+    },
     { label: "Previously Billed", value: formatCurrency(rollup.previouslyBilled) },
     { label: "Remaining", value: formatCurrency(rollup.remainingBalance) },
     {
@@ -128,12 +180,54 @@ export default function PackageWorkspace() {
         {summaryCards.map((card) => (
           <Card key={card.label}>
             <CardContent className="p-4">
-              <p className="text-[11px] uppercase tracking-wide text-[#9a9a9a]">
+              <p className="flex items-center justify-between text-[11px] uppercase tracking-wide text-[#9a9a9a]">
                 {card.label}
+                {"editableBudget" in card && card.editableBudget && !budgetEditing && (
+                  <button
+                    type="button"
+                    aria-label="Edit budget"
+                    className="text-[#9a9a9a] hover:text-[#333333]"
+                    data-testid="edit-budget"
+                    onClick={() => {
+                      setBudgetInput(rollup.budget > 0 ? String(rollup.budget) : "");
+                      setBudgetEditing(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </p>
-              <p className="mt-1 text-lg font-semibold text-[#333333]">
-                {card.value}
-              </p>
+              {"editableBudget" in card && card.editableBudget && budgetEditing ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    autoFocus
+                    className="h-8 text-sm"
+                    value={budgetInput}
+                    onChange={(e) => setBudgetInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); void saveBudget(); }
+                      if (e.key === "Escape") setBudgetEditing(false);
+                    }}
+                    data-testid="budget-input"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-8 bg-[#CFAF42] px-2 text-white hover:bg-[#CFAF42]/90"
+                    disabled={updateWorkPlan.isPending || updatePackage.isPending}
+                    onClick={() => void saveBudget()}
+                    data-testid="save-budget"
+                  >
+                    Save
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1 text-lg font-semibold text-[#333333]">
+                  {card.value}
+                </p>
+              )}
             </CardContent>
           </Card>
         ))}

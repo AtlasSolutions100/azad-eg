@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import path from "node:path";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import {
   db,
   packagesTable,
@@ -80,6 +80,7 @@ import { effectiveWorkPlan } from "../lib/billingProfile";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
+import { canDeletePackages } from "../lib/packageDeletePermission";
 import { effectiveRate, loadRateChanges } from "../lib/employeeRates";
 import fs from "node:fs";
 import { upload, detectDocument, EXTENSION_FORMATS } from "../lib/upload";
@@ -261,12 +262,21 @@ router.post("/packages", async (req, res): Promise<void> => {
     }
   }
 
-  // Previously Billed default: an explicit value from the caller is a manual
-  // entry; otherwise, when Procas is connected, default it from BillingHistory
-  // (what Procas has already invoiced for this job before the period start).
+  // Previously Billed default, in priority order:
+  //   1. an explicit value from the caller (manual entry)
+  //   2. carry-forward: Total Billed To Date of the last approved/exported
+  //      package for the same work plan — matches the previous approved invoice
+  //   3. Procas BillingHistory (what Procas already invoiced before the start)
   let previouslyBilled = parsed.data.previouslyBilled ?? 0;
   let previouslyBilledSource: string | null = parsed.data.previouslyBilled != null ? "manual" : null;
-  if (parsed.data.previouslyBilled == null && billingJob) {
+  if (previouslyBilledSource == null && parsed.data.workPlanId != null) {
+    const carried = await carryForwardPreviouslyBilled(parsed.data.workPlanId);
+    if (carried != null) {
+      previouslyBilled = carried;
+      previouslyBilledSource = "carryforward";
+    }
+  }
+  if (previouslyBilledSource == null && billingJob) {
     try {
       if (creds) {
         const fromProcas = await fetchPreviouslyBilledFromProcas(
@@ -428,6 +438,37 @@ router.get("/packages/grouped", async (_req, res): Promise<void> => {
 // Single package
 // ---------------------------------------------------------------------------
 
+/**
+ * Total Billed To Date of the most recent approved/exported package for a
+ * work plan — the authoritative Previously Billed for the next package, so
+ * each new period carries forward exactly what the last approved invoice
+ * billed (Previously Billed + This Period).
+ */
+async function carryForwardPreviouslyBilled(workPlanId: number): Promise<number | null> {
+  const [prior] = await db
+    .select()
+    .from(packagesTable)
+    .where(
+      and(
+        eq(packagesTable.workPlanId, workPlanId),
+        inArray(packagesTable.status, ["approved", "exported"]),
+      ),
+    )
+    .orderBy(desc(packagesTable.payPeriodEnd), desc(packagesTable.id))
+    .limit(1);
+  if (!prior) return null;
+  const [wp] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, workPlanId));
+  const entries = await db
+    .select()
+    .from(timesheetEntriesTable)
+    .where(eq(timesheetEntriesTable.packageId, prior.id));
+  const rollup = buildPackageRollup(entries, effectiveWorkPlan(prior, wp ?? null), {
+    previouslyBilled: prior.previouslyBilled,
+    otherDirectCosts: prior.otherDirectCosts,
+  });
+  return rollup.totalToDate;
+}
+
 router.get("/packages/:id", async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
   const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
@@ -571,6 +612,14 @@ router.patch("/packages/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/packages/:id", async (req, res): Promise<void> => {
+  // Deleting a package destroys billing history — restricted to the approved
+  // billers (Griselda, Mahsa, Julie; see packageDeletePermission).
+  if (!(await canDeletePackages(req))) {
+    res.status(403).json({
+      error: "Only Griselda, Mahsa, or Julie can delete packages.",
+    });
+    return;
+  }
   const id = parseId(req.params.id);
   // Capture the attached progress-report file (if any) before the row is gone,
   // so we can clean it off disk after the cascade delete.

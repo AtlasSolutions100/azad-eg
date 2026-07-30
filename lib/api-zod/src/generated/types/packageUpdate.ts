@@ -15,7 +15,11 @@ export interface PackageUpdate {
   clientName?: string;
   owner?: string;
   prime?: string;
-  totalBudget?: number;
+  /**
+     * Package-level budget override; null clears the override so the work plan's budget applies.
+     * @nullable
+     */
+  totalBudget?: number | null;
   fringeRate?: number;
   overheadRate?: number;
   fixedFeeRate?: number;
