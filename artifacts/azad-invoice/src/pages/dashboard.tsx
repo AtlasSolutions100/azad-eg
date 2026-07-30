@@ -397,8 +397,15 @@ export default function Dashboard() {
     setWpSearch("");
   };
 
+  // When the last step appears, the "Create Package" button lands exactly
+  // where "Next" was — a double-click would create the package instantly with
+  // the pre-filled dates and slam the dialog shut. Ignore submits that arrive
+  // within a beat of entering step 3.
+  const step3EnteredAt = useRef(0);
+
   const handleCreatePackage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (Date.now() - step3EnteredAt.current < 700) return;
     if (!form.workPlanId && !form.procasProject) return;
     if (!form.payPeriodStart || !form.payPeriodEnd) return;
     try {
@@ -804,12 +811,12 @@ export default function Dashboard() {
                     detectLoading ||
                     (!!detected && detected.length > 1 && !multiConfirmed))
                 }
-                onClick={() =>
-                  setStep((s) => {
-                    // BART bills whole months: entering the final step
-                    // pre-fills the pay period with the current full month.
-                    // Both dates stay editable for overrides.
-                    if (s === 1 && !form.payPeriodStart && !form.payPeriodEnd) {
+                onClick={() => {
+                  // BART bills whole months: entering the final step
+                  // pre-fills the pay period with the current full month.
+                  // Both dates stay editable for overrides.
+                  if (step === 1) {
+                    if (!form.payPeriodStart && !form.payPeriodEnd) {
                       const now = new Date();
                       const first = new Date(now.getFullYear(), now.getMonth(), 1);
                       const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -817,9 +824,10 @@ export default function Dashboard() {
                         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
                       setForm((f) => ({ ...f, payPeriodStart: iso(first), payPeriodEnd: iso(last) }));
                     }
-                    return s + 1;
-                  })
-                }
+                    step3EnteredAt.current = Date.now();
+                  }
+                  setStep((s) => s + 1);
+                }}
               >
                 Next
               </Button>
