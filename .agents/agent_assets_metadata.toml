@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "yy1hpuIgqics0hAC2IJML"
+uri = "file://attached_assets/AZAD_Procas_Data_Map_With_Replit_Analysis.xlsx"
+type = "table"
+title = "AZAD Procas Data Map — With Replit Analysis"
+description = "Original data map with a new color-coded column (column J) showing system status, what's already built, open questions for Julie, and flags for items that need more information before they can be built accurately."
