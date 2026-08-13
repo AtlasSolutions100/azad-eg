@@ -2,10 +2,12 @@ import { useState } from "react";
 import {
   useExportPackage,
   useGetPackageValidations,
+  ApiError,
   type PackageSummary,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertTriangle, CheckCircle2, Download, Loader2, Package } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,7 +19,10 @@ export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
 
   const errorCount =
     validations?.flags.filter((f) => f.severity === "error").length ?? 0;
+  // ready === null while validations are loading; false = blocking errors exist;
+  // true = no errors (warnings are allowed through)
   const ready = validations ? validations.isValid : null;
+  const isBlocked = ready === false && errorCount > 0;
 
   const handleExport = async () => {
     setProgress("Building the combined Excel workbook and merged PDF…");
@@ -32,16 +37,23 @@ export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
         title: "Package ready",
         description: `Excel + PDF bundled into ${res.filename}.`,
       });
-    } catch {
-      toast({
-        variant: "destructive",
-        title: "Export failed",
-        description: "Something went wrong while building the export package.",
-      });
+    } catch (err) {
+      let description = "Something went wrong while building the export package.";
+      if (err instanceof ApiError && err.status === 422) {
+        const data = err.data as { error?: string; issues?: string[] } | null;
+        description = data?.issues?.length
+          ? `Fix these issues first: ${data.issues.join(" · ")}`
+          : (data?.error ?? description);
+      }
+      toast({ variant: "destructive", title: "Export failed", description });
     } finally {
       setProgress(null);
     }
   };
+
+  const errorLabels = validations?.flags
+    .filter((f) => f.severity === "error")
+    .map((f) => f.message) ?? [];
 
   return (
     <div className="flex flex-col items-end gap-1.5">
@@ -59,18 +71,35 @@ export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
               : "Review warnings"}
           </Badge>
         )}
-        <Button
-          onClick={handleExport}
-          disabled={exportPackage.isPending}
-          className="bg-[#CFAF42] text-white hover:bg-[#bd9e36]"
-        >
-          {exportPackage.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Package className="mr-2 h-4 w-4" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {/* span ensures tooltip fires even when the button is disabled */}
+            <span>
+              <Button
+                onClick={handleExport}
+                disabled={exportPackage.isPending || isBlocked}
+                className="bg-[#CFAF42] text-white hover:bg-[#bd9e36] disabled:opacity-60"
+              >
+                {exportPackage.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Package className="mr-2 h-4 w-4" />
+                )}
+                {exportPackage.isPending ? "Exporting…" : "Export Package (Excel + PDF)"}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {isBlocked && (
+            <TooltipContent side="left" className="max-w-xs">
+              <p className="font-medium">Resolve these issues before exporting:</p>
+              <ul className="mt-1 list-disc pl-4 text-xs">
+                {errorLabels.map((msg, i) => (
+                  <li key={i}>{msg}</li>
+                ))}
+              </ul>
+            </TooltipContent>
           )}
-          {exportPackage.isPending ? "Exporting…" : "Export Package (Excel + PDF)"}
-        </Button>
+        </Tooltip>
       </div>
       {progress && (
         <span className="flex items-center gap-1.5 text-xs text-[#5F5F5F]">

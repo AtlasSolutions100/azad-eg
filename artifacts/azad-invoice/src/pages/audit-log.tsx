@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import type { DateRange } from "react-day-picker";
+import { useAuth } from "@clerk/react";
 import { countAuditLogs, getCountAuditLogsQueryKey } from "@workspace/api-client-react";
 import { usePagedAuditLogs, type AuditLogFilters } from "@/hooks/use-paged-audit-logs";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
@@ -16,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, CalendarIcon, ExternalLink, Loader2, Search, X } from "lucide-react";
+import { AlertTriangle, CalendarIcon, Download, ExternalLink, Loader2, Search, X } from "lucide-react";
 import { endOfDay, format, startOfDay } from "date-fns";
 
 const OVERRIDE_ACTION = "approved over budget";
@@ -38,7 +39,9 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 export default function AuditLog() {
+  const { getToken } = useAuth();
   const [overridesOnly, setOverridesOnly] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const debouncedSearch = useDebouncedValue(search.trim(), 300);
@@ -60,6 +63,37 @@ export default function AuditLog() {
 
   const hasFilters =
     debouncedSearch !== "" || dateRange?.from != null || overridesOnly;
+
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.search) params.set("search", filters.search);
+      if (filters.from) params.set("from", filters.from);
+      if (filters.to) params.set("to", filters.to);
+      if (filters.overridesOnly) params.set("overridesOnly", "true");
+
+      const token = await getToken();
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const response = await fetch(`/api/audit-logs/export?${params}`, { headers });
+      if (!response.ok) throw new Error("Export failed");
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const date = new Date().toISOString().slice(0, 10);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-log-${date}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent — user can retry
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const { logs, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
     usePagedAuditLogs(filters);
@@ -126,15 +160,31 @@ export default function AuditLog() {
             </Badge>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
-          <Switch
-            id="overrides-only"
-            checked={overridesOnly}
-            onCheckedChange={setOverridesOnly}
-          />
-          <Label htmlFor="overrides-only" className="cursor-pointer text-sm text-[#5F5F5F]">
-            Budget overrides only
-          </Label>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={isExporting}
+            data-testid="button-export-csv"
+          >
+            {isExporting ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-3.5 w-3.5" />
+            )}
+            {isExporting ? "Exporting…" : "Export CSV"}
+          </Button>
+          <div className="flex items-center gap-2">
+            <Switch
+              id="overrides-only"
+              checked={overridesOnly}
+              onCheckedChange={setOverridesOnly}
+            />
+            <Label htmlFor="overrides-only" className="cursor-pointer text-sm text-[#5F5F5F]">
+              Budget overrides only
+            </Label>
+          </div>
         </div>
       </div>
 

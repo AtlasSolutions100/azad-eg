@@ -1286,6 +1286,31 @@ router.put("/packages/:id/billed-line-items", async (req, res): Promise<void> =>
 
 router.post("/packages/:id/export", async (req, res): Promise<void> => {
   const id = parseId(req.params.id);
+
+  // ── Pre-flight validation ─────────────────────────────────────────────────
+  // Only error-severity issues block the export (warnings are non-blocking).
+  const [pkgRow] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkgRow) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const [wpRow, weeks, entries] = await Promise.all([
+    pkgRow.workPlanId != null
+      ? db.select().from(workPlansTable).where(eq(workPlansTable.id, pkgRow.workPlanId)).then((r) => r[0] ?? null)
+      : Promise.resolve(null),
+    db.select().from(packageWeeksTable).where(eq(packageWeeksTable.packageId, id)),
+    db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)),
+  ]);
+  const blockers: string[] = [];
+  if (weeks.length === 0) blockers.push("Package has no billing weeks.");
+  if (entries.length === 0) blockers.push("Package has no timesheet entries.");
+  if (pkgRow.workPlanId != null && !wpRow) blockers.push("Package references a missing work plan.");
+  if (blockers.length > 0) {
+    res.status(422).json({ error: "Fix these issues before exporting.", issues: blockers });
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const ctx = await buildDocContext(id);
   if (!ctx) {
     res.status(404).json({ error: "Package not found" });

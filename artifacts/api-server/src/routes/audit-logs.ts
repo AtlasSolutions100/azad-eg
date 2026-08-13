@@ -100,4 +100,49 @@ router.get("/audit-logs/count", async (req, res): Promise<void> => {
   res.json(CountAuditLogsResponse.parse({ count: row?.count ?? 0 }));
 });
 
+// ---------------------------------------------------------------------------
+// CSV export — all rows matching the current filters, no pagination cap
+// ---------------------------------------------------------------------------
+
+function escapeCsvField(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+router.get("/audit-logs/export", async (req, res): Promise<void> => {
+  const conditions = buildConditions(req.query as Record<string, unknown>);
+
+  const rows = await db
+    .select()
+    .from(auditLogsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(auditLogsTable.createdAt), desc(auditLogsTable.id));
+
+  const header = ["Timestamp", "User", "Action", "Entity Type", "Entity ID", "Description"];
+  const lines = [
+    header.map(escapeCsvField).join(","),
+    ...rows.map((r) =>
+      [
+        r.createdAt.toISOString(),
+        r.userName,
+        r.action,
+        r.entityType,
+        r.entityId ?? "",
+        r.description ?? "",
+      ]
+        .map(escapeCsvField)
+        .join(","),
+    ),
+  ];
+  const csv = lines.join("\r\n");
+
+  const date = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="audit-log-${date}.csv"`);
+  res.send(csv);
+});
+
 export default router;
