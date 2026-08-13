@@ -182,6 +182,27 @@ function PackageTile({
         <p className="mt-1 text-xs text-[#5F5F5F]">Invoice {pkg.invoiceNumber}</p>
       )}
 
+      {(pkg.owner || pkg.prime) && (
+        <p
+          className="mt-1 text-xs text-[#5F5F5F]"
+          data-testid={`text-owner-prime-${pkg.id}`}
+        >
+          {pkg.owner && (
+            <span>
+              <span className="text-[#9a9a9a]">Owner</span>{" "}
+              <span className="font-medium text-[#333333]">{pkg.owner}</span>
+            </span>
+          )}
+          {pkg.owner && pkg.prime && <span className="mx-1.5 text-[#d0d0d0]">·</span>}
+          {pkg.prime && (
+            <span>
+              <span className="text-[#9a9a9a]">Prime</span>{" "}
+              <span className="font-medium text-[#333333]">{pkg.prime}</span>
+            </span>
+          )}
+        </p>
+      )}
+
       {(pkg.employees.length > 0 || pkg.employeeName) && (
         <div className="mt-2 flex flex-wrap gap-1">
           {(pkg.employees.length > 0

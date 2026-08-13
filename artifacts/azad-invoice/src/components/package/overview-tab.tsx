@@ -1,6 +1,15 @@
-import type { PackageDetail } from "@workspace/api-client-react";
+import { useEffect, useState } from "react";
+import {
+  useUpdatePackage,
+  type PackageDetail,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarRange, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import { Building2, CalendarRange, Clock, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCurrency, formatHours } from "@/lib/package-ui";
 
@@ -10,6 +19,94 @@ function periodRange(start: string, end: string): string {
   } catch {
     return `${start} – ${end}`;
   }
+}
+
+function OwnerPrimeCard({ detail }: { detail: PackageDetail }) {
+  const { package: pkg } = detail;
+  const updatePackage = useUpdatePackage();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const [owner, setOwner] = useState(pkg.owner ?? "");
+  const [prime, setPrime] = useState(pkg.prime ?? "");
+
+  // Re-sync when the package data refreshes (e.g. after a save elsewhere).
+  useEffect(() => {
+    setOwner(pkg.owner ?? "");
+    setPrime(pkg.prime ?? "");
+  }, [pkg.id, pkg.owner, pkg.prime]);
+
+  const dirty = owner !== (pkg.owner ?? "") || prime !== (pkg.prime ?? "");
+
+  const save = async () => {
+    try {
+      await updatePackage.mutateAsync({
+        id: pkg.id,
+        data: { owner: owner.trim(), prime: prime.trim() },
+      });
+      queryClient.invalidateQueries();
+      toast({ title: "Owner & Prime saved" });
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Failed to save Owner & Prime",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Building2 className="h-4 w-4 text-[#CFAF42]" /> Owner &amp; Prime
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="pkg-owner" className="text-xs text-[#5F5F5F]">
+            Owner
+          </Label>
+          <Input
+            id="pkg-owner"
+            data-testid="input-owner"
+            placeholder="Project owner / agency, e.g. BART"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pkg-prime" className="text-xs text-[#5F5F5F]">
+            Prime
+          </Label>
+          <Input
+            id="pkg-prime"
+            data-testid="input-prime"
+            placeholder="Prime contractor, e.g. T.Y. Lin"
+            value={prime}
+            onChange={(e) => setPrime(e.target.value)}
+          />
+        </div>
+        <div className="flex justify-end pt-1">
+          <Button
+            size="sm"
+            data-testid="button-save-owner-prime"
+            disabled={!dirty || updatePackage.isPending}
+            onClick={save}
+            className="bg-[#CFAF42] text-white hover:bg-[#CFAF42]/90"
+          >
+            {updatePackage.isPending && (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            )}
+            Save
+          </Button>
+        </div>
+        <p className="text-xs text-[#9a9a9a]">
+          Who the work belongs to, and the prime this package bills through.
+        </p>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function OverviewTab({ detail }: { detail: PackageDetail }) {
@@ -96,6 +193,10 @@ export default function OverviewTab({ detail }: { detail: PackageDetail }) {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <OwnerPrimeCard detail={detail} />
       </div>
     </div>
   );
