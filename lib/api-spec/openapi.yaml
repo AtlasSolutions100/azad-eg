@@ -2017,6 +2017,12 @@ components:
             ISO timestamp of the most recent manual line-item edit (add,
             update, or delete). When later than lastImportAt, the stored
             import warnings may no longer reflect the invoice's data.
+        unlinkedCount:
+          type: integer
+          description: >-
+            Number of line items whose employee record could not be resolved
+            (employeeId is null). A non-zero value means the hours exist but
+            are not attributed to a known employee.
         createdAt: { type: string }
         updatedAt: { type: string }
     InvoiceInput:

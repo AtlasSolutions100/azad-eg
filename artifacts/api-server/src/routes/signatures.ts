@@ -108,12 +108,38 @@ router.post("/signatures/:id/default", async (req, res): Promise<void> => {
 
 router.delete("/signatures/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
-  const [row] = await db.delete(signaturesTable).where(eq(signaturesTable.id, id)).returning();
-  if (!row) {
+
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx.delete(signaturesTable).where(eq(signaturesTable.id, id)).returning();
+    if (!row) return undefined;
+    // When the deleted signature was the default, automatically promote the
+    // next oldest remaining signature so there is always a default in place.
+    if (row.isDefault) {
+      const [next] = await tx
+        .select()
+        .from(signaturesTable)
+        .orderBy(signaturesTable.createdAt)
+        .limit(1);
+      if (next) {
+        await tx.update(signaturesTable).set({ isDefault: true }).where(eq(signaturesTable.id, next.id));
+      }
+    }
+    return row;
+  });
+
+  if (!deleted) {
     res.status(404).json({ error: "Signature not found" });
     return;
   }
-  deleteUploadedFile(row.imageUrl);
+  deleteUploadedFile(deleted.imageUrl);
+  await recordAudit({
+    action: "deleted signature",
+    entityType: "signature",
+    entityId: id,
+    description: deleted.isDefault
+      ? `${deleted.name} removed; default reassigned automatically.`
+      : `${deleted.name} removed.`,
+  });
   res.sendStatus(204);
 });
 

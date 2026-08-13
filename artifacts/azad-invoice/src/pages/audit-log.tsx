@@ -107,14 +107,18 @@ export default function AuditLog() {
     queryKey: getCountAuditLogsQueryKey(filters),
     queryFn: ({ signal }) => countAuditLogs(filters, { signal }),
     enabled: hasFilters,
+    // Re-poll every 30 s so new activity shows without a manual refresh
+    refetchInterval: 30_000,
   });
   const { data: totalCount } = useQuery({
     queryKey: getCountAuditLogsQueryKey({}),
     queryFn: ({ signal }) => countAuditLogs({}, { signal }),
+    refetchInterval: 30_000,
   });
   const { data: overrideTotal } = useQuery({
     queryKey: getCountAuditLogsQueryKey({ overridesOnly: true }),
     queryFn: ({ signal }) => countAuditLogs({ overridesOnly: true }, { signal }),
+    refetchInterval: 30_000,
   });
 
   const isOverride = (action: string) => action === OVERRIDE_ACTION;

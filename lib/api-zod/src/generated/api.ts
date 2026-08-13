@@ -661,6 +661,7 @@ export const ListInvoicesResponseItem = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -713,6 +714,7 @@ export const CreateInvoiceResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -754,6 +756,7 @@ export const GetInvoiceResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -809,6 +812,7 @@ export const UpdateInvoiceResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -861,6 +865,7 @@ export const UnpinInvoiceCarryOverResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -912,6 +917,7 @@ export const ApproveInvoiceResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -954,6 +960,7 @@ export const GetInvoicePreviewResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 }),
@@ -1079,6 +1086,7 @@ export const DismissImportWarningsResponse = zod.object({
   "lastImportAt": zod.string().nullish().describe('ISO timestamp of the most recent time-data import; replaced on each new import.'),
   "lastImportSource": zod.union([zod.literal('upload'),zod.literal('procas'),zod.literal('procas-scheduled'),zod.literal(null)]).nullish().describe('Source of the most recent time-data import.'),
   "lineItemsEditedAt": zod.string().nullish().describe('ISO timestamp of the most recent manual line-item edit (add, update, or delete). When later than lastImportAt, the stored import warnings may no longer reflect the invoice\'s data.'),
+  "unlinkedCount": zod.number().optional().describe('Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee.'),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })

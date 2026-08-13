@@ -9,13 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Pin } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Pin, UserX } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Invoices() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [pinnedOnly, setPinnedOnly] = useState(false);
   const [, setLocation] = useLocation();
-  const { data: invoices, isLoading } = useListInvoices({ status: statusFilter !== "all" ? statusFilter : undefined });
+  const { data: allInvoices, isLoading } = useListInvoices({ status: statusFilter !== "all" ? statusFilter : undefined });
   const { data: workPlans } = useListWorkPlans();
   const createInvoice = useCreateInvoice();
 
@@ -23,6 +25,10 @@ export default function Invoices() {
   const [formData, setFormData] = useState<Partial<InvoiceInput>>({
     invoiceDate: new Date().toISOString().split('T')[0],
   });
+
+  const invoices = pinnedOnly
+    ? allInvoices?.filter((inv) => inv.carryOverManual)
+    : allInvoices;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,9 +49,9 @@ export default function Invoices() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold tracking-tight text-[#333333]">Invoices</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -56,6 +62,26 @@ export default function Invoices() {
               <SelectItem value="exported">Exported</SelectItem>
             </SelectContent>
           </Select>
+
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={pinnedOnly ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPinnedOnly((v) => !v)}
+                  className={pinnedOnly ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}
+                  data-testid="button-pinned-filter"
+                >
+                  <Pin className="mr-1.5 h-3.5 w-3.5" />
+                  Manually pinned
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Show only invoices where "Previously billed" was set manually
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -110,6 +136,12 @@ export default function Invoices() {
         </div>
       </div>
 
+      {pinnedOnly && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Showing only invoices where "Previously billed" was pinned manually — {invoices?.length ?? 0} found.
+        </p>
+      )}
+
       <div className="rounded-md border bg-white">
         <Table>
           <TableHeader>
@@ -137,7 +169,7 @@ export default function Invoices() {
             ) : invoices?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  No invoices found.
+                  {pinnedOnly ? "No manually-pinned invoices found." : "No invoices found."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -158,8 +190,27 @@ export default function Invoices() {
                                 <Pin className="h-3.5 w-3.5" aria-label="Previously billed set manually" />
                               </span>
                             </TooltipTrigger>
+                            <TooltipContent>"Previously billed" was set manually</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                      {(invoice.unlinkedCount ?? 0) > 0 && (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex"
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid={`badge-unlinked-${invoice.id}`}
+                              >
+                                <Badge variant="outline" className="gap-1 border-red-300 bg-red-50 px-1.5 py-0 text-[10px] text-red-700">
+                                  <UserX className="h-2.5 w-2.5" />
+                                  {invoice.unlinkedCount} unlinked
+                                </Badge>
+                              </span>
+                            </TooltipTrigger>
                             <TooltipContent>
-                              "Previously billed" was set manually
+                              {invoice.unlinkedCount} line item{invoice.unlinkedCount === 1 ? "" : "s"} could not be matched to a known employee
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

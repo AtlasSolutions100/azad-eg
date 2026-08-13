@@ -92,6 +92,7 @@ export function buildInvoice(invoice: InvoiceRow, workPlan: WorkPlan, lineItems:
       lastImportAt: invoice.lastImportAt ? invoice.lastImportAt.toISOString() : null,
       lastImportSource: invoice.lastImportSource,
       lineItemsEditedAt: invoice.lineItemsEditedAt ? invoice.lineItemsEditedAt.toISOString() : null,
+      unlinkedCount: lineItems.filter((li) => li.employeeId == null).length,
       createdAt: invoice.createdAt.toISOString(),
       updatedAt: invoice.updatedAt.toISOString(),
     },

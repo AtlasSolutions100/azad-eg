@@ -258,6 +258,10 @@ export default function Dashboard() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [budgetFilter, setBudgetFilter] = useState("all");
+  // Tracks whether wizard owner/prime were auto-filled from a previous package
+  const [ownerSuggested, setOwnerSuggested] = useState(false);
+  const [primeSuggested, setPrimeSuggested] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<Partial<PackageInput>>({
     invoiceDate: new Date().toISOString().split("T")[0],
@@ -376,6 +380,10 @@ export default function Dashboard() {
         (best, p) => (!best || p.createdAt > best.createdAt ? p : best),
         null,
       );
+    const willFillOwner = !(form.owner?.trim()) && !!latest?.owner;
+    const willFillPrime = !(form.prime?.trim()) && !!latest?.prime;
+    if (willFillOwner) setOwnerSuggested(true);
+    if (willFillPrime) setPrimeSuggested(true);
     setForm((f) => ({
       // Picking a real work plan clears the Procas-only fields, otherwise
       // stale hidden overrides would silently beat the work plan's rates.
@@ -429,6 +437,8 @@ export default function Dashboard() {
     setMultiConfirmed(false);
     setManualEntry(false);
     setWpSearch("");
+    setOwnerSuggested(false);
+    setPrimeSuggested(false);
   };
 
   // When the last step appears, the "Create Package" button lands exactly
@@ -469,6 +479,8 @@ export default function Dashboard() {
 
     const matchPkg = (pkg: PackageSummary) => {
       if (statusFilter !== "all" && pkg.status !== statusFilter) return false;
+      if (budgetFilter === "over" && pkg.budgetStatus?.level !== "over") return false;
+      if (budgetFilter === "approaching" && pkg.budgetStatus?.level !== "approaching") return false;
       if (!q) return true;
       const haystack = [
         pkg.employeeName ?? "",
@@ -477,6 +489,8 @@ export default function Dashboard() {
         pkg.workPlanCode,
         pkg.client,
         pkg.invoiceNumber ?? "",
+        pkg.owner ?? "",
+        pkg.prime ?? "",
         periodLabel(pkg.payPeriodStart, pkg.payPeriodEnd),
         pkg.payPeriodStart,
         pkg.payPeriodEnd,
@@ -497,7 +511,7 @@ export default function Dashboard() {
           .filter((j) => j.packages.length > 0),
       }))
       .filter((g) => g.jobs.length > 0);
-  }, [groups, search, statusFilter]);
+  }, [groups, search, statusFilter, budgetFilter]);
 
   const totals = useMemo(() => {
     let jobs = 0;
@@ -541,17 +555,26 @@ export default function Dashboard() {
                   list="owner-suggestions"
                   placeholder="Pick or type the owner / agency, e.g. BART"
                   value={form.owner || ""}
-                  onChange={(e) => setForm({ ...form, owner: e.target.value })}
+                  onChange={(e) => {
+                    setOwnerSuggested(false);
+                    setForm({ ...form, owner: e.target.value });
+                  }}
                 />
                 <datalist id="owner-suggestions">
                   {ownerOptions.map((o) => (
                     <option key={o} value={o} />
                   ))}
                 </datalist>
-                <p className="text-xs text-[#5F5F5F]">
-                  The government agency the work ultimately belongs to (e.g.
-                  BART, CalTrans). Leave blank if not known yet.
-                </p>
+                {ownerSuggested ? (
+                  <p className="text-xs text-blue-600">
+                    ✦ Pre-filled from a previous package on this work plan — edit freely.
+                  </p>
+                ) : (
+                  <p className="text-xs text-[#5F5F5F]">
+                    The government agency the work ultimately belongs to (e.g.
+                    BART, CalTrans). Leave blank if not known yet.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Prime</Label>
@@ -559,18 +582,27 @@ export default function Dashboard() {
                   list="prime-suggestions"
                   placeholder="Pick or type the prime, e.g. T.Y. Lin"
                   value={form.prime || ""}
-                  onChange={(e) => setForm({ ...form, prime: e.target.value })}
+                  onChange={(e) => {
+                    setPrimeSuggested(false);
+                    setForm({ ...form, prime: e.target.value });
+                  }}
                 />
                 <datalist id="prime-suggestions">
                   {primeOptions.map((o) => (
                     <option key={o} value={o} />
                   ))}
                 </datalist>
-                <p className="text-xs text-[#5F5F5F]">
-                  The prime contractor this package bills through (AECOM, WSP,
-                  Parsons, T.Y. Lin…). Azad is usually the sub; if Azad is the
-                  prime on this contract, choose “Azad (we are the prime)”.
-                </p>
+                {primeSuggested ? (
+                  <p className="text-xs text-blue-600">
+                    ✦ Pre-filled from a previous package on this work plan — edit freely.
+                  </p>
+                ) : (
+                  <p className="text-xs text-[#5F5F5F]">
+                    The prime contractor this package bills through (AECOM, WSP,
+                    Parsons, T.Y. Lin…). Azad is usually the sub; if Azad is the
+                    prime on this contract, choose "Azad (we are the prime)".
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -939,12 +971,12 @@ export default function Dashboard() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search client, employee, job number (A.04-02), or pay period…"
+            placeholder="Search client, employee, job #, owner, prime, or pay period…"
             className="pl-9"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
+          <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -953,6 +985,16 @@ export default function Dashboard() {
             <SelectItem value="in_review">In Review</SelectItem>
             <SelectItem value="approved">Approved</SelectItem>
             <SelectItem value="exported">Exported</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={budgetFilter} onValueChange={setBudgetFilter}>
+          <SelectTrigger className="w-full sm:w-[160px]">
+            <SelectValue placeholder="Budget" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All budgets</SelectItem>
+            <SelectItem value="over">Over budget</SelectItem>
+            <SelectItem value="approaching">Approaching limit</SelectItem>
           </SelectContent>
         </Select>
       </div>

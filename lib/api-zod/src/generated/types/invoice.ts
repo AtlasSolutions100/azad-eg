@@ -56,6 +56,8 @@ export interface Invoice {
      * @nullable
      */
   lineItemsEditedAt?: string | null;
+  /** Number of line items whose employee record could not be resolved (employeeId is null). A non-zero value means the hours exist but are not attributed to a known employee. */
+  unlinkedCount?: number;
   createdAt: string;
   updatedAt: string;
 }
