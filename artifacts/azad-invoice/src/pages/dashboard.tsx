@@ -365,11 +365,24 @@ export default function Dashboard() {
       return;
     }
     const wpId = Number(val);
+    // Owner/Prime rarely change for a work plan: suggest the values from the
+    // most recent package on this work plan, but never overwrite anything the
+    // biller already typed.
+    const latest = (groups ?? [])
+      .flatMap((g) => g.jobs)
+      .filter((j) => j.workPlanId === wpId)
+      .flatMap((j) => j.packages)
+      .reduce<PackageSummary | null>(
+        (best, p) => (!best || p.createdAt > best.createdAt ? p : best),
+        null,
+      );
     setForm((f) => ({
       // Picking a real work plan clears the Procas-only fields, otherwise
       // stale hidden overrides would silently beat the work plan's rates.
       ...f,
       workPlanId: wpId,
+      owner: f.owner?.trim() ? f.owner : latest?.owner ?? f.owner,
+      prime: f.prime?.trim() ? f.prime : latest?.prime ?? f.prime,
       procasProject: undefined,
       clientName: undefined,
       fringeRate: undefined,
