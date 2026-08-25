@@ -1,15 +1,17 @@
-# [Project name]
+# Azad Invoice Automation
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Internal billing workspace for Azad Engineering PC to manage work plans, generate invoices, and export BART progress billings.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- Use the managed **Project** workflow to run the frontend at `/` and the API at `/api`; it starts the associated `artifacts/azad-invoice: web` and `artifacts/api-server: API Server` services.
+- `PORT=8080 pnpm --filter @workspace/api-server run dev` — run the API server directly (port 8080)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
+- `pnpm run build` — typecheck + build all packages (sets the Vite build-time runtime variables automatically)
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Development auth uses Replit-managed Clerk; its development keys are provisioned automatically and do not need to be copied into files.
 
 ## Stack
 
