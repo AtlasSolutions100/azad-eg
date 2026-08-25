@@ -34,6 +34,8 @@ export * from './employeeRateChange';
 export * from './employeeRateChangeInput';
 export * from './employeeUpdate';
 export * from './error';
+export * from './exportOptions';
+export * from './exportPackage409';
 export * from './financialLine';
 export * from './generatedFile';
 export * from './generateInput';

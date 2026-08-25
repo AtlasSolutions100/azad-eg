@@ -67,6 +67,11 @@ export interface WorkPlan {
   fixedFeeRate: number;
   /** @nullable */
   fccmRate?: number | null;
+  /**
+     * Max billable rate/hr; rates above this are billed at the cap. Null = no cap.
+     * @nullable
+     */
+  maxBillRate?: number | null;
   /** @nullable */
   supplierId?: string | null;
   /**

@@ -66,6 +66,20 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // Local dev only: when API_PROXY_TARGET is set (e.g. running the API server
+    // separately on another port), forward same-origin /api calls to it so the
+    // frontend's setBaseUrl(window.location.origin) keeps working. Unset on
+    // Replit, so this has no effect there.
+    ...(process.env.API_PROXY_TARGET
+      ? {
+          proxy: {
+            "/api": {
+              target: process.env.API_PROXY_TARGET,
+              changeOrigin: true,
+            },
+          },
+        }
+      : {}),
   },
   preview: {
     port,

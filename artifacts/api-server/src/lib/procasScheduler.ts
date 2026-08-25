@@ -20,10 +20,19 @@ import { logger } from "./logger";
 // across all instances.
 const SYNC_LOCK_KEY = 0x70726373; // "prcs"
 
-// Invoices that are still being worked on — these are the ones a live Procas
-// feed should keep refreshed. Approved/exported invoices are finalized and must
-// not be mutated by a background pull.
+// Invoices that are still being worked on. Both are fetched each cycle so the
+// scheduler has visibility into what it chose to skip, but only the statuses in
+// AUTO_SYNC_STATUSES are actually refreshed (see below). Approved/exported
+// invoices are finalized and are never fetched or mutated by a background pull.
 const OPEN_STATUSES = ["draft", "in_review"];
+
+// Statuses eligible for an automatic background refresh. Only `draft` invoices
+// are auto-synced. An invoice a human has advanced to `in_review` is under
+// active review, so the scheduler must NOT silently overwrite it with
+// freshly-pulled (and possibly still-unapproved) Procas hours — that would
+// stomp the snapshot the reviewer is looking at. Such invoices are fetched only
+// to be logged as skipped; a biller can still trigger a manual re-sync.
+const AUTO_SYNC_STATUSES = ["draft"];
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 // Guard rails for the user-configurable interval: at least 1 minute (so the
@@ -410,7 +419,19 @@ export async function runProcasSyncCycle(): Promise<{ skipped: boolean; synced: 
 
   let synced = 0;
   let failed = 0;
+  let skippedInReview = 0;
   for (const invoice of openInvoices) {
+    // Human-in-the-loop guard: never auto-overwrite an invoice a reviewer has
+    // moved to `in_review` with a fresh (possibly unapproved) pull. Skip it and
+    // log so the skip is observable, then continue with the rest of the batch.
+    if (!AUTO_SYNC_STATUSES.includes(invoice.status)) {
+      skippedInReview += 1;
+      logger.info(
+        { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, status: invoice.status },
+        "Skipped scheduled Procas sync: invoice is under review (in_review); a fresh pull could overwrite unapproved hours",
+      );
+      continue;
+    }
     try {
       const result = await syncInvoiceFromProcas(invoice, conn, "procas-scheduled");
       if (result.ok) {
@@ -427,6 +448,12 @@ export async function runProcasSyncCycle(): Promise<{ skipped: boolean; synced: 
       failed += 1;
       logger.error({ err: e, invoiceId: invoice.id }, "Scheduled Procas sync threw for invoice");
     }
+  }
+  if (skippedInReview > 0) {
+    logger.info(
+      { skippedInReview, synced, failed },
+      "Scheduled Procas sync left in-review invoices untouched (human-in-the-loop approval guard)",
+    );
   }
   return { skipped: false, synced, failed };
 }

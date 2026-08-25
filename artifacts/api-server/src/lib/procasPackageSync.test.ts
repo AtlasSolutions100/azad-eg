@@ -7,8 +7,27 @@ import {
   packageWeeksTable,
   timesheetEntriesTable,
 } from "@workspace/db";
-import { pullPackageHoursFromProcas } from "./procasPackageSync";
+import { pullPackageHoursFromProcas, normalizeCategory } from "./procasPackageSync";
 import type { ProcasCreds } from "./procas";
+
+describe("normalizeCategory", () => {
+  it("classifies OT/DT/holiday/PTO from the paycode", () => {
+    expect(normalizeCategory("Overtime")).toBe("ot");
+    expect(normalizeCategory("Doubletime")).toBe("dt");
+    expect(normalizeCategory("Holiday")).toBe("holiday");
+    expect(normalizeCategory("Sick")).toBe("pto");
+    expect(normalizeCategory("Regular")).toBe("regular");
+  });
+  it("treats G&A / B&P / Overhead account descriptions as non-billable (PTO)", () => {
+    expect(normalizeCategory("Regular", "G&A")).toBe("pto");
+    expect(normalizeCategory("Regular", "B&P")).toBe("pto");
+    expect(normalizeCategory("Regular", "Bid & Proposal")).toBe("pto");
+    expect(normalizeCategory("Regular", "Overhead")).toBe("pto");
+    // Direct time stays billable.
+    expect(normalizeCategory("Regular", "Direct Time Field")).toBe("regular");
+    expect(normalizeCategory("Overtime", "Direct Time Field")).toBe("ot");
+  });
+});
 
 const creds: ProcasCreds = {
   companyCode: "AZADEN",
@@ -150,6 +169,9 @@ describe("pullPackageHoursFromProcas", () => {
     expect(result.weeksCreated).toBe(2);
     expect(result.warnings.join(" ")).toMatch(/Unsubmitted/);
     expect(result.warnings.join(" ")).toMatch(/Program Manager/);
+    // Johnson's 4 "Unsubmitted" hours are the only unapproved ones; Boyd's rows
+    // are "Locked" (finalized/approved).
+    expect(result.unapprovedHours).toBe(4);
 
     const weeks = await db
       .select()
@@ -169,15 +191,20 @@ describe("pullPackageHoursFromProcas", () => {
     expect(regular!.hoursMon).toBe(8);
     expect(regular!.hoursWed).toBe(6.5);
     expect(regular!.rate).toBe(141.19);
+    // "Locked" Procas status → approved.
+    expect(regular!.approved).toBe(true);
 
     const ot = entries.find((e) => e.employeeName === "Boyd, Sarah" && e.category === "ot");
     expect(ot).toBeDefined();
     expect(ot!.hoursWed).toBe(2);
+    expect(ot!.approved).toBe(true);
 
     const pm = entries.find((e) => e.employeeName === "Johnson, Travis");
     expect(pm).toBeDefined();
     expect(pm!.hoursTue).toBe(4);
     expect(pm!.rate).toBe(0);
+    // "Unsubmitted" Procas status → not approved (shown in red, blocks export).
+    expect(pm!.approved).toBe(false);
 
     // Add a manual entry, re-pull: procas entries replaced, manual preserved.
     await db.insert(timesheetEntriesTable).values({
@@ -197,13 +224,17 @@ describe("pullPackageHoursFromProcas", () => {
     expect(again.replacedCount).toBe(3);
     expect(again.importedCount).toBe(3);
     expect(again.weeksCreated).toBe(0);
+    expect(again.unapprovedHours).toBe(4);
 
     const after = await db
       .select()
       .from(timesheetEntriesTable)
       .where(eq(timesheetEntriesTable.packageId, packageId));
     expect(after).toHaveLength(4);
-    expect(after.filter((e) => e.source === "manual")).toHaveLength(1);
+    const manual = after.filter((e) => e.source === "manual");
+    expect(manual).toHaveLength(1);
+    // Manual entries are biller-entered and default to approved.
+    expect(manual[0].approved).toBe(true);
   });
 
   it("fails clearly when the work plan has no Procas project", async () => {

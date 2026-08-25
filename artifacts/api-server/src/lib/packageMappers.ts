@@ -8,6 +8,7 @@ import type {
   Employee,
 } from "@workspace/db";
 import { evaluateBudgetStatus } from "./financials";
+import { cappedBillRate } from "./billingProfile";
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -41,6 +42,10 @@ export function toApiTimesheetEntry(e: TimesheetEntryRow) {
     rate: e.rate,
     amount: round2(totalHours * e.rate),
     source: e.source,
+    // Whether the Procas hours behind this entry are approved. Unapproved rows
+    // are rendered in red in the UI and block final export. Display-only: has no
+    // effect on billing math.
+    approved: e.approved,
     taskNo: e.taskNo,
     notes: e.notes,
   };
@@ -89,20 +94,27 @@ export function toApiOverride(o: LaborOverrideRow) {
 
 /**
  * Rolls a package's timesheet entries up into per-line labor and computed
- * financials using the SAME burdened-rate model as the reference-workbook
- * export engine (masterWorkbook / Sub Calc sheet), so on-screen numbers and
- * the exported Excel can never drift:
+ * financials using the BART indirect build-up model, validated to the cent
+ * against Julie's reference workbooks (WSP `Sub Calc _revised`, AECOM master):
  *
- *   This Period = labor × (1 + OH) × (1 + fee) + labor × FCCM (+ ODCs)
+ *   Direct Labor  = Σ(hours × base rate)              // OT/DT hours at base rate
+ *   Fringe        = labor × fringeRate                // the 120.58% indirect layer
+ *   Overhead      = (labor + fringe) × overheadRate   // optional 2nd layer (usually 0)
+ *   Fixed Fee     = (labor + fringe + overhead) × feeRate   // capped: no fee on burden > 150% of labor
+ *   FCCM          = labor × fccmRate                  // on direct labor only
+ *   OT/DT premium = 0.5×base×otHrs + 1.0×base×dtHrs   // added UNBURDENED (no OH/fee) as an ODC line
+ *   This Period   = labor + fringe + overhead + fee + FCCM + OT/DT premium + ODCs
  *
- * Entry rates are already fully-burdened billing rates, so no separate fringe
- * layer is applied (the invoice pipeline's computeFinancials model does NOT
- *  apply here). PTO/holiday hours bill at rate 0 and are excluded from Total
- * Hours, matching the reference workbook's billable row (week tab O9).
+ * Entry rates are BASE labor rates (e.g. Procas Billing Item "Billing Rate"),
+ * NOT pre-burdened — the indirect layers above are what turn them into the
+ * billed amount. PTO/holiday hours bill at rate 0 and are excluded from Total
+ * Hours, matching the reference workbook's billable row.
  */
 export function buildPackageRollup(
   entries: TimesheetEntryRow[],
-  workPlan: Pick<WorkPlan, "totalBudget" | "fringeRate" | "overheadRate" | "fixedFeeRate" | "fccmRate">,
+  workPlan: Pick<WorkPlan, "totalBudget" | "fringeRate" | "overheadRate" | "fixedFeeRate" | "fccmRate"> & {
+    maxBillRate?: number | null;
+  },
   opts: { previouslyBilled: number; otherDirectCosts: number },
 ) {
   const laborLines = entries.map((e) => {
@@ -111,14 +123,17 @@ export function buildPackageRollup(
     // what rate is stored on the entry, so every consumer of laborLines
     // (rollup totals, labor attachment, sub calc) stays consistent.
     const nonBillable = e.category === "pto" || e.category === "holiday";
+    // Apply the work plan's Max Bill Rate cap so on-screen totals match the
+    // capped amounts the export bills.
+    const rate = cappedBillRate(e.rate, workPlan.maxBillRate);
     return {
       employeeName: e.employeeName,
       classification: e.classification,
       category: e.category,
       location: e.location,
       hours,
-      rate: e.rate,
-      amount: nonBillable ? 0 : round2(hours * e.rate),
+      rate,
+      amount: nonBillable ? 0 : round2(hours * rate),
     };
   });
 
@@ -131,8 +146,10 @@ export function buildPackageRollup(
     ),
   );
 
-  // Straight-time labor + OT/DT premium at burdened entry rates, mirroring
-  // the export's "Total (Labor + Overtime)".
+  // Straight-time labor at BASE rates. OT/DT hours are billed here at their
+  // straight/base rate; the OT/DT *premium* (0.5×base for OT, 1.0×base for DT)
+  // is accumulated separately and added later UNBURDENED — the BART rule is
+  // that no overhead or fee applies to the premium portion.
   let straightLabor = 0;
   let otdtPremiumRaw = 0;
   for (const l of laborLines) {
@@ -145,19 +162,34 @@ export function buildPackageRollup(
     else if (l.category === "dt") otdtPremiumRaw += base * 1.0;
   }
   const otdtPremium = round2(otdtPremiumRaw);
-  const laborTotal = round2(straightLabor + otdtPremiumRaw);
+  const laborTotal = round2(straightLabor);
 
+  const fringeRate = (workPlan.fringeRate ?? 0) / 100;
   const overheadRate = (workPlan.overheadRate ?? 0) / 100;
   const fixedFeeRate = (workPlan.fixedFeeRate ?? 0) / 100;
   const fccmRate = (workPlan.fccmRate ?? 0) / 100;
 
-  const overheadTotal = round2(laborTotal * overheadRate);
-  const fixedFee = round2((laborTotal + overheadTotal) * fixedFeeRate);
-  const fccm = round2(laborTotal * fccmRate);
+  // Indirect build-up on straight-time labor only (never on the OT/DT premium).
+  // Rounding mirrors the reference workbook to the cent: fringe/overhead/fee are
+  // kept at full precision and only FCCM is rounded per-line (Julie's sheet
+  // wraps only its FCCM cell in ROUND); the period total is rounded once.
+  const fringeRaw = straightLabor * fringeRate;
+  const laborPlusFringe = straightLabor + fringeRaw;
+  const overheadRaw = laborPlusFringe * overheadRate;
+  // Fee cap: no fixed fee on indirect burden exceeding 150% of direct labor.
+  const cappedBurdenRaw = Math.min(fringeRaw + overheadRaw, straightLabor * 1.5);
+  const fixedFeeRaw = (straightLabor + cappedBurdenRaw) * fixedFeeRate;
+  // FCCM is charged on direct labor only (matches the reference workbook).
+  const fccm = round2(straightLabor * fccmRate);
   const otherDirectCosts = round2(opts.otherDirectCosts ?? 0);
 
+  // Rounded per-line values for display.
+  const fringeTotal = round2(fringeRaw);
+  const overheadTotal = round2(overheadRaw);
+  const fixedFee = round2(fixedFeeRaw);
+
   const totalThisPeriod = round2(
-    laborTotal + overheadTotal + fixedFee + fccm + otherDirectCosts,
+    straightLabor + fringeRaw + overheadRaw + fixedFeeRaw + fccm + otdtPremiumRaw + otherDirectCosts,
   );
   const previouslyBilled = round2(opts.previouslyBilled ?? 0);
   const totalToDate = round2(totalThisPeriod + previouslyBilled);
@@ -174,7 +206,13 @@ export function buildPackageRollup(
     amount: number;
     note?: string | null;
     emphasis?: boolean | null;
-  }[] = [{ label: "Direct Labor (burdened rates)", amount: laborTotal }];
+  }[] = [{ label: "Direct Labor", amount: laborTotal }];
+  if (fringeRate > 0) {
+    financials.push({
+      label: `Fringe/Overhead (${workPlan.fringeRate}%)`,
+      amount: fringeTotal,
+    });
+  }
   if (overheadRate > 0) {
     financials.push({
       label: `Overhead (${workPlan.overheadRate}%)`,
@@ -184,6 +222,13 @@ export function buildPackageRollup(
   financials.push({ label: `Fixed Fee (${workPlan.fixedFeeRate ?? 0}%)`, amount: fixedFee });
   if (fccmRate > 0) {
     financials.push({ label: `FCCM (${workPlan.fccmRate}%)`, amount: fccm });
+  }
+  if (otdtPremium > 0) {
+    financials.push({
+      label: "OT/DT Premium",
+      amount: otdtPremium,
+      note: "No overhead or fee applied",
+    });
   }
   if (otherDirectCosts > 0) {
     financials.push({ label: "Other Direct Costs", amount: otherDirectCosts });
@@ -203,8 +248,7 @@ export function buildPackageRollup(
     financials,
     totalHours,
     laborTotal,
-    // No separate fringe layer: entry rates are already fully burdened.
-    fringeTotal: 0,
+    fringeTotal,
     overheadTotal,
     fixedFee,
     fccm,
@@ -278,7 +322,9 @@ export function contributorsLabel(
 export function toApiPackageSummary(
   pkg: PackageRow,
   employee: Pick<Employee, "name"> | null,
-  workPlan: Pick<WorkPlan, "code" | "jobNumber" | "client" | "totalBudget" | "fringeRate" | "overheadRate" | "fixedFeeRate" | "fccmRate">,
+  workPlan: Pick<WorkPlan, "code" | "jobNumber" | "client" | "totalBudget" | "fringeRate" | "overheadRate" | "fixedFeeRate" | "fccmRate"> & {
+    maxBillRate?: number | null;
+  },
   weekCount: number,
   entries: TimesheetEntryRow[],
 ) {
@@ -287,6 +333,12 @@ export function toApiPackageSummary(
     otherDirectCosts: pkg.otherDirectCosts,
   });
   const employees = buildEmployeeContributions(entries);
+  // Total hours across entries whose Procas status is not yet approved. Purely
+  // a display/guard signal (drives the persistent "not yet approved" banner and
+  // the export guard); it does NOT enter any billing calculation above.
+  const unapprovedHours = round2(
+    entries.reduce((s, e) => (e.approved ? s : s + entryTotalHours(e)), 0),
+  );
   return {
     id: pkg.id,
     employeeId: pkg.employeeId,
@@ -323,6 +375,7 @@ export function toApiPackageSummary(
     timesheetsDocStatus: pkg.timesheetsDocStatus,
     weekCount,
     totalHours: rollup.totalHours,
+    unapprovedHours,
     totalThisPeriod: rollup.totalThisPeriod,
     budgetStatus: rollup.budgetStatus,
     createdAt: pkg.createdAt.toISOString(),

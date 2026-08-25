@@ -30,6 +30,8 @@ export interface TimesheetEntry {
   rate: number;
   amount: number;
   source: TimesheetEntrySource;
+  /** Whether the Procas timesheet hours behind this entry are approved (Status = Approved/Processed/Posted/Locked). Manual entries are always true. Unapproved rows are shown in red and block final export. */
+  approved: boolean;
   /** @nullable */
   taskNo?: string | null;
   /** @nullable */

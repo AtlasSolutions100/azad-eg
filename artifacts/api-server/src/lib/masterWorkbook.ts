@@ -485,7 +485,12 @@ export async function buildMasterWorkbook(
   // stored as percentages (e.g. 120.58) while the reference cells hold
   // fractions (1.2058). Missing/zero rates are written as 0 — never left
   // as-is, or Julie's template rates would silently leak in.
-  const oh = (wp.overheadRate ?? 0) / 100;
+  // The BART indirect burden (~120.58%) is stored in fringeRate on real work
+  // plans; overheadRate is an optional second layer and the Sub Calc carries a
+  // single OH cell, so combine them. Reading only overheadRate (as before)
+  // silently dropped the fringe layer whenever it was left null — a ~120%
+  // under-bill.
+  const oh = ((wp.fringeRate ?? 0) + (wp.overheadRate ?? 0)) / 100;
   for (const addr of ["C12", "C14", "C18", "C19"]) setVal(cost, addr, oh);
   const fee = (wp.fixedFeeRate ?? 0) / 100;
   setVal(cost, "E37", fee);

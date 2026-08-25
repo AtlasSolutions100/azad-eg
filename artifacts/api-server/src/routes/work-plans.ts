@@ -73,12 +73,20 @@ router.patch("/work-plans/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  // A biller editing a Procas-imported plan's display fields takes ownership:
-  // flip source to "manual" so future library imports never stomp the edit.
+  // A biller editing a Procas-imported plan's display fields OR its billing
+  // rates takes ownership: flip source to "manual" so future Procas syncs never
+  // stomp the edit. This is how a static overhead/fee/FCCM override is entered —
+  // set the rate here and it sticks. (See syncReferenceFromProcas, which skips
+  // non-"procas" plans.)
   const editsProcasOwnedFields =
     parsed.data.title !== undefined ||
     parsed.data.client !== undefined ||
-    parsed.data.status !== undefined;
+    parsed.data.status !== undefined ||
+    parsed.data.fringeRate !== undefined ||
+    parsed.data.overheadRate !== undefined ||
+    parsed.data.fixedFeeRate !== undefined ||
+    parsed.data.fccmRate !== undefined ||
+    parsed.data.billingCycle !== undefined;
   const [row] = await db
     .update(workPlansTable)
     .set(editsProcasOwnedFields ? { ...parsed.data, source: "manual" } : parsed.data)

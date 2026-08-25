@@ -21,6 +21,7 @@ export type EffectiveWorkPlan = Pick<
   | "overheadRate"
   | "fixedFeeRate"
   | "fccmRate"
+  | "maxBillRate"
   | "procasProject"
   | "agreementNo"
   | "poNumber"
@@ -55,6 +56,16 @@ type PkgProfileFields = Pick<
   | "fccmRate"
 >;
 
+/**
+ * Applies a work plan's Max Bill Rate cap to a raw hourly rate. When a cap is
+ * set, an employee whose rate exceeds it is billed at the cap; otherwise the
+ * rate passes through unchanged. Kept in one place so the on-screen rollup and
+ * every export engine cap identically.
+ */
+export function cappedBillRate(rate: number, maxBillRate: number | null | undefined): number {
+  return maxBillRate != null && maxBillRate > 0 && rate > maxBillRate ? maxBillRate : rate;
+}
+
 export function effectiveWorkPlan(
   pkg: PkgProfileFields,
   wp: WorkPlan | null | undefined,
@@ -76,6 +87,8 @@ export function effectiveWorkPlan(
     overheadRate: pkg.overheadRate ?? wp?.overheadRate ?? null,
     fixedFeeRate: pkg.fixedFeeRate ?? wp?.fixedFeeRate ?? 0,
     fccmRate: pkg.fccmRate ?? wp?.fccmRate ?? null,
+    // Max billable rate cap comes only from the work plan (no package override).
+    maxBillRate: wp?.maxBillRate ?? null,
     // Contract/cover-page details only a real work plan can provide.
     agreementNo: wp?.agreementNo ?? null,
     poNumber: wp?.poNumber ?? null,

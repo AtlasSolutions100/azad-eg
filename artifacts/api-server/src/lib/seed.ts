@@ -21,7 +21,11 @@ export async function seedDatabase(): Promise<void> {
       totalBudget: 156185.34,
       fringeRate: 120.58,
       fixedFeeRate: 8,
-      fccmRate: 0.13,
+      // 0.39% matches Julie's real WSP/A.04-02 sample (Sub Calc _revised E49 =
+      // 0.0039), which reproduces its $26,189.78 total exactly. The old 0.13%
+      // came from a Master File label; confirm the authoritative FCCM % with
+      // Julie (it is date-ranged per contract in Procas Billing Item Col O).
+      fccmRate: 0.39,
       billingCycle: "whole_month",
       status: "active",
     });
@@ -45,8 +49,8 @@ export async function seedDatabase(): Promise<void> {
     await db.insert(referenceEntriesTable).values([
       { category: "rates", key: "fringe", label: "Fringe Benefits", value: "120.58", unit: "%", description: "Applied to direct labor." },
       { category: "rates", key: "fixed_fee", label: "Fixed Fee", value: "8", unit: "%", description: "Applied to labor + fringe + overhead." },
-      { category: "rates", key: "fccm_home", label: "FCCM (Home Office)", value: "0.13", unit: "%", description: "Facilities Capital Cost of Money — home office." },
-      { category: "rates", key: "fccm_field", label: "FCCM (Field Office)", value: "0.08", unit: "%", description: "Facilities Capital Cost of Money — field office." },
+      { category: "rates", key: "fccm_home", label: "FCCM (Home Office)", value: "0.39", unit: "%", description: "Facilities Capital Cost of Money. Always 0.39% (confirmed by Julie 2026-08)." },
+      { category: "rates", key: "fccm_field", label: "FCCM (Field Office)", value: "0.39", unit: "%", description: "Facilities Capital Cost of Money. Always 0.39% (confirmed by Julie 2026-08)." },
       { category: "premiums", key: "ot", label: "Overtime Premium", value: "50", unit: "%", description: "Premium portion above straight-time for OT hours." },
       { category: "premiums", key: "dt", label: "Doubletime Premium", value: "100", unit: "%", description: "Premium portion above straight-time for DT hours." },
       { category: "contract", key: "terms", label: "Payment Terms", value: "Net 30", unit: null, description: "Invoice payment terms." },

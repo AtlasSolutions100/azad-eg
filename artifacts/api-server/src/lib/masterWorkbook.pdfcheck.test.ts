@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import { generateMasterPdfSource } from "./masterWorkbook";
 import { convertToPdf } from "./excel";
 import type { PackageDocContext } from "./packageDocs";
@@ -40,7 +39,6 @@ describe("master workbook PDF", () => {
     const src = await generateMasterPdfSource(ctx);
     const pdf = await convertToPdf(src);
     const text = execFileSync("pdftotext", [pdf, "-"], { encoding: "utf8" });
-    fs.writeFileSync("/tmp/master-pdf.txt", text);
     const iInvoice = text.indexOf("REMIT TO");
     const iOverview = text.indexOf("Invoice Prep");
     expect(iInvoice).toBeGreaterThanOrEqual(0);

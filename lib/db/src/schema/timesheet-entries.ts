@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, doublePrecision, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, doublePrecision, boolean, timestamp } from "drizzle-orm/pg-core";
 import { packagesTable } from "./packages";
 import { packageWeeksTable } from "./package-weeks";
 
@@ -28,6 +28,12 @@ export const timesheetEntriesTable = pgTable("timesheet_entries", {
   // Where this entry came from: "manual" (typed in) or "procas" (auto-pulled).
   // Procas re-pulls replace only source="procas" rows, never manual ones.
   source: text("source").notNull().default("manual"),
+  // Whether the Procas timesheet hours behind this entry are approved
+  // (Timesheet Status = Approved/Processed/Posted/Locked). Only APPROVED hours
+  // may be exported; unapproved rows are surfaced in red in the UI. Manual
+  // rows are biller-entered and default to approved. Procas pulls set this from
+  // the feed's Status column; a re-pull refreshes it.
+  approved: boolean("approved").notNull().default(true),
   taskNo: text("task_no"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

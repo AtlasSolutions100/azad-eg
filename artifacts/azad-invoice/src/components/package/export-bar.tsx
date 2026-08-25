@@ -10,12 +10,25 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertTriangle, CheckCircle2, Download, Loader2, Package } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
   const exportPackage = useExportPackage();
   const { data: validations } = useGetPackageValidations(pkg.id);
   const { toast } = useToast();
   const [progress, setProgress] = useState<string | null>(null);
+  // When the export is blocked by unapproved Procas hours, hold the count here
+  // to drive a "review or export anyway" confirmation dialog.
+  const [unapprovedPrompt, setUnapprovedPrompt] = useState<number | null>(null);
 
   const errorCount =
     validations?.flags.filter((f) => f.severity === "error").length ?? 0;
@@ -24,20 +37,32 @@ export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
   const ready = validations ? validations.isValid : null;
   const isBlocked = ready === false && errorCount > 0;
 
-  const handleExport = async () => {
+  const handleExport = async (allowUnapproved = false) => {
     setProgress("Building the combined Excel workbook and merged PDF…");
     toast({
       title: "Building package export",
       description: "Assembling one Excel workbook and one PDF for the client.",
     });
     try {
-      const res = await exportPackage.mutateAsync({ id: pkg.id });
+      const res = await exportPackage.mutateAsync(
+        allowUnapproved ? { id: pkg.id, data: { allowUnapproved: true } } : { id: pkg.id },
+      );
       window.open(res.url, "_blank");
       toast({
         title: "Package ready",
         description: `Excel + PDF bundled into ${res.filename}.`,
       });
     } catch (err) {
+      // 409 = unapproved Procas hours. Offer a "run anyway" confirmation
+      // instead of a plain failure, keeping a human in the loop.
+      if (err instanceof ApiError && err.status === 409) {
+        const data = err.data as { code?: string; unapprovedHours?: number } | null;
+        if (data?.code === "UNAPPROVED_HOURS") {
+          setUnapprovedPrompt(data.unapprovedHours ?? 0);
+          setProgress(null);
+          return;
+        }
+      }
       let description = "Something went wrong while building the export package.";
       if (err instanceof ApiError && err.status === 422) {
         const data = err.data as { error?: string; issues?: string[] } | null;
@@ -76,7 +101,7 @@ export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
             {/* span ensures tooltip fires even when the button is disabled */}
             <span>
               <Button
-                onClick={handleExport}
+                onClick={() => handleExport()}
                 disabled={exportPackage.isPending || isBlocked}
                 className="bg-[#CFAF42] text-white hover:bg-[#bd9e36] disabled:opacity-60"
               >
@@ -106,6 +131,37 @@ export default function ExportBar({ pkg }: { pkg: PackageSummary }) {
           <Download className="h-3 w-3" /> {progress}
         </span>
       )}
+
+      <AlertDialog
+        open={unapprovedPrompt !== null}
+        onOpenChange={(open) => !open && setUnapprovedPrompt(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Hours not yet approved
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {unapprovedPrompt ?? 0} hour(s) on this package have not been approved by a
+              supervisor in Procas. You can review them first, or export anyway if you
+              need to send this invoice now. Exporting anyway is recorded in the audit log.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Review first</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[#CFAF42] text-white hover:bg-[#bd9e36]"
+              onClick={() => {
+                setUnapprovedPrompt(null);
+                void handleExport(true);
+              }}
+            >
+              Export anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

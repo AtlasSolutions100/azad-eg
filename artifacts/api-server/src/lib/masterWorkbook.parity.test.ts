@@ -50,8 +50,11 @@ function entry(partial: Partial<TimesheetEntryRow>): TimesheetEntryRow {
 
 const workPlanRates = {
   totalBudget: 1_381_971.85,
+  // The 120.58% indirect burden is stored in fringeRate (as real work plans do);
+  // overheadRate is a separate optional layer, 0 here. Both the rollup and the
+  // master workbook now read fringeRate + overheadRate as the combined burden.
   fringeRate: 120.58,
-  overheadRate: 120.58,
+  overheadRate: 0,
   fixedFeeRate: 8,
   fccmRate: 0.39,
 };
@@ -149,18 +152,25 @@ async function workbookFigures(ctx: PackageDocContext): Promise<{
   // (=Overview G9) so every hour bills at rate1 (I18 mirrors I17).
   const c19 = labor.getCell("C19").value;
   const oldRateHours = typeof c19 === "number" ? c19 : totalHours;
-  const laborTotal = round2(oldRateHours * rate1 + (totalHours - oldRateHours) * rate2);
+  // Full-precision labor: Excel keeps hours×rate unrounded in-cell (no ROUND),
+  // so the build-up below must too. Only round for the display comparison.
+  const laborRaw = oldRateHours * rate1 + (totalHours - oldRateHours) * rate2;
+  const laborTotal = round2(laborRaw);
 
   const cost = wb.getWorksheet("Sub Calc")!;
   const oh = num(cost, "C14");
   const fee = num(cost, "E39");
   const fccmRate = num(cost, "D43");
-  const overhead = round2(laborTotal * oh);
-  const fixedFee = round2((laborTotal + overhead) * fee);
-  const fccm = round2(laborTotal * fccmRate);
+  // Mirror Excel's own arithmetic: the overhead and fee cells carry no ROUND,
+  // so they stay full-precision; only the FCCM cell is wrapped in ROUND. The
+  // SUBTOTAL then rounds the sum once. (Rounding each layer here would diverge
+  // from both Excel and the rollup by up to a cent.)
+  const overhead = laborRaw * oh;
+  const fixedFee = (laborRaw + overhead) * fee;
+  const fccm = round2(laborRaw * fccmRate);
   const odcs = num(cost, "H27");
 
-  const totalThisPeriod = round2(laborTotal + overhead + fixedFee + fccm + odcs);
+  const totalThisPeriod = round2(laborRaw + overhead + fixedFee + fccm + odcs);
   const previouslyBilled = num(overview, "E23");
   const totalToDate = round2(totalThisPeriod + previouslyBilled);
   return { totalThisPeriod, totalToDate, totalHours, laborTotal };

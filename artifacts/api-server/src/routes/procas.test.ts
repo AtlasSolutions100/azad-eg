@@ -544,14 +544,15 @@ describe("procas integration", () => {
     const job = `RATE-JOB-${suffix}`;
     const [wp] = await db
       .insert(workPlansTable)
-      .values({ code: `RATE-WP-${suffix}`, title: "Rate WP", client: "Client", jobNumber: job, poNumber: "PO", totalBudget: 50000, fringeRate: 100 })
+      .values({ code: `RATE-WP-${suffix}`, title: "Rate WP", client: "Client", jobNumber: job, poNumber: "PO", totalBudget: 50000, fringeRate: 100, source: "procas", procasProject: job })
       .returning();
     createdWorkPlanIds.push(wp.id);
 
     mockOData((table) => {
       if (table === "Project") return [{ Project: job, ProjectDesc: "Rate Project", ContractNumber: "CN-1" }];
       if (table === "BillingAccount") {
-        return [{ Project: job, FringePercent: 120.58, OverheadPercent: 15.5, FeePercent: 8 }];
+        // Procas returns fractions; the sync scales them ×100 to whole percents.
+        return [{ Project: job, FringePercent: 1.2058, OverheadPercent: 0.155, FeePercent: 0.08 }];
       }
       return [];
     });
@@ -562,6 +563,34 @@ describe("procas integration", () => {
     expect(after.fringeRate).toBeCloseTo(120.58, 2);
     expect(after.overheadRate).toBeCloseTo(15.5, 2);
     expect(after.fixedFeeRate).toBeCloseTo(8, 2);
+  });
+
+  it("reference sync never overwrites a manual rate override", async () => {
+    const { syncReferenceFromProcas } = await import("../lib/procasSync");
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const job = `OVR-JOB-${suffix}`;
+    // A biller-owned plan: static override rates entered by hand (source=manual).
+    const [wp] = await db
+      .insert(workPlansTable)
+      .values({ code: `OVR-WP-${suffix}`, title: "Override WP", client: "Client", jobNumber: job, poNumber: "PO", totalBudget: 50000, fringeRate: 120.58, overheadRate: 0, fixedFeeRate: 8, fccmRate: 0.39, source: "manual", procasProject: job })
+      .returning();
+    createdWorkPlanIds.push(wp.id);
+
+    mockOData((table) => {
+      if (table === "Project") return [{ Project: job, ProjectDesc: "Override Project", ContractNumber: "CN-OVR" }];
+      // Procas would push different rates — the manual override must win.
+      if (table === "BillingAccount") return [{ Project: job, OverheadPercent: 1.09, FeePercent: 0.08, FacilitiesPercent: 0 }];
+      return [];
+    });
+
+    await syncReferenceFromProcas(GOOD_CREDS);
+    const [after] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, wp.id));
+    // Untouched: the biller's static override survives the Procas sync.
+    expect(after.fringeRate).toBeCloseTo(120.58, 2);
+    expect(after.overheadRate).toBeCloseTo(0, 2);
+    expect(after.fixedFeeRate).toBeCloseTo(8, 2);
+    expect(after.fccmRate).toBeCloseTo(0.39, 2);
+    expect(after.source).toBe("manual");
   });
 
   it("scheduled cycle skips entirely when Procas is in upload mode", async () => {

@@ -20,8 +20,29 @@ export interface PullHoursResult {
   importedCount: number;
   replacedCount: number;
   weeksCreated: number;
+  // Total hours pulled whose Procas timesheet status is not yet finalized
+  // (i.e. not Approved/Processed/Posted/Locked). Only approved hours may be
+  // exported; the UI surfaces this count in a persistent banner and marks the
+  // corresponding rows red. 0 means every pulled hour is approved.
+  unapprovedHours: number;
   warnings: string[];
   error?: string;
+}
+
+// A Procas Timesheet Status counts as finalized (approved for billing) when it
+// is one of these. Everything else (e.g. "Unsubmitted") is treated as not yet
+// approved. Kept in one place so the warning, the per-entry `approved` flag,
+// and the unapproved-hours tally all agree.
+const FINAL_STATUS_RE = /processed|approved|posted|locked/i;
+
+/** True when every observed status on an aggregated entry is finalized. An
+ * entry with no status at all is treated as approved (nothing signals
+ * otherwise). */
+function statusesApproved(statuses: Set<string>): boolean {
+  for (const s of statuses) {
+    if (!FINAL_STATUS_RE.test(s)) return false;
+  }
+  return true;
 }
 
 function toStr(v: unknown): string {
@@ -53,7 +74,26 @@ function dayColumn(dateISO: string): (typeof DAY_COLUMNS)[number] | null {
   return DAY_COLUMNS[dow];
 }
 
-function normalizeCategory(payCodeDesc: string): string {
+export function normalizeCategory(payCodeDesc: string, accountDesc = ""): string {
+  // Account Desc (Timesheet Col E) is the billable-vs-not source of truth.
+  // G&A, B&P (bid & proposal) and Overhead are indirect accounts that are NEVER
+  // charged to the client — capture them as non-billable PTO (bill $0) rather
+  // than letting them fall through to billable "regular".
+  const acct = accountDesc.toLowerCase();
+  const isIndirect =
+    acct.includes("g&a") ||
+    acct.includes("g & a") ||
+    acct.includes("b&p") ||
+    acct.includes("b & p") ||
+    acct.includes("bid & proposal") ||
+    acct.includes("bid and proposal") ||
+    (acct.includes("overhead") && !acct.includes("direct"));
+  if (isIndirect) return "pto";
+  // Non-direct leave accounts also read as non-billable.
+  if (acct.includes("holiday")) return "holiday";
+  if (acct.includes("sick") || acct.includes("vacation") || acct.includes("pto") || acct.includes("leave"))
+    return "pto";
+
   const v = payCodeDesc.toLowerCase();
   if (v.includes("double") || v.includes("dbl")) return "dt";
   if (v.includes("over") || /\bot\b/.test(v)) return "ot";
@@ -137,7 +177,7 @@ export async function pullPackageHoursFromProcas(
   const project = (workPlan.procasProject ?? "").trim();
   if (!project) {
     return {
-      ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, warnings,
+      ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, unapprovedHours: 0, warnings,
       error: "This work plan is not linked to a Procas project yet. Edit the work plan and pick its Procas project first.",
     };
   }
@@ -152,14 +192,14 @@ export async function pullPackageHoursFromProcas(
     billingItems = await fetchProcasTable(creds, "BillingItem", { filter: projectFilter });
   } catch (e) {
     return {
-      ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, warnings,
+      ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, unapprovedHours: 0, warnings,
       error: e instanceof Error ? e.message : "Failed to pull timesheets from Procas.",
     };
   }
 
   if (tsRows.length === 0) {
     return {
-      ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, warnings,
+      ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, unapprovedHours: 0, warnings,
       error: `Procas has no timesheet hours for project ${project} between ${pkg.payPeriodStart} and ${pkg.payPeriodEnd}. The feed is a daily 6 AM Eastern snapshot, so today's entries appear tomorrow.`,
     };
   }
@@ -182,7 +222,10 @@ export async function pullPackageHoursFromProcas(
       continue;
     }
     const lcItem = toStr(r.LCItem);
-    const category = normalizeCategory(toStr(r.PayCodeDesc) || toStr(r.PayCode));
+    const category = normalizeCategory(
+      toStr(r.PayCodeDesc) || toStr(r.PayCode),
+      toStr(r.AccountDesc),
+    );
     const key = `${weekStart}|${name.toLowerCase()}|${lcItem}|${category}`;
     let entry = agg.get(key);
     if (!entry) {
@@ -209,7 +252,7 @@ export async function pullPackageHoursFromProcas(
   const nonFinal = new Set<string>();
   for (const e of entries) {
     for (const s of e.statuses) {
-      if (!/processed|approved|posted|locked/i.test(s)) nonFinal.add(s);
+      if (!FINAL_STATUS_RE.test(s)) nonFinal.add(s);
     }
   }
   if (nonFinal.size > 0) {
@@ -245,6 +288,9 @@ export async function pullPackageHoursFromProcas(
   const rateChanges = await loadRateChanges(employees.map((e) => e.id));
   const missingRates = new Set<string>();
   const toInsert: InsertTimesheetEntry[] = [];
+  // Running tally of pulled hours whose Procas status is not yet finalized, so
+  // the package API can surface a durable "N hours not yet approved" signal.
+  let unapprovedHours = 0;
   for (const e of entries) {
     const week = weekByStart.get(e.weekStart);
     if (!week) continue;
@@ -258,6 +304,10 @@ export async function pullPackageHoursFromProcas(
       }
     }
     if (rate <= 0) missingRates.add(e.classification || e.employeeName);
+    const approved = statusesApproved(e.statuses);
+    if (!approved) {
+      for (const col of DAY_COLUMNS) unapprovedHours += e.days[col];
+    }
     toInsert.push({
       packageId: pkg.id,
       weekId: week.id,
@@ -269,9 +319,11 @@ export async function pullPackageHoursFromProcas(
       ...e.days,
       rate,
       source: "procas",
+      approved,
       notes: e.lcItem ? `Procas LC ${e.lcItem}` : null,
     });
   }
+  unapprovedHours = Math.round((unapprovedHours + Number.EPSILON) * 100) / 100;
   if (missingRates.size > 0) {
     warnings.push(
       `No billing rate found for: ${[...missingRates].join(", ")} — the rate was left at $0. Set it on the entry or the employee.`,
@@ -303,5 +355,5 @@ export async function pullPackageHoursFromProcas(
     description: `${toInsert.length} timesheet entr${toInsert.length === 1 ? "y" : "ies"} pulled from Procas project ${project} for ${pkg.payPeriodStart} – ${pkg.payPeriodEnd}${replaced.length > 0 ? ` (replaced ${replaced.length})` : ""}`,
   });
 
-  return { ok: true, importedCount: toInsert.length, replacedCount: replaced.length, weeksCreated, warnings };
+  return { ok: true, importedCount: toInsert.length, replacedCount: replaced.length, weeksCreated, unapprovedHours, warnings };
 }

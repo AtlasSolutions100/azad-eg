@@ -141,6 +141,7 @@ export default function WorkPlans() {
       overheadRate: plan.overheadRate ?? undefined,
       fixedFeeRate: plan.fixedFeeRate ?? undefined,
       fccmRate: plan.fccmRate ?? undefined,
+      maxBillRate: plan.maxBillRate ?? undefined,
       billingCycle: plan.billingCycle,
       supplierId: plan.supplierId ?? undefined,
       clientProjectNo: plan.clientProjectNo ?? undefined,
@@ -299,6 +300,10 @@ export default function WorkPlans() {
             <div className="space-y-2">
               <Label>FCCM Rate (%)</Label>
               <Input type="number" step="0.01" value={formData.fccmRate ?? ''} onChange={e => setFormData({...formData, fccmRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Bill Rate ($/hr)</Label>
+              <Input type="number" step="0.01" placeholder="e.g. 115 — leave blank for no cap" value={formData.maxBillRate ?? ''} onChange={e => setFormData({...formData, maxBillRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
             </div>
             <div className="col-span-2 border-t pt-4">
               <p className="text-sm font-medium text-[#333333]">Budget breakdown by cost category (optional)</p>

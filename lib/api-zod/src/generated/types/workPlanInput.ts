@@ -40,6 +40,7 @@ export interface WorkPlanInput {
   overheadRate?: number;
   fixedFeeRate?: number;
   fccmRate?: number;
+  maxBillRate?: number;
   supplierId?: string;
   clientProjectNo?: string;
   sendToCompany?: string;

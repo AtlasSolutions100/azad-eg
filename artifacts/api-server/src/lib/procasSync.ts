@@ -41,6 +41,14 @@ function toStr(v: unknown): string {
   return v == null ? "" : String(v).trim();
 }
 
+// Procas returns indirect percentages as FRACTIONS (0.08 = 8%, 1.2058 =
+// 120.58%, 0.0039 = 0.39%); the schema and billing layer store whole-number
+// percents. Scale by 100 and round to kill binary-float noise (0.555*100 would
+// otherwise be 55.50000000000001).
+function procasPctToPercent(v: unknown): number {
+  return Math.round(toNum(v) * 100 * 1e6) / 1e6;
+}
+
 function normalizeCategory(payCodeDesc: string): ParsedLine["category"] {
   const v = payCodeDesc.toLowerCase();
   if (v.includes("double") || v.includes("dbl")) return "dt";
@@ -140,9 +148,11 @@ export async function fetchBillingRatesFromProcas(
   const acct = accounts[0];
   const proj = projects[0];
   if (!acct && !proj) return null;
+  // Procas returns percentages as fractions (0.08 = 8%); scale to the
+  // whole-number percents the schema/billing layer expect.
   const pct = (v: unknown): number | null => {
     const n = toNum(v);
-    return n > 0 ? n : null;
+    return n > 0 ? procasPctToPercent(v) : null;
   };
   return {
     fringeRate: acct ? pct(acct.FringePercent) : null,
@@ -238,10 +248,20 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
     }
     if (claimed.has(code) || claimed.has(toStr(pr.ContractNumber))) continue;
     const acct = acctByProject.get(code);
-    const fringe = acct ? toNum(acct.FringePercent) : 0;
-    const overhead = acct ? toNum(acct.OverheadPercent) : 0;
-    const fee = acct ? toNum(acct.FeePercent) : 0;
-    const fccm = acct ? toNum(acct.FacilitiesPercent) : 0;
+    // Procas returns indirect percentages as FRACTIONS (0.08 = 8%, 1.2058 =
+    // 120.58%, 0.0039 = 0.39%); the schema/billing store whole-number percents,
+    // so scale by 100. When a billing account exists we set ALL four rates
+    // (including a 0 fringe) so the real Procas burden — which lives entirely in
+    // OverheadPercent for BART — overrides the schema's default fringeRate of
+    // 120.58 instead of double-counting on top of it.
+    const rates = acct
+      ? {
+          fringeRate: procasPctToPercent(acct.FringePercent),
+          overheadRate: procasPctToPercent(acct.OverheadPercent),
+          fixedFeeRate: procasPctToPercent(acct.FeePercent),
+          fccmRate: procasPctToPercent(acct.FacilitiesPercent),
+        }
+      : {};
     // onConflictDoNothing on the partial unique index makes concurrent runs
     // (scheduler cycle vs manual refresh) race-safe.
     const inserted = await db
@@ -255,10 +275,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
         procasProject: code,
         status,
         source: "procas",
-        ...(fringe > 0 ? { fringeRate: fringe } : {}),
-        ...(overhead > 0 ? { overheadRate: overhead } : {}),
-        ...(fee > 0 ? { fixedFeeRate: fee } : {}),
-        ...(fccm > 0 ? { fccmRate: fccm } : {}),
+        ...rates,
       })
       .onConflictDoNothing()
       .returning({ id: workPlansTable.id });
@@ -364,17 +381,28 @@ export async function syncReferenceFromProcas(creds: ProcasCreds): Promise<Refer
   const workPlans = await db.select().from(workPlansTable);
   let workPlansUpdated = 0;
   for (const wp of workPlans) {
+    // Never stomp a biller-owned plan: once someone enters a static rate
+    // override (which flips source to "manual"), Procas must not overwrite it.
+    // Only "procas"-sourced plans track the Procas Billing Account. (Per the
+    // documented work-plan ownership rule.)
+    if (wp.source !== "procas") continue;
     const proj = projByCode.get(wp.jobNumber.trim());
     if (!proj) continue;
     const acct = acctByProject.get(toStr(proj.Project));
     if (!acct) continue;
     const changes: Partial<typeof workPlansTable.$inferInsert> = {};
-    const fringe = toNum(acct.FringePercent);
-    const overhead = toNum(acct.OverheadPercent);
-    const fee = toNum(acct.FeePercent);
-    if (fringe > 0 && fringe !== wp.fringeRate) changes.fringeRate = fringe;
-    if (overhead > 0 && overhead !== wp.overheadRate) changes.overheadRate = overhead;
-    if (fee > 0 && fee !== wp.fixedFeeRate) changes.fixedFeeRate = fee;
+    // Procas percentages are fractions; scale to whole-number percents. Sync all
+    // four unconditionally (a Procas billing account is authoritative) so a 0
+    // fringe overrides the schema's 120.58 default rather than double-counting
+    // with OverheadPercent, where BART's real burden lives.
+    const fringe = procasPctToPercent(acct.FringePercent);
+    const overhead = procasPctToPercent(acct.OverheadPercent);
+    const fee = procasPctToPercent(acct.FeePercent);
+    const fccm = procasPctToPercent(acct.FacilitiesPercent);
+    if (fringe !== wp.fringeRate) changes.fringeRate = fringe;
+    if (overhead !== wp.overheadRate) changes.overheadRate = overhead;
+    if (fee !== wp.fixedFeeRate) changes.fixedFeeRate = fee;
+    if (fccm !== wp.fccmRate) changes.fccmRate = fccm;
     if (Object.keys(changes).length > 0) {
       await db.update(workPlansTable).set(changes).where(eq(workPlansTable.id, wp.id));
       workPlansUpdated += 1;

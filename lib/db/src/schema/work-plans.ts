@@ -26,6 +26,10 @@ export const workPlansTable = pgTable("work_plans", {
   overheadRate: doublePrecision("overhead_rate"),
   fixedFeeRate: doublePrecision("fixed_fee_rate").notNull().default(8),
   fccmRate: doublePrecision("fccm_rate"),
+  // Max billable rate per hour. When set, any employee whose billing rate
+  // exceeds this cap is billed at the cap (a contract's "Bill Rate Override" /
+  // Max Rate Cap, e.g. $115/hr). Null = no cap.
+  maxBillRate: doublePrecision("max_bill_rate"),
   // Cover-page header fields for the client-facing invoice (BART/AECOM).
   supplierId: text("supplier_id"),
   clientProjectNo: text("client_project_no"),

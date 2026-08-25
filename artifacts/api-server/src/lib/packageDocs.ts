@@ -838,6 +838,15 @@ function buildOverviewSheet(wb: ExcelJS.Workbook, ctx: PackageDocContext): void 
  * scrubbed of internal notes/highlights.
  */
 export async function generateCombinedWorkbook(ctx: PackageDocContext): Promise<string> {
+  // Route by prime contractor: WSP- and T.Y. Lin-format packages use their own
+  // invoice engines; AECOM (and everything else) fall back to the
+  // master/reference engine.
+  const { isWspPrime, generateWspWorkbookFile } = await import("./wspWorkbook");
+  if (isWspPrime(ctx.pkg)) return generateWspWorkbookFile(ctx);
+  const { isTylinPrime, generateTylinWorkbookFile } = await import("./tylinWorkbook");
+  if (isTylinPrime(ctx.pkg)) return generateTylinWorkbookFile(ctx);
+  const { isParsonsPrime, generateParsonsWorkbookFile } = await import("./parsonsWorkbook");
+  if (isParsonsPrime(ctx.pkg)) return generateParsonsWorkbookFile(ctx);
   const { generateMasterWorkbookFile } = await import("./masterWorkbook");
   return generateMasterWorkbookFile(ctx);
 }
@@ -854,10 +863,22 @@ export async function generateCombinedWorkbook(ctx: PackageDocContext): Promise<
  */
 export async function generateMergedPdf(ctx: PackageDocContext): Promise<string> {
   ensureDirs();
+  // Route by prime contractor (see generateCombinedWorkbook): WSP-format
+  // packages render from the WSP engine, AECOM/others from the master engine.
+  const { isWspPrime, generateWspPdfSource } = await import("./wspWorkbook");
+  const { isTylinPrime, generateTylinPdfSource } = await import("./tylinWorkbook");
+  const { isParsonsPrime, generateParsonsPdfSource } = await import("./parsonsWorkbook");
   const { generateMasterPdfSource } = await import("./masterWorkbook");
+  const buildPdfSource = isWspPrime(ctx.pkg)
+    ? generateWspPdfSource
+    : isTylinPrime(ctx.pkg)
+      ? generateTylinPdfSource
+      : isParsonsPrime(ctx.pkg)
+        ? generateParsonsPdfSource
+        : generateMasterPdfSource;
   const intermediates: string[] = [];
   try {
-    const src = await generateMasterPdfSource(ctx);
+    const src = await buildPdfSource(ctx);
     intermediates.push(src);
     const pdf = await convertToPdf(src);
     const outPath = path.resolve(generatedDir, `InvoicePackage_${safeSlug(ctx)}_${Date.now()}.pdf`);

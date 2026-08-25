@@ -50,13 +50,15 @@ const PROJECT_ROWS = [
   },
 ];
 
+// Procas returns percentages as FRACTIONS (0.555 = 55.5%); the import scales
+// them ×100 into the whole-number percents asserted below.
 const BILLING_ACCOUNT_ROWS = [
   {
     Project: "90001",
-    FringePercent: 55.5,
-    OverheadPercent: 90.25,
-    FeePercent: 10,
-    FacilitiesPercent: 0.5,
+    FringePercent: 0.555,
+    OverheadPercent: 0.9025,
+    FeePercent: 0.1,
+    FacilitiesPercent: 0.005,
   },
 ];
 

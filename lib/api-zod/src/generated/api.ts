@@ -102,6 +102,7 @@ export const ListWorkPlansResponseItem = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "maxBillRate": zod.number().nullish().describe('Max billable rate\/hr; rates above this are billed at the cap. Null = no cap.'),
   "supplierId": zod.string().nullish(),
   "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
   "sendToCompany": zod.string().nullish(),
@@ -148,6 +149,7 @@ export const CreateWorkPlanBody = zod.object({
   "overheadRate": zod.number().optional(),
   "fixedFeeRate": zod.number().optional(),
   "fccmRate": zod.number().optional(),
+  "maxBillRate": zod.number().optional(),
   "supplierId": zod.string().optional(),
   "clientProjectNo": zod.string().optional(),
   "sendToCompany": zod.string().optional(),
@@ -182,6 +184,7 @@ export const CreateWorkPlanResponse = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "maxBillRate": zod.number().nullish().describe('Max billable rate\/hr; rates above this are billed at the cap. Null = no cap.'),
   "supplierId": zod.string().nullish(),
   "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
   "sendToCompany": zod.string().nullish(),
@@ -226,6 +229,7 @@ export const GetWorkPlanResponse = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "maxBillRate": zod.number().nullish().describe('Max billable rate\/hr; rates above this are billed at the cap. Null = no cap.'),
   "supplierId": zod.string().nullish(),
   "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
   "sendToCompany": zod.string().nullish(),
@@ -275,6 +279,7 @@ export const UpdateWorkPlanBody = zod.object({
   "overheadRate": zod.number().optional(),
   "fixedFeeRate": zod.number().optional(),
   "fccmRate": zod.number().optional(),
+  "maxBillRate": zod.number().optional(),
   "supplierId": zod.string().optional(),
   "clientProjectNo": zod.string().optional(),
   "sendToCompany": zod.string().optional(),
@@ -310,6 +315,7 @@ export const UpdateWorkPlanResponse = zod.object({
   "overheadRate": zod.number().nullish(),
   "fixedFeeRate": zod.number(),
   "fccmRate": zod.number().nullish(),
+  "maxBillRate": zod.number().nullish().describe('Max billable rate\/hr; rates above this are billed at the cap. Null = no cap.'),
   "supplierId": zod.string().nullish(),
   "clientProjectNo": zod.string().nullish().describe('Client-side project number (e.g. AECOM Project No.).'),
   "sendToCompany": zod.string().nullish(),
@@ -1757,6 +1763,7 @@ export const ListPackagesResponseItem = zod.object({
   "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
   "weekCount": zod.number(),
   "totalHours": zod.number(),
+  "unapprovedHours": zod.number().describe('Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent \"N hours not yet approved\" banner and the export guard. 0 when every hour is approved. Display\/guard only — not part of any billing total.'),
   "totalThisPeriod": zod.number(),
   "budgetStatus": zod.object({
   "level": zod.enum(['ok', 'approaching', 'over']),
@@ -1786,8 +1793,9 @@ export const CreatePackageBody = zod.object({
   "overheadRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
   "fixedFeeRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
   "fccmRate": zod.number().optional().describe('Override %, wins over work plan \/ Procas.'),
-  "payPeriodStart": zod.string(),
-  "payPeriodEnd": zod.string(),
+  "payPeriodStart": zod.string().optional().describe('Service-period start (YYYY-MM-DD). Optional when billingMonth is given, in which case it is derived from the work plan\'s billing cycle.'),
+  "payPeriodEnd": zod.string().optional().describe('Service-period end (YYYY-MM-DD). Optional when billingMonth is given.'),
+  "billingMonth": zod.string().optional().describe('Service month as YYYY-MM. When payPeriodStart\/payPeriodEnd are omitted, the period is derived from this month and the work plan\'s billing cycle (whole_month or last_friday, incl. the June-30 rule).'),
   "invoiceNumber": zod.string().optional(),
   "invoiceDate": zod.string().optional(),
   "previouslyBilled": zod.number().optional(),
@@ -1836,6 +1844,7 @@ export const CreatePackageResponse = zod.object({
   "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
   "weekCount": zod.number(),
   "totalHours": zod.number(),
+  "unapprovedHours": zod.number().describe('Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent \"N hours not yet approved\" banner and the export guard. 0 when every hour is approved. Display\/guard only — not part of any billing total.'),
   "totalThisPeriod": zod.number(),
   "budgetStatus": zod.object({
   "level": zod.enum(['ok', 'approaching', 'over']),
@@ -1900,6 +1909,7 @@ export const ListPackagesGroupedResponseItem = zod.object({
   "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
   "weekCount": zod.number(),
   "totalHours": zod.number(),
+  "unapprovedHours": zod.number().describe('Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent \"N hours not yet approved\" banner and the export guard. 0 when every hour is approved. Display\/guard only — not part of any billing total.'),
   "totalThisPeriod": zod.number(),
   "budgetStatus": zod.object({
   "level": zod.enum(['ok', 'approaching', 'over']),
@@ -1965,6 +1975,7 @@ export const GetPackageResponse = zod.object({
   "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
   "weekCount": zod.number(),
   "totalHours": zod.number(),
+  "unapprovedHours": zod.number().describe('Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent \"N hours not yet approved\" banner and the export guard. 0 when every hour is approved. Display\/guard only — not part of any billing total.'),
   "totalThisPeriod": zod.number(),
   "budgetStatus": zod.object({
   "level": zod.enum(['ok', 'approaching', 'over']),
@@ -2028,6 +2039,7 @@ export const GetPackageResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "source": zod.enum(['manual', 'procas']),
+  "approved": zod.boolean().describe('Whether the Procas timesheet hours behind this entry are approved (Status = Approved\/Processed\/Posted\/Locked). Manual entries are always true. Unapproved rows are shown in red and block final export.'),
   "taskNo": zod.string().nullish(),
   "notes": zod.string().nullish()
 })),
@@ -2173,6 +2185,7 @@ export const UpdatePackageResponse = zod.object({
   "timesheetsDocStatus": zod.enum(['not_started', 'in_progress', 'ready']),
   "weekCount": zod.number(),
   "totalHours": zod.number(),
+  "unapprovedHours": zod.number().describe('Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent \"N hours not yet approved\" banner and the export guard. 0 when every hour is approved. Display\/guard only — not part of any billing total.'),
   "totalThisPeriod": zod.number(),
   "budgetStatus": zod.object({
   "level": zod.enum(['ok', 'approaching', 'over']),
@@ -2345,6 +2358,7 @@ export const CreateTimesheetEntryResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "source": zod.enum(['manual', 'procas']),
+  "approved": zod.boolean().describe('Whether the Procas timesheet hours behind this entry are approved (Status = Approved\/Processed\/Posted\/Locked). Manual entries are always true. Unapproved rows are shown in red and block final export.'),
   "taskNo": zod.string().nullish(),
   "notes": zod.string().nullish()
 })
@@ -2401,6 +2415,7 @@ export const UpdateTimesheetEntryResponse = zod.object({
   "rate": zod.number(),
   "amount": zod.number(),
   "source": zod.enum(['manual', 'procas']),
+  "approved": zod.boolean().describe('Whether the Procas timesheet hours behind this entry are approved (Status = Approved\/Processed\/Posted\/Locked). Manual entries are always true. Unapproved rows are shown in red and block final export.'),
   "taskNo": zod.string().nullish(),
   "notes": zod.string().nullish()
 })
@@ -2724,6 +2739,10 @@ export const ReplaceBilledLineItemsResponse = zod.object({
  */
 export const ExportPackageParams = zod.object({
   "id": zod.coerce.number()
+})
+
+export const ExportPackageBody = zod.object({
+  "allowUnapproved": zod.boolean().optional().describe('Export even though some hours are not yet approved in Procas. Without this the export is blocked with a 409 so a human can review first.')
 })
 
 export const ExportPackageResponse = zod.object({

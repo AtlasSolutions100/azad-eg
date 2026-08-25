@@ -1571,6 +1571,12 @@ paths:
       summary: Generate all five documents and bundle them as a ZIP
       parameters:
         - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportOptions"
       responses:
         "200":
           description: Export bundle
@@ -1578,6 +1584,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PackageExport"
+        "409":
+          description: Unapproved hours block the export unless allowUnapproved is set.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, code, unapprovedHours]
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                  unapprovedHours:
+                    type: number
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -1664,6 +1684,7 @@ components:
         overheadRate: { type: ["number", "null"] }
         fixedFeeRate: { type: number }
         fccmRate: { type: ["number", "null"] }
+        maxBillRate: { type: ["number", "null"], description: "Max billable rate/hr; rates above this are billed at the cap. Null = no cap." }
         supplierId: { type: ["string", "null"] }
         clientProjectNo:
           type: ["string", "null"]
@@ -1708,6 +1729,7 @@ components:
         overheadRate: { type: number }
         fixedFeeRate: { type: number }
         fccmRate: { type: number }
+        maxBillRate: { type: number }
         supplierId: { type: string }
         clientProjectNo: { type: string }
         sendToCompany: { type: string }
@@ -1743,6 +1765,7 @@ components:
         overheadRate: { type: number }
         fixedFeeRate: { type: number }
         fccmRate: { type: number }
+        maxBillRate: { type: number }
         supplierId: { type: string }
         clientProjectNo: { type: string }
         sendToCompany: { type: string }
@@ -2257,6 +2280,14 @@ components:
         url: { type: string }
         filename: { type: string }
         format: { type: string }
+    ExportOptions:
+      type: object
+      properties:
+        allowUnapproved:
+          type: boolean
+          description: >-
+            Export even though some hours are not yet approved in Procas. Without
+            this the export is blocked with a 409 so a human can review first.
     PackageExport:
       type: object
       required: [url, filename, documentCount, documents]
@@ -2550,6 +2581,7 @@ components:
         - timesheetsDocStatus
         - weekCount
         - totalHours
+        - unapprovedHours
         - totalThisPeriod
         - budgetStatus
         - createdAt
@@ -2619,6 +2651,13 @@ components:
           $ref: "#/components/schemas/DocStatus"
         weekCount: { type: integer }
         totalHours: { type: number }
+        unapprovedHours:
+          type: number
+          description: >-
+            Total pulled hours whose Procas timesheet status is not yet approved.
+            Drives the persistent "N hours not yet approved" banner and the
+            export guard. 0 when every hour is approved. Display/guard only — not
+            part of any billing total.
         totalThisPeriod: { type: number }
         budgetStatus:
           $ref: "#/components/schemas/BudgetStatus"
@@ -2639,7 +2678,6 @@ components:
           description: Straight-time labor (hours x rate) before burden.
     PackageInput:
       type: object
-      required: [payPeriodStart, payPeriodEnd]
       properties:
         employeeId:
           type: integer
@@ -2667,8 +2705,20 @@ components:
         overheadRate: { type: number, description: "Override %, wins over work plan / Procas." }
         fixedFeeRate: { type: number, description: "Override %, wins over work plan / Procas." }
         fccmRate: { type: number, description: "Override %, wins over work plan / Procas." }
-        payPeriodStart: { type: string }
-        payPeriodEnd: { type: string }
+        payPeriodStart:
+          type: string
+          description: >-
+            Service-period start (YYYY-MM-DD). Optional when billingMonth is
+            given, in which case it is derived from the work plan's billing cycle.
+        payPeriodEnd:
+          type: string
+          description: Service-period end (YYYY-MM-DD). Optional when billingMonth is given.
+        billingMonth:
+          type: string
+          description: >-
+            Service month as YYYY-MM. When payPeriodStart/payPeriodEnd are
+            omitted, the period is derived from this month and the work plan's
+            billing cycle (whole_month or last_friday, incl. the June-30 rule).
         invoiceNumber: { type: string }
         invoiceDate: { type: string }
         previouslyBilled: { type: number }
@@ -2843,6 +2893,7 @@ components:
         - rate
         - amount
         - source
+        - approved
       properties:
         id: { type: integer }
         packageId: { type: integer }
@@ -2868,6 +2919,12 @@ components:
         source:
           type: string
           enum: [manual, procas]
+        approved:
+          type: boolean
+          description: >-
+            Whether the Procas timesheet hours behind this entry are approved
+            (Status = Approved/Processed/Posted/Locked). Manual entries are
+            always true. Unapproved rows are shown in red and block final export.
         taskNo: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
     TimesheetCategory:

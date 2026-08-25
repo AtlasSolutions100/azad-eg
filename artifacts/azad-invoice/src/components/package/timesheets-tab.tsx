@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, DownloadCloud, Edit, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarPlus, DownloadCloud, Edit, Loader2, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCurrency, formatHours } from "@/lib/package-ui";
 
@@ -239,8 +239,28 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
     }
   };
 
+  const unapprovedHours = pkg.unapprovedHours ?? 0;
+
   return (
     <div className="space-y-6">
+      {unapprovedHours > 0 && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <div>
+            <p className="font-semibold">
+              {formatHours(unapprovedHours)} hours are not yet approved in Procas
+            </p>
+            <p className="mt-0.5 text-red-700">
+              Unapproved hours are shown in red below. Only approved hours should be
+              exported — re-pull from Procas once the timesheets are approved, or
+              confirm the override when generating the final invoice.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <p className="text-sm text-[#5F5F5F]">
           Weekly timesheets backing the labor detail. Add weeks and per-employee
@@ -328,8 +348,24 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
                     </TableRow>
                   ) : (
                     wkEntries.map((entry) => (
-                      <TableRow key={entry.id}>
+                      <TableRow
+                        key={entry.id}
+                        className={
+                          entry.approved === false ? "bg-red-50 text-red-700" : undefined
+                        }
+                        title={
+                          entry.approved === false
+                            ? "These hours are not yet approved in Procas and should not be exported."
+                            : undefined
+                        }
+                      >
                         <TableCell className="font-medium">
+                          {entry.approved === false && (
+                            <AlertTriangle
+                              className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-red-600"
+                              aria-label="Not approved in Procas"
+                            />
+                          )}
                           {entry.employeeName}
                         </TableCell>
                         <TableCell>{entry.classification}</TableCell>

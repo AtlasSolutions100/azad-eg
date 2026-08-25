@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import path from "node:path";
-import { eq, and, asc, desc, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, isNotNull } from "drizzle-orm";
 import {
   db,
   packagesTable,
@@ -76,7 +76,9 @@ import { resolveSignaturePath } from "../lib/excel";
 import { evaluateBudgetStatus } from "../lib/financials";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import { fetchPreviouslyBilledFromProcas, fetchBillingRatesFromProcas } from "../lib/procasSync";
-import { effectiveWorkPlan } from "../lib/billingProfile";
+import { effectiveWorkPlan, cappedBillRate } from "../lib/billingProfile";
+import { deriveBillingPeriod, type BillingCycle } from "../lib/billingPeriod";
+import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
@@ -123,14 +125,26 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     if (sig) signatureImagePath = resolveSignaturePath(sig.imageUrl);
   }
 
+  // Packages may not have a work plan yet — documents then render with the
+  // package-level billing profile and blank contract fields.
+  const view = effectiveWorkPlan(pkg, wp);
+  // Apply the Max Bill Rate cap once, here, so every export engine bills capped
+  // rates without each re-implementing it. (The on-screen rollup caps too.)
+  const cappedEntries = entries.map((e) => ({
+    ...e,
+    rate: cappedBillRate(e.rate, view.maxBillRate),
+  }));
+
   return {
+    // `pkg` is the full packages row, so it carries `prime` (e.g. "WSP",
+    // "AECOM"). The document generators (generateCombinedWorkbook /
+    // generateMergedPdf) read `ctx.pkg.prime` to pick the WSP vs AECOM engine,
+    // so it must flow through here unchanged.
     pkg,
     employee: emp ? { name: emp.name, classification: emp.classification } : null,
-    // Packages may not have a work plan yet — documents then render with the
-    // package-level billing profile and blank contract fields.
-    workPlan: effectiveWorkPlan(pkg, wp),
+    workPlan: view,
     weeks,
-    entries,
+    entries: cappedEntries,
     progress: progressRows[0] ?? null,
     overrides,
     signatureImagePath,
@@ -235,6 +249,47 @@ router.post("/packages", async (req, res): Promise<void> => {
   }
   const billingJob = wp ? wp.jobNumber.trim() : procasProject;
 
+  // Resolve the service period. Explicit dates always win; otherwise derive
+  // them from `billingMonth` (YYYY-MM) and the work plan's billing cycle, so the
+  // biller can create a package for "May 2026" without hand-typing the Sat→Fri
+  // boundary dates.
+  let payPeriodStart = parsed.data.payPeriodStart;
+  let payPeriodEnd = parsed.data.payPeriodEnd;
+  if (!payPeriodStart || !payPeriodEnd) {
+    const bm = parsed.data.billingMonth?.trim();
+    if (!bm || !/^\d{4}-\d{2}$/.test(bm)) {
+      res.status(400).json({
+        error:
+          "Provide payPeriodStart and payPeriodEnd, or a billingMonth (YYYY-MM) to derive the service period.",
+      });
+      return;
+    }
+    const [y, mo] = bm.split("-").map(Number);
+    const cycle: BillingCycle = wp?.billingCycle === "last_friday" ? "last_friday" : "whole_month";
+    const period = deriveBillingPeriod(y, mo, cycle);
+    payPeriodStart = payPeriodStart || period.start;
+    payPeriodEnd = payPeriodEnd || period.end;
+  }
+
+  // Invoice number: keep an explicit value; otherwise auto-suggest the next one
+  // by bumping the trailing number on the work plan's most recent invoice
+  // (prefix stays constant, suffix increments). The biller can still edit it.
+  let invoiceNumber = parsed.data.invoiceNumber;
+  if (!invoiceNumber && parsed.data.workPlanId != null) {
+    const [prev] = await db
+      .select({ n: packagesTable.invoiceNumber })
+      .from(packagesTable)
+      .where(
+        and(
+          eq(packagesTable.workPlanId, parsed.data.workPlanId),
+          isNotNull(packagesTable.invoiceNumber),
+        ),
+      )
+      .orderBy(desc(packagesTable.createdAt))
+      .limit(1);
+    invoiceNumber = bumpInvoiceNumber(prev?.n) ?? invoiceNumber;
+  }
+
   const conn = await getProcasConnection().catch(() => null);
   const creds = conn?.connected ? credsFromConnection(conn) : null;
 
@@ -282,7 +337,7 @@ router.post("/packages", async (req, res): Promise<void> => {
         const fromProcas = await fetchPreviouslyBilledFromProcas(
           creds,
           billingJob,
-          parsed.data.payPeriodStart,
+          payPeriodStart,
         );
         // BillingHistory is authoritative — including a legitimate $0.
         previouslyBilled = fromProcas;
@@ -309,9 +364,9 @@ router.post("/packages", async (req, res): Promise<void> => {
         overheadRate: overheadRate ?? null,
         fixedFeeRate: fixedFeeRate ?? null,
         fccmRate: fccmRate ?? null,
-        payPeriodStart: parsed.data.payPeriodStart,
-        payPeriodEnd: parsed.data.payPeriodEnd,
-        invoiceNumber: parsed.data.invoiceNumber,
+        payPeriodStart,
+        payPeriodEnd,
+        invoiceNumber,
         invoiceDate: parsed.data.invoiceDate,
         previouslyBilled,
         previouslyBilledSource,
@@ -1309,6 +1364,28 @@ router.post("/packages/:id/export", async (req, res): Promise<void> => {
     res.status(422).json({ error: "Fix these issues before exporting.", issues: blockers });
     return;
   }
+
+  // Approval gate: hours pulled from Procas before a supervisor signs off carry
+  // approved=false. They may be previewed, but the FINAL export is blocked until
+  // the biller explicitly confirms ("run anyway") by resending with
+  // allowUnapproved=true. This keeps a human in the loop over unapproved billing.
+  const unapprovedHoursRaw = entries.reduce(
+    (s, e) =>
+      e.approved
+        ? s
+        : s + e.hoursMon + e.hoursTue + e.hoursWed + e.hoursThu + e.hoursFri + e.hoursSat + e.hoursSun,
+    0,
+  );
+  const unapprovedHours = Math.round((unapprovedHoursRaw + Number.EPSILON) * 100) / 100;
+  const allowUnapproved = req.body?.allowUnapproved === true;
+  if (unapprovedHours > 0 && !allowUnapproved) {
+    res.status(409).json({
+      error: `${unapprovedHours} hour(s) on this package are not yet approved in Procas. Review them, or export anyway to proceed.`,
+      code: "UNAPPROVED_HOURS",
+      unapprovedHours,
+    });
+    return;
+  }
   // ─────────────────────────────────────────────────────────────────────────
 
   const ctx = await buildDocContext(id);
@@ -1331,10 +1408,12 @@ router.post("/packages/:id/export", async (req, res): Promise<void> => {
     })
     .where(eq(packagesTable.id, id));
   await recordAudit({
-    action: "exported package",
+    action: unapprovedHours > 0 ? "exported package (unapproved hours overridden)" : "exported package",
     entityType: "package",
     entityId: id,
-    description: `ZIP ${result.zipName} (${result.documents.length} files)`,
+    description:
+      `ZIP ${result.zipName} (${result.documents.length} files)` +
+      (unapprovedHours > 0 ? ` — exported with ${unapprovedHours} unapproved hour(s) by explicit override` : ""),
   });
 
   res.json(

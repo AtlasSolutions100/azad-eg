@@ -88,6 +88,11 @@ export interface WorkPlan {
   fixedFeeRate: number;
   /** @nullable */
   fccmRate?: number | null;
+  /**
+     * Max billable rate/hr; rates above this are billed at the cap. Null = no cap.
+     * @nullable
+     */
+  maxBillRate?: number | null;
   /** @nullable */
   supplierId?: string | null;
   /**
@@ -158,6 +163,7 @@ export interface WorkPlanInput {
   overheadRate?: number;
   fixedFeeRate?: number;
   fccmRate?: number;
+  maxBillRate?: number;
   supplierId?: string;
   clientProjectNo?: string;
   sendToCompany?: string;
@@ -220,6 +226,7 @@ export interface WorkPlanUpdate {
   overheadRate?: number;
   fixedFeeRate?: number;
   fccmRate?: number;
+  maxBillRate?: number;
   supplierId?: string;
   clientProjectNo?: string;
   sendToCompany?: string;
@@ -760,6 +767,11 @@ export interface GeneratedFile {
   format: string;
 }
 
+export interface ExportOptions {
+  /** Export even though some hours are not yet approved in Procas. Without this the export is blocked with a 409 so a human can review first. */
+  allowUnapproved?: boolean;
+}
+
 export type PackageExportDocumentsItem = {
   doc: string;
   filename: string;
@@ -1144,6 +1156,8 @@ export interface PackageSummary {
   timesheetsDocStatus: DocStatus;
   weekCount: number;
   totalHours: number;
+  /** Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent "N hours not yet approved" banner and the export guard. 0 when every hour is approved. Display/guard only — not part of any billing total. */
+  unapprovedHours: number;
   totalThisPeriod: number;
   budgetStatus: BudgetStatus;
   createdAt: string;
@@ -1173,8 +1187,12 @@ export interface PackageInput {
   fixedFeeRate?: number;
   /** Override %, wins over work plan / Procas. */
   fccmRate?: number;
-  payPeriodStart: string;
-  payPeriodEnd: string;
+  /** Service-period start (YYYY-MM-DD). Optional when billingMonth is given, in which case it is derived from the work plan's billing cycle. */
+  payPeriodStart?: string;
+  /** Service-period end (YYYY-MM-DD). Optional when billingMonth is given. */
+  payPeriodEnd?: string;
+  /** Service month as YYYY-MM. When payPeriodStart/payPeriodEnd are omitted, the period is derived from this month and the work plan's billing cycle (whole_month or last_friday, incl. the June-30 rule). */
+  billingMonth?: string;
   invoiceNumber?: string;
   invoiceDate?: string;
   previouslyBilled?: number;
@@ -1370,6 +1388,8 @@ export interface TimesheetEntry {
   rate: number;
   amount: number;
   source: TimesheetEntrySource;
+  /** Whether the Procas timesheet hours behind this entry are approved (Status = Approved/Processed/Posted/Locked). Manual entries are always true. Unapproved rows are shown in red and block final export. */
+  approved: boolean;
   /** @nullable */
   taskNo?: string | null;
   /** @nullable */
@@ -1644,5 +1664,11 @@ export type ListPackagesParams = {
 employeeId?: number;
 workPlanId?: number;
 status?: string;
+};
+
+export type ExportPackage409 = {
+  error: string;
+  code: string;
+  unapprovedHours: number;
 };
 

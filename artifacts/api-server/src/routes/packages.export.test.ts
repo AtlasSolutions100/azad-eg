@@ -359,34 +359,42 @@ describe("POST /api/packages/:id/export", () => {
   );
 
   it(
-    "a package with no weeks exports no timesheet tabs and no template placeholder",
+    "blocks export of a package with no billing weeks",
     async () => {
-      const ExcelJS = (await import("exceljs")).default;
-      const { PDFDocument } = await import("pdf-lib");
+      // A package with no billing weeks (and therefore no labor) cannot be
+      // invoiced: the export route rejects it with a 422 pre-flight blocker,
+      // consistent with the validations endpoint which flags the same as an
+      // error. (Previously this asserted a successful no-timesheet export, but
+      // the route has always blocked it — an ODC-only invoice would need a
+      // deliberate design change to support.)
       const pkgId = await seedPackage("approved", { withWeeks: false });
-
-      const before = new Set(fs.readdirSync(generatedDir));
       const res = await request(app).post(`/api/packages/${pkgId}/export`).send({});
-      expect(res.status).toBe(200);
-      expect(res.body.documentCount).toBe(2);
+      expect(res.status).toBe(422);
+      expect(res.body.issues).toContain("Package has no billing weeks.");
+    },
+    120000,
+  );
 
-      // Intermediate combined files are deleted after zipping; only the ZIP remains.
-      const fresh = fs.readdirSync(generatedDir).filter((f) => !before.has(f));
-      expect(fresh.filter((f) => f.startsWith("InvoicePackage_"))).toHaveLength(0);
+  it(
+    "blocks export on unapproved hours, then allows it with an explicit override",
+    async () => {
+      const pkgId = await seedPackage("approved");
+      // Simulate Procas hours pulled before supervisor sign-off.
+      await db
+        .update(timesheetEntriesTable)
+        .set({ approved: false })
+        .where(eq(timesheetEntriesTable.packageId, pkgId));
 
-      const zipPath = path.resolve(generatedDir, res.body.filename);
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(readZipEntry(zipPath, "_InvoicePackage.xlsx") as unknown as Parameters<typeof wb.xlsx.load>[0]);
-      expect(wb.worksheets.map((ws) => ws.name)).toEqual([
-        "Overview",
-        "Invoice",
-        "Sub Calc",
-        "Labor Attachment",
-        "Progress Report",
-      ]);
+      const blocked = await request(app).post(`/api/packages/${pkgId}/export`).send({});
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.code).toBe("UNAPPROVED_HOURS");
+      expect(blocked.body.unapprovedHours).toBeGreaterThan(0);
 
-      const pdf = await PDFDocument.load(readZipEntry(zipPath, "_InvoicePackage.pdf"));
-      expect(pdf.getPageCount()).toBeGreaterThan(0);
+      const ok = await request(app)
+        .post(`/api/packages/${pkgId}/export`)
+        .send({ allowUnapproved: true });
+      expect(ok.status).toBe(200);
+      expect(ok.body.documentCount).toBe(2);
     },
     120000,
   );

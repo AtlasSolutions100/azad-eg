@@ -53,3 +53,11 @@ artifacts/azad-invoice/playwright-report/
 # Runtime storage: generated exports and uploaded files must never be committed
 artifacts/api-server/storage/generated/
 artifacts/api-server/storage/uploads/
+
+# Local dev (off Replit): launcher scripts + env with secrets, config backups
+/local/
+*.replit-backup
+.env
+.env.*
+# Local tooling runtime (vscode-server, LibreOffice profile, npm cache) — never commit
+/.config/

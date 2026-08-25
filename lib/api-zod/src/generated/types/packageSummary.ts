@@ -101,6 +101,8 @@ export interface PackageSummary {
   timesheetsDocStatus: DocStatus;
   weekCount: number;
   totalHours: number;
+  /** Total pulled hours whose Procas timesheet status is not yet approved. Drives the persistent "N hours not yet approved" banner and the export guard. 0 when every hour is approved. Display/guard only — not part of any billing total. */
+  unapprovedHours: number;
   totalThisPeriod: number;
   budgetStatus: BudgetStatus;
   createdAt: string;

@@ -264,35 +264,74 @@ let sofficeBin: string | null = null;
 
 function resolveSoffice(): string {
   if (sofficeBin) return sofficeBin;
+  // 1. Explicit override — an absolute path to soffice(.exe). Lets a machine
+  // without a system-wide install (e.g. a portable or msiexec-extracted
+  // LibreOffice) point the server straight at the binary.
+  const override = process.env.SOFFICE_BIN;
+  if (override && fs.existsSync(override)) {
+    sofficeBin = override;
+    return override;
+  }
+  // 2. On PATH (Linux/Replit, or a normal install that registered PATH).
   const candidates = ["soffice", "libreoffice"];
+  const whichCmd = process.platform === "win32" ? "where" : "which";
   for (const c of candidates) {
     try {
-      execFileSync("which", [c], { stdio: "ignore" });
+      execFileSync(whichCmd, [c], { stdio: "ignore" });
       sofficeBin = c;
       return c;
     } catch {
       // not found on PATH, try next candidate
     }
   }
+  // 3. Common Windows install locations (system-wide MSI installs).
+  if (process.platform === "win32") {
+    const guesses = [
+      "C:/Program Files/LibreOffice/program/soffice.exe",
+      "C:/Program Files (x86)/LibreOffice/program/soffice.exe",
+    ];
+    for (const g of guesses) {
+      if (fs.existsSync(g)) {
+        sofficeBin = g;
+        return g;
+      }
+    }
+  }
   sofficeBin = "soffice";
   return sofficeBin;
 }
 
-/**
- * Converts an .xlsx file to PDF using headless LibreOffice. LibreOffice
- * recalculates formulas on load, so the populated template renders with
- * correct computed values. Returns the path to the generated PDF.
- */
-export async function convertToPdf(xlsxPath: string): Promise<string> {
+// LibreOffice needs a writable user profile. Building a fresh one on every
+// call forces a slow first-run initialization each time (which on Windows can
+// exceed the timeout and hang), so we reuse a single persistent profile via
+// -env:UserInstallation. A shared profile can't be driven by two headless
+// instances at once, so conversions run one at a time through this in-process
+// queue. Override the location with SOFFICE_PROFILE_DIR if needed.
+let pdfQueue: Promise<unknown> = Promise.resolve();
+
+function userInstallationUrl(): string {
+  const dir = process.env.SOFFICE_PROFILE_DIR || path.join(os.tmpdir(), "azad-lo-profile");
+  fs.mkdirSync(dir, { recursive: true });
+  // file:// URL with forward slashes. Windows paths keep their drive letter
+  // after the three slashes (file:///C:/...); POSIX paths already start with /.
+  const normalized = dir.replace(/\\/g, "/").replace(/^\/+/, "");
+  return `file:///${normalized}`;
+}
+
+async function convertToPdfOnce(xlsxPath: string): Promise<string> {
   ensureDirs();
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "lo-profile-"));
   const bin = resolveSoffice();
   try {
     await execFileAsync(
       bin,
       [
         "--headless",
+        "--invisible",
+        "--nodefault",
+        "--nofirststartwizard",
+        "--nologo",
         "--norestore",
+        `-env:UserInstallation=${userInstallationUrl()}`,
         "--convert-to",
         "pdf:calc_pdf_Export",
         "--outdir",
@@ -300,16 +339,15 @@ export async function convertToPdf(xlsxPath: string): Promise<string> {
         xlsxPath,
       ],
       {
-        env: { ...process.env, HOME: profileDir },
-        timeout: 120000,
+        // Generous timeout: the very first conversion warms the profile and can
+        // take ~40s; subsequent ones are fast.
+        timeout: 180000,
         maxBuffer: 1024 * 1024 * 32,
       },
     );
   } catch (err) {
     logger.error({ err }, "LibreOffice PDF conversion failed");
     throw new Error("PDF conversion failed");
-  } finally {
-    fs.rmSync(profileDir, { recursive: true, force: true });
   }
 
   const pdfPath = path.resolve(generatedDir, path.basename(xlsxPath).replace(/\.xlsx$/i, ".pdf"));
@@ -317,4 +355,23 @@ export async function convertToPdf(xlsxPath: string): Promise<string> {
     throw new Error("PDF conversion produced no output");
   }
   return pdfPath;
+}
+
+/**
+ * Converts an .xlsx file to PDF using headless LibreOffice. LibreOffice
+ * recalculates formulas on load, so the populated template renders with
+ * correct computed values. Returns the path to the generated PDF. Calls are
+ * serialized (see pdfQueue) so they can share one warm user profile.
+ */
+export async function convertToPdf(xlsxPath: string): Promise<string> {
+  const task = pdfQueue.then(
+    () => convertToPdfOnce(xlsxPath),
+    () => convertToPdfOnce(xlsxPath),
+  );
+  // Keep the queue alive regardless of this task's outcome.
+  pdfQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
 }

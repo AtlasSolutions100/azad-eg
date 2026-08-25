@@ -29,8 +29,12 @@ export interface PackageInput {
   fixedFeeRate?: number;
   /** Override %, wins over work plan / Procas. */
   fccmRate?: number;
-  payPeriodStart: string;
-  payPeriodEnd: string;
+  /** Service-period start (YYYY-MM-DD). Optional when billingMonth is given, in which case it is derived from the work plan's billing cycle. */
+  payPeriodStart?: string;
+  /** Service-period end (YYYY-MM-DD). Optional when billingMonth is given. */
+  payPeriodEnd?: string;
+  /** Service month as YYYY-MM. When payPeriodStart/payPeriodEnd are omitted, the period is derived from this month and the work plan's billing cycle (whole_month or last_friday, incl. the June-30 rule). */
+  billingMonth?: string;
   invoiceNumber?: string;
   invoiceDate?: string;
   previouslyBilled?: number;
