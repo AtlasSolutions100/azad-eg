@@ -61,3 +61,6 @@ artifacts/api-server/storage/uploads/
 .env.*
 # Local tooling runtime (vscode-server, LibreOffice profile, npm cache) — never commit
 /.config/
+
+# Local editor/agent tooling (references gitignored local/ launchers)
+.claude/

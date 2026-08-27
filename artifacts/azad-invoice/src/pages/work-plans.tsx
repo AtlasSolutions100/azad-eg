@@ -28,7 +28,7 @@ export default function WorkPlans() {
     const q = search.trim().toLowerCase();
     if (!q) return plans;
     return plans?.filter((p) =>
-      [p.code, p.title, p.client, p.jobNumber, p.procasProject ?? ""].some((v) =>
+      [p.code, p.title, p.nickname ?? "", p.client, p.jobNumber, p.procasProject ?? ""].some((v) =>
         v.toLowerCase().includes(q),
       ),
     );
@@ -53,7 +53,9 @@ export default function WorkPlans() {
 
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<Partial<WorkPlanInput>>({ billingCycle: 'whole_month' });
+  // status lives on WorkPlanUpdate (not Input) — billers archive a plan they no
+  // longer bill so it drops out of the create-package picker.
+  const [formData, setFormData] = useState<Partial<WorkPlanInput & Pick<WorkPlanUpdate, "status">>>({ billingCycle: 'whole_month' });
   const [prevBilledTotal, setPrevBilledTotal] = useState<number | undefined>(undefined);
   const [prevBilledEdited, setPrevBilledEdited] = useState(false);
 
@@ -122,6 +124,8 @@ export default function WorkPlans() {
     setFormData({
       code: plan.code,
       title: plan.title,
+      nickname: plan.nickname ?? undefined,
+      status: plan.status,
       client: plan.client,
       jobNumber: plan.jobNumber,
       agreementNo: plan.agreementNo ?? undefined,
@@ -206,7 +210,7 @@ export default function WorkPlans() {
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9a9a9a]" />
           <Input
             className="pl-8"
-            placeholder="Search by code, title, client, or job number…"
+            placeholder="Search by code, nickname, title, client, or job number…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -233,6 +237,20 @@ export default function WorkPlans() {
               <Input required value={formData.title || ''} onChange={e => setFormData({...formData, title: e.target.value})} />
             </div>
             <div className="space-y-2">
+              <Label>Nickname <span className="text-xs font-normal text-[#9a9a9a]">(shown in the picker)</span></Label>
+              <Input placeholder="e.g. BART On-Call" value={formData.nickname || ''} onChange={e => setFormData({...formData, nickname: e.target.value === '' ? undefined : e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={formData.status ?? 'active'} onValueChange={(val: any) => setFormData({...formData, status: val})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="archived">Archived (hidden from picker)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Client</Label>
               <Input required value={formData.client || ''} onChange={e => setFormData({...formData, client: e.target.value})} />
             </div>
@@ -242,7 +260,11 @@ export default function WorkPlans() {
             </div>
             <div className="space-y-2">
               <Label>Total Budget</Label>
-              <Input required type="number" step="0.01" value={formData.totalBudget || ''} onChange={e => setFormData({...formData, totalBudget: Number(e.target.value)})} />
+              {/* `?? ''` not `|| ''`: a Procas-imported plan usually has a 0
+                  budget, and `0 || ''` renders the required field empty, so the
+                  form refused to save — blocking even an unrelated edit like
+                  adding a nickname. */}
+              <Input required type="number" step="0.01" value={formData.totalBudget ?? ''} onChange={e => setFormData({...formData, totalBudget: e.target.value === '' ? undefined : Number(e.target.value)})} />
             </div>
             <div className="space-y-2">
               <Label>Billing Cycle</Label>
@@ -388,7 +410,7 @@ export default function WorkPlans() {
           <TableHeader>
             <TableRow>
               <TableHead>Code</TableHead>
-              <TableHead>Title</TableHead>
+              <TableHead>Nickname / Title</TableHead>
               <TableHead>Client</TableHead>
               <TableHead>Job Number</TableHead>
               <TableHead className="text-right">Budget</TableHead>
@@ -421,7 +443,16 @@ export default function WorkPlans() {
               filteredPlans?.map((plan) => (
                 <TableRow key={plan.id}>
                   <TableCell className="font-medium">{plan.code}</TableCell>
-                  <TableCell>{plan.title}</TableCell>
+                  <TableCell>
+                    {plan.nickname ? (
+                      <span className="flex flex-col">
+                        <span className="font-medium text-[#333333]">{plan.nickname}</span>
+                        <span className="text-xs text-[#9a9a9a]">{plan.title}</span>
+                      </span>
+                    ) : (
+                      plan.title
+                    )}
+                  </TableCell>
                   <TableCell>{plan.client}</TableCell>
                   <TableCell>{plan.jobNumber}</TableCell>
                   <TableCell className="text-right">${plan.totalBudget.toLocaleString()}</TableCell>

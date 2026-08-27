@@ -116,12 +116,18 @@ function buildRateLookup(
 export async function fetchPreviouslyBilledFromProcas(
   creds: ProcasCreds,
   jobNumber: string,
-  beforeDate: string,
 ): Promise<number> {
+  // Previously Billed = everything Procas has already invoiced for this project:
+  // the sum of TotalBillingAmount across all non-voided BillingHistory rows (per
+  // Julie's data map — pivot the project, add up the amounts). The current
+  // invoice isn't in Procas yet, so it isn't counted. (An earlier version
+  // filtered by InvoiceDate < period-start, which wrongly dropped recent
+  // invoices — BART invoices are dated ~2 months after their service period.)
   const rows = await fetchProcasTable(creds, "BillingHistory", {
-    filter: `Project eq ${odataString(jobNumber)} and IsVoided eq false and InvoiceDate lt ${dayStart(beforeDate)}`,
+    filter: `Project eq ${odataString(jobNumber)} and IsVoided eq false`,
   });
-  return rows.reduce((sum, r) => sum + toNum(r.TotalBillingAmount), 0);
+  const sum = rows.reduce((s, r) => s + toNum(r.TotalBillingAmount), 0);
+  return Math.round((sum + Number.EPSILON) * 100) / 100;
 }
 
 // --- Billing Setup rates for one Procas project ---
@@ -561,7 +567,7 @@ export async function syncInvoiceFromProcas(
   // derived carry-over, but never overrides a manual user-entered value.
   if (!invoice.carryOverManual) {
     try {
-      const prevBilled = await fetchPreviouslyBilledFromProcas(creds, job, invoice.periodStart);
+      const prevBilled = await fetchPreviouslyBilledFromProcas(creds, job);
       // BillingHistory is authoritative (including a legitimate $0) unless the
       // user has manually overridden the value.
       await db

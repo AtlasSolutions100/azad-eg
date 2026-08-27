@@ -41,6 +41,8 @@ import type {
   Error,
   ExportOptions,
   ExportPackage409,
+  FillPtoOptions,
+  FillPtoResult,
   GenerateInput,
   GeneratedFile,
   GetProcasBillingRatesParams,
@@ -5543,6 +5545,78 @@ export const useCheckPackageTieOutWithProcas = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCheckPackageTieOutWithProcasMutationOptions(options));
+    }
+
+export const getFillPackagePtoTo40Url = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/fill-pto`
+}
+
+/**
+ * Adds or updates one "PTO/Sick" timesheet row per week so every weekday inside the pay period reaches the standard working day. PTO bills at $0, so this changes what the timesheet shows, never the invoice total. Preview mode reports the proposed change without writing it.
+ * @summary Top each short weekday up to a full day with a combined PTO/Sick row
+ */
+export const fillPackagePtoTo40 = async (id: number,
+    fillPtoOptions?: FillPtoOptions, options?: RequestInit): Promise<FillPtoResult> => {
+
+  return customFetch<FillPtoResult>(getFillPackagePtoTo40Url(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(fillPtoOptions)
+  }
+);}
+
+
+
+
+export const getFillPackagePtoTo40MutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof fillPackagePtoTo40>>, TError,{id: number;data?: BodyType<FillPtoOptions>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof fillPackagePtoTo40>>, TError,{id: number;data?: BodyType<FillPtoOptions>}, TContext> => {
+
+const mutationKey = ['fillPackagePtoTo40'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof fillPackagePtoTo40>>, {id: number;data?: BodyType<FillPtoOptions>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  fillPackagePtoTo40(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FillPackagePtoTo40MutationResult = NonNullable<Awaited<ReturnType<typeof fillPackagePtoTo40>>>
+    export type FillPackagePtoTo40MutationBody = BodyType<FillPtoOptions> | undefined
+    export type FillPackagePtoTo40MutationError = ErrorType<unknown>
+
+    /**
+ * @summary Top each short weekday up to a full day with a combined PTO/Sick row
+ */
+export const useFillPackagePtoTo40 = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof fillPackagePtoTo40>>, TError,{id: number;data?: BodyType<FillPtoOptions>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof fillPackagePtoTo40>>,
+        TError,
+        {id: number;data?: BodyType<FillPtoOptions>},
+        TContext
+      > => {
+      return useMutation(getFillPackagePtoTo40MutationOptions(options));
     }
 
 export const getCreateTimesheetEntryUrl = (id: number,) => {

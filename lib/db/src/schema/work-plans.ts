@@ -5,6 +5,10 @@ export const workPlansTable = pgTable("work_plans", {
   id: serial("id").primaryKey(),
   code: text("code").notNull(),
   title: text("title").notNull(),
+  // Short human-friendly label the biller assigns (e.g. "BART On-Call" or
+  // "WSP De'Andre") so the work-plan picker reads cleanly instead of showing a
+  // long "6M8142-B50 - <full title>". Null = fall back to code/title.
+  nickname: text("nickname"),
   client: text("client").notNull(),
   jobNumber: text("job_number").notNull(),
   agreementNo: text("agreement_no"),

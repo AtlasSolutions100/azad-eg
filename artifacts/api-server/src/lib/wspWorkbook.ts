@@ -2,7 +2,15 @@ import ExcelJS from "exceljs";
 import path from "node:path";
 import fs from "node:fs";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
-import { stripBrokenDefinedNames } from "./excel";
+import {
+  dropDeadDefinedNames,
+  fitSheetsToOnePage,
+  freezeUnstableFormulas,
+  removeSheet,
+  reviveModelDates,
+  scrubInternalMarks,
+  stripBrokenDefinedNames,
+} from "./excel";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -329,75 +337,6 @@ export function computeWspFinancials(ctx: PackageDocContext): WspFinancials {
 // Sheet cleanup helpers
 // ---------------------------------------------------------------------------
 
-function removeSheet(wb: ExcelJS.Workbook, name: string): void {
-  const ws = wb.getWorksheet(name);
-  if (ws) wb.removeWorksheet(ws.id);
-}
-
-/**
- * Replaces every remaining formula cell that still references a removed sheet
- * with its cached result value, so the client workbook never surfaces #REF!.
- * The meaningful cross-sheet cells were already overwritten with authoritative
- * values before this runs, so anything caught here is incidental.
- */
-function freezeDeletedRefs(wb: ExcelJS.Workbook): void {
-  for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        const v = cell.value;
-        if (v && typeof v === "object" && "formula" in v && typeof v.formula === "string") {
-          if (DELETED_REF_TOKENS.some((t) => (v.formula as string).includes(t))) {
-            const style = cell.style;
-            const result = (v as ExcelJS.CellFormulaValue).result;
-            cell.value =
-              result === undefined || result === null
-                ? null
-                : (result as ExcelJS.CellValue);
-            cell.style = style;
-          }
-        }
-      });
-    });
-  }
-}
-
-/** Fill colors that mark internal notes/highlights and must never ship. */
-const HIGHLIGHT_ARGB = /^(FF)?(FFFF00|FFFF33|FFFF66|FFFF99|FFFFCC|FFF2CC|FFE699|FFEB9C|FFFFE0)$/i;
-
-/**
- * Removes cell comments and yellow "internal note / input" highlight fills that
- * Julie's working template carries, so the client workbook ships clean.
- */
-function scrubInternalMarks(wb: ExcelJS.Workbook): void {
-  for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        // `cell.model` is rebuilt on each access, so mutate the backing field.
-        const backing = cell as unknown as { _comment?: unknown };
-        if (backing._comment) backing._comment = undefined;
-        const fill = cell.style?.fill as
-          | { type?: string; fgColor?: { argb?: string } }
-          | undefined;
-        if (fill?.fgColor?.argb && HIGHLIGHT_ARGB.test(fill.fgColor.argb)) {
-          cell.style = { ...cell.style, fill: { type: "pattern", pattern: "none" } };
-        }
-      });
-    });
-  }
-}
-
-/** Drops defined names pointing at removed sheets (avoids Excel repair prompt). */
-function dropDeadDefinedNames(wb: ExcelJS.Workbook): void {
-  try {
-    const kept = wb.definedNames.model.filter(
-      (dn) => !dn.ranges.some((r) => DELETED_REF_TOKENS.some((t) => r.includes(t))),
-    );
-    if (kept.length !== wb.definedNames.model.length) wb.definedNames.model = kept;
-  } catch (err) {
-    logger.warn({ err }, "Failed to drop dead defined names from WSP workbook");
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Contributors
 // ---------------------------------------------------------------------------
@@ -445,21 +384,6 @@ function timesheetRow(category: string): number {
       return 14;
     default:
       return 9; // regular / night → straight time
-  }
-}
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-
-/** Revives ISO-string dates a JSON deep-clone produced back into Date objects. */
-function reviveModelDates(model: { rows?: Array<{ cells?: Array<Record<string, unknown>> }> }): void {
-  for (const row of model.rows ?? []) {
-    for (const cell of row.cells ?? []) {
-      if (!cell) continue;
-      if (typeof cell.value === "string" && ISO_DATE.test(cell.value)) cell.value = new Date(cell.value);
-      if (typeof cell.result === "string" && ISO_DATE.test(cell.result as string)) {
-        cell.result = new Date(cell.result as string);
-      }
-    }
   }
 }
 
@@ -737,8 +661,8 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   // formulas/defined names that still pointed at them.
   for (const name of INTERNAL_SHEETS) removeSheet(wb, name);
   for (const name of TEMPLATE_WEEK_TABS) removeSheet(wb, name);
-  freezeDeletedRefs(wb);
-  dropDeadDefinedNames(wb);
+  freezeUnstableFormulas(wb, DELETED_REF_TOKENS);
+  dropDeadDefinedNames(wb, DELETED_REF_TOKENS, "WSP");
   stripBrokenDefinedNames(wb);
 
   // -- 6. Generate fresh weekly timesheet tabs (one per week per contributor).
@@ -771,6 +695,7 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   const inv = wb.worksheets.findIndex((w) => w.name === INVOICE_SHEET);
   if (inv >= 0) wb.views = [{ activeTab: inv } as ExcelJS.WorkbookView];
 
+  fitSheetsToOnePage(wb);
   return { wb, timesheetTabs, financials: fin };
 }
 

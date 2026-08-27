@@ -13,6 +13,7 @@ export interface WorkPlanUpdate {
   code?: string;
   /** @minLength 1 */
   title?: string;
+  nickname?: string;
   /** @minLength 1 */
   client?: string;
   /** @minLength 1 */

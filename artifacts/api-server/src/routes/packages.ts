@@ -48,6 +48,8 @@ import {
   ReplaceBilledLineItemsResponse,
   PullPackageHoursFromProcasResponse,
   CheckPackageTieOutWithProcasResponse,
+  FillPackagePtoTo40Body as FillPtoBody,
+  FillPackagePtoTo40Response,
 } from "@workspace/api-zod";
 import {
   listBilledLineItems,
@@ -78,6 +80,7 @@ import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import { fetchPreviouslyBilledFromProcas, fetchBillingRatesFromProcas } from "../lib/procasSync";
 import { effectiveWorkPlan, cappedBillRate } from "../lib/billingProfile";
 import { deriveBillingPeriod, type BillingCycle } from "../lib/billingPeriod";
+import { computePtoFill, totalDayHours } from "../lib/ptoFill";
 import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { recordAudit } from "../lib/audit";
@@ -334,11 +337,7 @@ router.post("/packages", async (req, res): Promise<void> => {
   if (previouslyBilledSource == null && billingJob) {
     try {
       if (creds) {
-        const fromProcas = await fetchPreviouslyBilledFromProcas(
-          creds,
-          billingJob,
-          payPeriodStart,
-        );
+        const fromProcas = await fetchPreviouslyBilledFromProcas(creds, billingJob);
         // BillingHistory is authoritative — including a legitimate $0.
         previouslyBilled = fromProcas;
         previouslyBilledSource = "procas";
@@ -795,6 +794,157 @@ router.post("/packages/:id/procas-hours", async (req, res): Promise<void> => {
 });
 
 // ---------------------------------------------------------------------------
+// 40-hour top-up. Julie's rule from the Aug 26 demo: "if you work less than
+// eight hours for the client, then the rest of the hours go to sick time or
+// vacation… we can make it one row". This is an explicit, previewable action
+// rather than something that happens silently on every pull — a timesheet is a
+// certified document, and the biller should see the rows before they land.
+// ---------------------------------------------------------------------------
+
+const PTO_FILL_LABEL = "PTO/Sick";
+
+router.post("/packages/:id/fill-pto", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkg) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const parsed = FillPtoBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { preview = false, standardDayHours, fillEmptyDays = false } = parsed.data;
+
+  const [weeks, entries] = await Promise.all([
+    db
+      .select()
+      .from(packageWeeksTable)
+      .where(eq(packageWeeksTable.packageId, id))
+      .orderBy(asc(packageWeeksTable.sortOrder)),
+    db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)),
+  ]);
+
+  const warnings: string[] = [];
+  const weekResults: { weekId: number; weekLabel: string; employeeName: string; hoursAdded: number }[] = [];
+  let rowsCreated = 0;
+  let rowsUpdated = 0;
+  let rowsRemoved = 0;
+  let hoursAdded = 0;
+
+  for (const week of weeks) {
+    const weekEntries = entries.filter((e) => e.weekId === week.id);
+    if (weekEntries.length === 0) continue;
+
+    // The top-up is per employee: two people on one week each owe their own
+    // eight-hour days.
+    const byEmployee = new Map<string, TimesheetEntryRow[]>();
+    for (const e of weekEntries) {
+      const key = e.employeeName;
+      const list = byEmployee.get(key);
+      if (list) list.push(e);
+      else byEmployee.set(key, [e]);
+    }
+
+    for (const [employeeName, rows] of byEmployee) {
+      // This employee's own auto-fill row from a previous run, if any. It is
+      // excluded from the shortfall maths and then rewritten — otherwise it
+      // would count toward its own eight hours, so a later correction to the
+      // real hours could never shrink or clear it (an 8h day plus a stale 3h
+      // fill would silently show as 11).
+      const existing = rows.find((e) => e.category === "pto" && e.source === "auto_pto");
+      const charged = existing ? rows.filter((e) => e.id !== existing.id) : rows;
+
+      const fill = computePtoFill(charged, {
+        weekStart: week.weekStart,
+        periodStart: pkg.payPeriodStart,
+        periodEnd: pkg.payPeriodEnd,
+        standardDayHours,
+        fillEmptyDays,
+      });
+
+      // Nothing to add: clear a stale auto-fill row if one is left over.
+      if (!fill) {
+        if (existing) {
+          if (!preview) {
+            await db.delete(timesheetEntriesTable).where(eq(timesheetEntriesTable.id, existing.id));
+          }
+          rowsRemoved += 1;
+        }
+        continue;
+      }
+
+      const added = totalDayHours(fill);
+      hoursAdded += added;
+      weekResults.push({ weekId: week.id, weekLabel: week.label, employeeName, hoursAdded: added });
+
+      if (preview) {
+        if (existing) rowsUpdated += 1;
+        else rowsCreated += 1;
+        continue;
+      }
+
+      const note = `Auto-filled to ${standardDayHours ?? 8}h/day`;
+      if (existing) {
+        await db
+          .update(timesheetEntriesTable)
+          .set({ ...fill, notes: note })
+          .where(eq(timesheetEntriesTable.id, existing.id));
+        rowsUpdated += 1;
+      } else {
+        // A PTO row the biller typed by hand is never touched — its hours
+        // already counted toward the eight, so the fill sits alongside it.
+        const template = charged[0] ?? rows[0];
+        await db.insert(timesheetEntriesTable).values({
+          packageId: id,
+          weekId: week.id,
+          employeeId: template.employeeId,
+          employeeName,
+          classification: template.classification,
+          category: "pto",
+          location: template.location,
+          ...fill,
+          rate: 0, // PTO bills at $0
+          source: "auto_pto",
+          notes: note,
+        });
+        rowsCreated += 1;
+      }
+    }
+  }
+
+  if (weeks.length === 0) warnings.push("This package has no weeks yet — pull hours first.");
+  else if (weekResults.length === 0)
+    warnings.push(
+      fillEmptyDays
+        ? "Every weekday in the period is already at a full day."
+        : "Nothing to top up. Weekdays with no hours charged to this project are skipped — turn on “fill empty days” if this employee works only this job.",
+    );
+
+  if (!preview && (rowsCreated > 0 || rowsUpdated > 0 || rowsRemoved > 0)) {
+    await recordAudit({
+      action: "filled PTO to standard week",
+      entityType: "package",
+      entityId: id,
+      description: `${PTO_FILL_LABEL}: ${rowsCreated} row(s) added, ${rowsUpdated} updated, ${rowsRemoved} removed, ${hoursAdded} hour(s)`,
+    });
+  }
+
+  res.json(
+    FillPackagePtoTo40Response.parse({
+      preview,
+      rowsCreated,
+      rowsUpdated,
+      rowsRemoved,
+      hoursAdded: Math.round(hoursAdded * 100) / 100,
+      weeks: weekResults,
+      warnings,
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Procas tie-out check: compare the package's Previously Billed against what
 // Procas BillingHistory says was invoiced for this job before the period start.
 // ---------------------------------------------------------------------------
@@ -823,11 +973,7 @@ router.post("/packages/:id/procas-tie-out", async (req, res): Promise<void> => {
   }
   let procasBilled: number;
   try {
-    procasBilled = await fetchPreviouslyBilledFromProcas(
-      creds,
-      tieOutJob,
-      pkg.payPeriodStart,
-    );
+    procasBilled = await fetchPreviouslyBilledFromProcas(creds, tieOutJob);
   } catch {
     res.status(502).json({ error: "Could not reach Procas billing history. Try again in a moment." });
     return;

@@ -12,6 +12,11 @@ export interface WorkPlan {
   id: number;
   code: string;
   title: string;
+  /**
+     * Short biller-assigned label for the work-plan picker.
+     * @nullable
+     */
+  nickname?: string | null;
   client: string;
   jobNumber: string;
   /** @nullable */

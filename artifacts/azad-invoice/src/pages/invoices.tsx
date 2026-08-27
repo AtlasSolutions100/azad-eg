@@ -99,8 +99,10 @@ export default function Invoices() {
                       <SelectValue placeholder="Select a work plan" />
                     </SelectTrigger>
                     <SelectContent>
-                      {workPlans?.map(wp => (
-                        <SelectItem key={wp.id} value={wp.id.toString()}>{wp.code} - {wp.title}</SelectItem>
+                      {workPlans?.filter(wp => wp.status !== "archived").map(wp => (
+                        <SelectItem key={wp.id} value={wp.id.toString()}>
+                          {wp.nickname?.trim() ? `${wp.nickname} (${wp.code})` : `${wp.code} - ${wp.title}`}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

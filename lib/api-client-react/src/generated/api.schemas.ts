@@ -33,6 +33,11 @@ export interface WorkPlan {
   id: number;
   code: string;
   title: string;
+  /**
+     * Short biller-assigned label for the work-plan picker.
+     * @nullable
+     */
+  nickname?: string | null;
   client: string;
   jobNumber: string;
   /** @nullable */
@@ -135,6 +140,7 @@ export interface WorkPlanInput {
   code: string;
   /** @minLength 1 */
   title: string;
+  nickname?: string;
   /** @minLength 1 */
   client: string;
   /** @minLength 1 */
@@ -198,6 +204,7 @@ export interface WorkPlanUpdate {
   code?: string;
   /** @minLength 1 */
   title?: string;
+  nickname?: string;
   /** @minLength 1 */
   client?: string;
   /** @minLength 1 */
@@ -1323,6 +1330,33 @@ export interface PullPackageHoursResult {
   importedCount: number;
   replacedCount: number;
   weeksCreated: number;
+  warnings: string[];
+}
+
+export interface FillPtoOptions {
+  /** Report the proposed rows without writing them. */
+  preview?: boolean;
+  /** Hours in a full working day (default 8). */
+  standardDayHours?: number;
+  /** Also fill weekdays with nothing charged to this project. Off by default, since staff split time across jobs and an empty day usually means work booked elsewhere rather than time off. */
+  fillEmptyDays?: boolean;
+}
+
+export interface FillPtoWeek {
+  weekId: number;
+  weekLabel: string;
+  employeeName: string;
+  hoursAdded: number;
+}
+
+export interface FillPtoResult {
+  preview: boolean;
+  rowsCreated: number;
+  rowsUpdated: number;
+  /** Stale auto-fill rows cleared because the real hours now cover the day. */
+  rowsRemoved: number;
+  hoursAdded: number;
+  weeks: FillPtoWeek[];
   warnings: string[];
 }
 

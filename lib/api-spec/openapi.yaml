@@ -1296,6 +1296,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/TieOutCheckResult"
 
+  /packages/{id}/fill-pto:
+    post:
+      operationId: fillPackagePtoTo40
+      tags: [packages]
+      summary: Top each short weekday up to a full day with a combined PTO/Sick row
+      description: >
+        Adds or updates one "PTO/Sick" timesheet row per week so every weekday
+        inside the pay period reaches the standard working day. PTO bills at $0,
+        so this changes what the timesheet shows, never the invoice total.
+        Preview mode reports the proposed change without writing it.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FillPtoOptions"
+      responses:
+        "200":
+          description: Fill result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FillPtoResult"
+
   /packages/{id}/entries:
     post:
       operationId: createTimesheetEntry
@@ -1650,6 +1676,9 @@ components:
         id: { type: integer }
         code: { type: string }
         title: { type: string }
+        nickname:
+          type: ["string", "null"]
+          description: Short biller-assigned label for the work-plan picker.
         client: { type: string }
         jobNumber: { type: string }
         agreementNo: { type: ["string", "null"] }
@@ -1711,6 +1740,7 @@ components:
       properties:
         code: { type: string, minLength: 1 }
         title: { type: string, minLength: 1 }
+        nickname: { type: string }
         client: { type: string, minLength: 1 }
         jobNumber: { type: string, minLength: 1 }
         agreementNo: { type: string }
@@ -1747,6 +1777,7 @@ components:
       properties:
         code: { type: string, minLength: 1 }
         title: { type: string, minLength: 1 }
+        nickname: { type: string }
         client: { type: string, minLength: 1 }
         jobNumber: { type: string, minLength: 1 }
         agreementNo: { type: string }
@@ -2849,6 +2880,47 @@ components:
         importedCount: { type: integer }
         replacedCount: { type: integer }
         weeksCreated: { type: integer }
+        warnings:
+          type: array
+          items: { type: string }
+    FillPtoOptions:
+      type: object
+      properties:
+        preview:
+          type: boolean
+          description: Report the proposed rows without writing them.
+        standardDayHours:
+          type: number
+          description: Hours in a full working day (default 8).
+        fillEmptyDays:
+          type: boolean
+          description: >
+            Also fill weekdays with nothing charged to this project. Off by
+            default, since staff split time across jobs and an empty day usually
+            means work booked elsewhere rather than time off.
+    FillPtoWeek:
+      type: object
+      required: [weekId, weekLabel, employeeName, hoursAdded]
+      properties:
+        weekId: { type: integer }
+        weekLabel: { type: string }
+        employeeName: { type: string }
+        hoursAdded: { type: number }
+    FillPtoResult:
+      type: object
+      required: [preview, rowsCreated, rowsUpdated, rowsRemoved, hoursAdded, weeks, warnings]
+      properties:
+        preview: { type: boolean }
+        rowsCreated: { type: integer }
+        rowsUpdated: { type: integer }
+        rowsRemoved:
+          type: integer
+          description: Stale auto-fill rows cleared because the real hours now cover the day.
+        hoursAdded: { type: number }
+        weeks:
+          type: array
+          items:
+            $ref: "#/components/schemas/FillPtoWeek"
         warnings:
           type: array
           items: { type: string }

@@ -12,6 +12,11 @@ import {
   type PackageClientGroup,
   type PackageInput,
 } from "@workspace/api-client-react";
+import {
+  deriveBillingPeriod,
+  BILLING_CYCLE_LABELS,
+  type BillingCycle,
+} from "@/lib/billing-period";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -278,6 +283,15 @@ export default function Dashboard() {
   const [manualEntry, setManualEntry] = useState(false);
   // The full Procas library can be long — the wizard filters it client-side.
   const [wpSearch, setWpSearch] = useState("");
+  // Billing period: the work plan's own cycle is the default, but an admin can
+  // override it per package (Julie's ask — some months bill to the last day,
+  // others to the last Friday). null = "follow the work plan".
+  const [cycleOverride, setCycleOverride] = useState<BillingCycle | null>(null);
+  // The month the period is derived for (YYYY-MM), defaulting to this month.
+  const [billingMonth, setBillingMonth] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // Procas projects power the "no work plan yet" path; the list only loads
   // when the create dialog is open (and quietly stays empty if Procas is
@@ -310,19 +324,63 @@ export default function Dashboard() {
     return { ownerOptions: [...owners], primeOptions: [...primes] };
   }, [groups]);
 
+  // Julie's ask: the Procas library import makes this list far too long to scan.
+  // Narrow it in three ways before the biller ever types anything —
+  //   1. drop archived plans (the ones no longer billed),
+  //   2. when a Prime was chosen on step 0, show that prime's plans first,
+  //   3. free-text search still matches nickname/code/title/client/job.
+  // The selected plan always stays visible so its label keeps rendering.
   const filteredWizardPlans = useMemo(() => {
     if (!workPlans) return workPlans;
     const q = wpSearch.trim().toLowerCase();
-    if (!q) return workPlans;
-    return workPlans.filter(
-      (wp) =>
-        // Keep the currently selected plan visible so its label still renders.
-        wp.id === form.workPlanId ||
-        [wp.code, wp.title, wp.client, wp.jobNumber].some((v) =>
-          v.toLowerCase().includes(q),
-        ),
-    );
-  }, [workPlans, wpSearch, form.workPlanId]);
+    const prime = form.prime?.trim().toLowerCase();
+    const matches = workPlans.filter((wp) => {
+      if (wp.id === form.workPlanId) return true;
+      if (wp.status === "archived") return false;
+      if (!q) return true;
+      return [wp.code, wp.title, wp.nickname ?? "", wp.client, wp.jobNumber].some((v) =>
+        v.toLowerCase().includes(q),
+      );
+    });
+    if (!prime) return matches;
+    // Rank the chosen prime's plans to the top rather than hiding the rest —
+    // a plan can bill through a prime the client field doesn't name exactly.
+    const onPrime = (wp: (typeof matches)[number]) =>
+      [wp.client, wp.title, wp.nickname ?? "", wp.code].some((v) =>
+        v.toLowerCase().includes(prime),
+      );
+    return [...matches.filter(onPrime), ...matches.filter((wp) => !onPrime(wp))];
+  }, [workPlans, wpSearch, form.workPlanId, form.prime]);
+
+  // The picker label Julie reads: nickname when set, otherwise code - title.
+  const planLabel = (wp: { code: string; title: string; nickname?: string | null }) =>
+    wp.nickname?.trim() ? `${wp.nickname} (${wp.code})` : `${wp.code} - ${wp.title}`;
+
+  // The billing cycle in force: the admin's per-package override, else the
+  // selected work plan's configured cycle, else whole month.
+  const selectedPlan = workPlans?.find((w) => w.id === form.workPlanId);
+  const planCycle: BillingCycle =
+    selectedPlan?.billingCycle === "last_friday" ? "last_friday" : "whole_month";
+  const selectedCycle: BillingCycle = cycleOverride ?? planCycle;
+
+  // Recomputes the two pay-period dates from a cycle + month.
+  const applyBillingCycle = (cycle: BillingCycle, year: number, month: number) => {
+    const period = deriveBillingPeriod(year, month, cycle);
+    setForm((f) => ({ ...f, payPeriodStart: period.start, payPeriodEnd: period.end }));
+  };
+
+  // Re-derives the dates whenever the biller changes the cycle or the month on
+  // the final step, so the two date inputs always reflect the current choice.
+  const handleCycleChange = (cycle: BillingCycle) => {
+    setCycleOverride(cycle);
+    const [y, m] = billingMonth.split("-").map(Number);
+    if (y && m) applyBillingCycle(cycle, y, m);
+  };
+  const handleBillingMonthChange = (value: string) => {
+    setBillingMonth(value);
+    const [y, m] = value.split("-").map(Number);
+    if (y && m) applyBillingCycle(selectedCycle, y, m);
+  };
 
   // Guards against out-of-order responses when the user switches work plans
   // quickly: only the latest detection request may update state.
@@ -439,6 +497,9 @@ export default function Dashboard() {
     setWpSearch("");
     setOwnerSuggested(false);
     setPrimeSuggested(false);
+    setCycleOverride(null);
+    const n = new Date();
+    setBillingMonth(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`);
   };
 
   // When the last step appears, the "Create Package" button lands exactly
@@ -630,12 +691,15 @@ export default function Dashboard() {
                     )}
                     {filteredWizardPlans?.map((wp) => (
                       <SelectItem key={wp.id} value={String(wp.id)}>
-                        {wp.code} - {wp.title}
+                        {planLabel(wp)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-[#5F5F5F]">
+                  {form.prime?.trim()
+                    ? `Sorted with ${form.prime.trim()} work plans first; archived plans are hidden. `
+                    : "Archived plans are hidden. "}
                   The work plan number pulls from Procas and drives rates
                   automatically from Billing Setup.
                 </p>
@@ -800,6 +864,42 @@ export default function Dashboard() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label>Billing Month</Label>
+                  <Input
+                    type="month"
+                    value={billingMonth}
+                    onChange={(e) => handleBillingMonthChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Billing Date Rule</Label>
+                  <Select
+                    value={selectedCycle}
+                    onValueChange={(v) => handleCycleChange(v as BillingCycle)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="whole_month">
+                        {BILLING_CYCLE_LABELS.whole_month}
+                      </SelectItem>
+                      <SelectItem value="last_friday">
+                        {BILLING_CYCLE_LABELS.last_friday}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <p className="text-xs text-[#5F5F5F]">
+                {cycleOverride && cycleOverride !== planCycle
+                  ? `Overriding this work plan's default (${BILLING_CYCLE_LABELS[planCycle]}) for this package only.`
+                  : selectedPlan
+                    ? `Default for ${planLabel(selectedPlan)} — change it here to override for this package, or on the Work Plans page to change it permanently.`
+                    : "The dates below are derived from this rule; both stay editable."}
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label>Pay Period Start</Label>
                   <Input
                     type="date"
@@ -878,17 +978,18 @@ export default function Dashboard() {
                     (!!detected && detected.length > 1 && !multiConfirmed))
                 }
                 onClick={() => {
-                  // BART bills whole months: entering the final step
-                  // pre-fills the pay period with the current full month.
-                  // Both dates stay editable for overrides.
+                  // Entering the final step pre-fills the pay period for the
+                  // current month using the work plan's billing cycle (whole
+                  // month vs. BART's last-Friday Sat→Fri cut-off), so the two
+                  // dates are never hand-typed. Everything stays editable.
                   if (step === 1) {
                     if (!form.payPeriodStart && !form.payPeriodEnd) {
                       const now = new Date();
-                      const first = new Date(now.getFullYear(), now.getMonth(), 1);
-                      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                      const iso = (d: Date) =>
-                        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                      setForm((f) => ({ ...f, payPeriodStart: iso(first), payPeriodEnd: iso(last) }));
+                      applyBillingCycle(
+                        selectedCycle,
+                        now.getFullYear(),
+                        now.getMonth() + 1,
+                      );
                     }
                     step3EnteredAt.current = Date.now();
                   }

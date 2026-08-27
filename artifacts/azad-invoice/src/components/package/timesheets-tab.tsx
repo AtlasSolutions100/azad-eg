@@ -5,6 +5,7 @@ import {
   useUpdateTimesheetEntry,
   useDeleteTimesheetEntry,
   usePullPackageHoursFromProcas,
+  useFillPackagePtoTo40,
   useListEmployees,
   type PackageDetail,
   type TimesheetEntry,
@@ -39,7 +40,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarPlus, DownloadCloud, Edit, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarCheck, CalendarPlus, DownloadCloud, Edit, Loader2, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { formatCurrency, formatHours } from "@/lib/package-ui";
 
@@ -93,6 +94,51 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
           ? err.error
           : "Could not pull hours from Procas.";
       toast({ variant: "destructive", title: "Procas pull failed", description: message });
+    }
+  };
+
+  // Tops each short weekday up to a full day with a single PTO/Sick row.
+  // Always previewed first: a timesheet is a certified document, so the biller
+  // confirms the hours before they land.
+  const fillPto = useFillPackagePtoTo40();
+  const runFillPto = async () => {
+    try {
+      const preview = await fillPto.mutateAsync({ id: pkg.id, data: { preview: true } });
+      if (preview.hoursAdded === 0 && preview.rowsRemoved === 0) {
+        toast({
+          title: "Nothing to fill",
+          description: preview.warnings.join(" ") || "Every weekday is already a full day.",
+        });
+        return;
+      }
+      const lines = preview.weeks
+        .map((w) => `${w.weekLabel} — ${w.employeeName}: +${formatHours(w.hoursAdded)} hrs`)
+        .join("\n");
+      const staleNote =
+        preview.rowsRemoved > 0
+          ? `\n${preview.rowsRemoved} stale auto-fill row(s) will be removed.`
+          : "";
+      if (
+        !confirm(
+          `Add ${formatHours(preview.hoursAdded)} PTO/Sick hours so each weekday reaches a full day?\n\n${lines}${staleNote}\n\nPTO bills at $0, so the invoice total does not change.`,
+        )
+      )
+        return;
+
+      const result = await fillPto.mutateAsync({ id: pkg.id, data: {} });
+      queryClient.invalidateQueries();
+      toast({
+        title: "Timesheet filled to a standard week",
+        description: `${result.rowsCreated} row(s) added, ${result.rowsUpdated} updated${
+          result.rowsRemoved > 0 ? `, ${result.rowsRemoved} removed` : ""
+        } — ${formatHours(result.hoursAdded)} PTO/Sick hours.`,
+      });
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "error" in err && typeof err.error === "string"
+          ? err.error
+          : "Could not fill the timesheet.";
+      toast({ variant: "destructive", title: "Fill to 40 hours failed", description: message });
     }
   };
 
@@ -279,6 +325,20 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
               <DownloadCloud className="mr-2 h-4 w-4" />
             )}
             Pull Hours from Procas
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={runFillPto}
+            disabled={fillPto.isPending || weeks.length === 0}
+            title="Top each short weekday up to 8 hours with a combined PTO/Sick row. PTO bills at $0."
+          >
+            {fillPto.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <CalendarCheck className="mr-2 h-4 w-4" />
+            )}
+            Fill to 40 Hours
           </Button>
           <Button
             variant="outline"

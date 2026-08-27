@@ -2,7 +2,16 @@ import ExcelJS from "exceljs";
 import path from "node:path";
 import fs from "node:fs";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
-import { stripBrokenDefinedNames } from "./excel";
+import {
+  deletedRefTokens,
+  dropDeadDefinedNames,
+  fitSheetsToOnePage,
+  freezeUnstableFormulas,
+  removeSheet,
+  reviveModelDates,
+  scrubInternalMarks,
+  stripBrokenDefinedNames,
+} from "./excel";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -25,6 +34,14 @@ import type { PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
  *  - package data is injected at the reference cell addresses, keeping the
  *    live roll-up chain intact: week tab O totals → Overview B9:F9 →
  *    Labor C19 → Sub Calc H44 → Invoice M21 / Billing Summary.
+ *
+ * Deleting a sheet orphans every formula and defined name that pointed at it,
+ * and Excel answers an uncompilable reference with the "We found a problem with
+ * some content…" repair prompt. So after each round of removals — and once more
+ * after the renames — any straggler is frozen to its cached value and any dead
+ * defined name is dropped (see lib/excel.ts, shared with the other three
+ * engines). The engine already overwrites the cells that matter with
+ * authoritative literals, so this only ever catches incidental cells.
  */
 
 const TEMPLATE_FILE = "package-master-template.xlsx";
@@ -51,6 +68,12 @@ const RENAMES: Array<[string, string]> = [
 
 /** Template week tabs, in order. */
 const WEEK_TABS = ["TJ Week 1", "TJ Week 2", "TJ Week 3", "TJ Week 4", "TJ Week 5"];
+
+/**
+ * Reference tokens for the sheets that are always deleted. Unused week tabs are
+ * only known once the package's week count is, so they are appended later.
+ */
+const INTERNAL_REF_TOKENS = deletedRefTokens(INTERNAL_SHEETS);
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -153,28 +176,6 @@ function rewriteAllFormulas(wb: ExcelJS.Workbook, renames: Map<string, string>):
     }));
   } catch (err) {
     logger.warn({ err }, "Failed to rewrite defined names for renamed sheets");
-  }
-}
-
-/** Fill colors that mark internal notes/highlights and must never ship. */
-const HIGHLIGHT_ARGB = /^(FF)?(FFFF00|FFFF33|FFFF66|FFFF99|FFFFCC|FFF2CC|FFE699|FFEB9C|FFFFE0)$/i;
-
-/** Removes cell comments and yellow "internal note" highlight fills. */
-function scrubInternalMarks(wb: ExcelJS.Workbook): void {
-  for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        // `cell.model` is rebuilt on each access, so mutate the backing field.
-        const backing = cell as unknown as { _comment?: unknown };
-        if (backing._comment) backing._comment = undefined;
-        const fill = cell.style?.fill as
-          | { type?: string; fgColor?: { argb?: string } }
-          | undefined;
-        if (fill?.fgColor?.argb && HIGHLIGHT_ARGB.test(fill.fgColor.argb)) {
-          cell.style = { ...cell.style, fill: { type: "pattern", pattern: "none" } };
-        }
-      });
-    });
   }
 }
 
@@ -307,12 +308,6 @@ function fillWeekTab(
   }
 }
 
-/** Removes a worksheet with the ExcelJS id-based API. */
-function removeSheet(wb: ExcelJS.Workbook, name: string): void {
-  const ws = wb.getWorksheet(name);
-  if (ws) wb.removeWorksheet(ws.id);
-}
-
 /**
  * Builds the client-ready workbook from the reference template. Returns the
  * workbook plus the ordered week tab names (needed for verification/tests).
@@ -335,9 +330,15 @@ export async function buildMasterWorkbook(
   const labor = wb.getWorksheet("Labor")!;
   const report = wb.getWorksheet("Report")!;
 
-  // -- 1. Replace the ODC roll-up with a literal, then drop internal sheets.
+  // -- 1. Replace the ODC roll-up with a literal, then drop internal sheets and
+  // sever anything that still pointed at them. `Cost!H27` is the one meaningful
+  // cross-sheet cell (`=ODCs!D22`) and it is overwritten just above; the freeze
+  // is what keeps that from being load-bearing, so a new formula into a deleted
+  // sheet can't reach the client as an uncompilable reference.
   setVal(cost, "H27", round2(pkg.otherDirectCosts));
   for (const name of INTERNAL_SHEETS) removeSheet(wb, name);
+  freezeUnstableFormulas(wb, INTERNAL_REF_TOKENS);
+  dropDeadDefinedNames(wb, INTERNAL_REF_TOKENS, "master");
 
   // -- 2. Week tabs: one per package week per contributor (row 9 feeds the
   // Overview). Weeks are cloned from a pristine TJ Week 1 model when the
@@ -348,9 +349,13 @@ export async function buildMasterWorkbook(
   const pristine = JSON.parse(JSON.stringify(wb.getWorksheet("TJ Week 1")!.model));
 
   const renames = new Map<string, string>(RENAMES);
+  // Reserve the deleted sheets' names too: a week labelled "ODCs" would
+  // otherwise take a name the dead-reference tokens still match, and the freeze
+  // below would blank live formulas pointing at that brand-new tab.
   const usedNames = new Set<string>([
     ...RENAMES.map(([, n]) => n.toLowerCase()),
     ...WEEK_TABS.map((n) => n.toLowerCase()),
+    ...INTERNAL_SHEETS.map((n) => n.toLowerCase()),
   ]);
   const weekSheets: WeekSheet[] = [];
   let templateIdx = 0;
@@ -371,6 +376,14 @@ export async function buildMasterWorkbook(
       } else {
         ws = wb.addWorksheet(name);
         const cloned = JSON.parse(JSON.stringify(pristine));
+        // JSON round-tripping flattens Date objects to ISO strings, which
+        // exceljs can choke on when writing (`d.getTime is not a function`) and
+        // which otherwise ship as raw text instead of dates. The current
+        // template doesn't trip either case — `pristine` is already flattened
+        // above, and the tab's date cells survive — but the other three engines
+        // all revive their clones, and a template edit that adds a cached date
+        // result to a week tab would silently break this path.
+        reviveModelDates(cloned);
         cloned.id = ws.id;
         cloned.name = name;
         ws.model = cloned;
@@ -382,8 +395,15 @@ export async function buildMasterWorkbook(
     }
     weekSheets.push({ week, tabNames });
   }
-  // Unused template week tabs never ship.
-  for (let i = templateIdx; i < WEEK_TABS.length; i++) removeSheet(wb, WEEK_TABS[i]);
+  // Unused template week tabs never ship. Their neighbours chain off them
+  // (`TJ Week 3!H6 = SUM('TJ Week 2'!N6)+1`), so freeze the stragglers here
+  // too — fillWeekTab happens to overwrite every H6 today, which is the only
+  // reason a short package does not already ship a dangling week reference.
+  const removedWeekTabs = WEEK_TABS.slice(templateIdx);
+  for (const name of removedWeekTabs) removeSheet(wb, name);
+  const deadRefTokens = [...INTERNAL_REF_TOKENS, ...deletedRefTokens(removedWeekTabs)];
+  freezeUnstableFormulas(wb, deadRefTokens);
+  dropDeadDefinedNames(wb, deadRefTokens, "master");
 
   // -- 3. Overview (Master File): clean Julie's reminders, inject the header
   // data, and point the W1..W5 roll-up at the real week tabs.
@@ -664,7 +684,12 @@ export async function buildMasterWorkbook(
   }
   rewriteAllFormulas(wb, renames);
   scrubInternalMarks(wb);
+  // Final sweep, after the renames: steps 3-7 write formulas of their own, and
+  // the deleted names are never rename targets, so the same tokens still apply.
+  freezeUnstableFormulas(wb, deadRefTokens);
+  dropDeadDefinedNames(wb, deadRefTokens, "master");
   stripBrokenDefinedNames(wb);
+  fitSheetsToOnePage(wb);
   wb.calcProperties.fullCalcOnLoad = true;
   return { wb, weekSheets };
 }

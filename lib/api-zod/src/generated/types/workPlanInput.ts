@@ -12,6 +12,7 @@ export interface WorkPlanInput {
   code: string;
   /** @minLength 1 */
   title: string;
+  nickname?: string;
   /** @minLength 1 */
   client: string;
   /** @minLength 1 */

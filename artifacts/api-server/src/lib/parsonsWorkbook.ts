@@ -2,7 +2,17 @@ import ExcelJS from "exceljs";
 import path from "node:path";
 import fs from "node:fs";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
-import { stripBrokenDefinedNames } from "./excel";
+import {
+  deletedRefTokens,
+  dropDeadDefinedNames,
+  fitSheetsToOnePage,
+  freezeSharedFormulas,
+  freezeUnstableFormulas,
+  removeSheet,
+  reviveModelDates,
+  scrubInternalMarks,
+  stripBrokenDefinedNames,
+} from "./excel";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -347,132 +357,6 @@ export function computeParsonsFinancials(ctx: PackageDocContext): ParsonsFinanci
 // Sheet cleanup helpers
 // ---------------------------------------------------------------------------
 
-function removeSheet(wb: ExcelJS.Workbook, name: string): void {
-  const ws = wb.getWorksheet(name);
-  if (ws) wb.removeWorksheet(ws.id);
-}
-
-/** `'<name>'!` and `<name>!` reference tokens for the given removed sheets. */
-function deletedRefTokens(removed: string[]): string[] {
-  const tokens: string[] = [];
-  for (const name of removed) {
-    tokens.push(`'${name}'!`);
-    tokens.push(`${name}!`);
-  }
-  return tokens;
-}
-
-/**
- * Replaces every remaining formula cell that (a) references a removed sheet or
- * (b) uses an unsupported/unstable token (`#REF!`, `#NAME?`, `DUMMYFUNCTION`,
- * `_xleta`/`_xlfn.LAMBDA`, `_xlfn.SINGLE` implicit-intersection) with its cached
- * result value, so the client workbook never surfaces an error. The meaningful
- * cross-sheet cells were already overwritten with authoritative values before
- * this runs, so anything caught here is incidental.
- */
-function freezeUnstableFormulas(wb: ExcelJS.Workbook, removedTokens: string[]): void {
-  const isUnstable = (formula: string): boolean => {
-    if (removedTokens.some((t) => formula.includes(t))) return true;
-    return /DUMMYFUNCTION|_xleta|_xlfn\.LAMBDA|_xlfn\.SINGLE|#REF!|#NAME\?/i.test(formula);
-  };
-  for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        const v = cell.value;
-        if (v && typeof v === "object" && "formula" in v && typeof v.formula === "string") {
-          if (isUnstable(v.formula)) {
-            const style = cell.style;
-            const result = (v as ExcelJS.CellFormulaValue).result;
-            cell.value =
-              result === undefined || result === null || (typeof result === "object" && "error" in result)
-                ? null
-                : (result as ExcelJS.CellValue);
-            cell.style = style;
-          }
-        }
-      });
-    });
-  }
-}
-
-/**
- * Converts every shared-formula cell (both the `shareType:"shared"` master and
- * its `sharedFormula` children) and every array-formula cell to its cached
- * result value. The Parsons template originated as a Google-Sheets export whose
- * shared/array-formula groups span cells we clear/overwrite; leaving a dangling
- * shared child makes ExcelJS throw "Shared Formula master must exist above and
- * or left of clone" on write. Since the authoritative figures are already
- * written as values, freezing these has no effect on the client-visible numbers.
- */
-function freezeSharedFormulas(wb: ExcelJS.Workbook): void {
-  for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        const v = cell.value as
-          | { formula?: string; sharedFormula?: string; shareType?: string; result?: unknown }
-          | null;
-        if (
-          v &&
-          typeof v === "object" &&
-          ("sharedFormula" in v || v.shareType === "shared" || v.shareType === "array")
-        ) {
-          const style = cell.style;
-          const result = v.result;
-          cell.value =
-            result === undefined || result === null || (typeof result === "object" && "error" in result)
-              ? null
-              : (result as ExcelJS.CellValue);
-          cell.style = style;
-        }
-      });
-    });
-  }
-}
-
-/** Fill colors that mark internal notes/highlights and must never ship. */
-const HIGHLIGHT_ARGB = /^(FF)?(FFFF00|FFFF33|FFFF66|FFFF99|FFFFCC|FFF2CC|FFE699|FFEB9C|FFFFE0)$/i;
-
-/**
- * Removes cell comments and yellow "internal note / input" highlight fills that
- * Julie's working template carries, so the client workbook ships clean.
- */
-function scrubInternalMarks(wb: ExcelJS.Workbook): void {
-  for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        // `cell.model` is rebuilt on each access, so mutate the backing field.
-        const backing = cell as unknown as { _comment?: unknown };
-        if (backing._comment) backing._comment = undefined;
-        const fill = cell.style?.fill as
-          | { type?: string; fgColor?: { argb?: string } }
-          | undefined;
-        if (fill?.fgColor?.argb && HIGHLIGHT_ARGB.test(fill.fgColor.argb)) {
-          cell.style = { ...cell.style, fill: { type: "pattern", pattern: "none" } };
-        }
-      });
-    });
-  }
-}
-
-/**
- * Drops defined names that point at a removed sheet, a `#REF!`, or an external
- * workbook (`[1]…`/`[2]…`). The Parsons template carries several (FEEBAL,
- * INVOICE, TotalToDate, plus a batch of `#REF!` leftovers) that would otherwise
- * trigger Excel's repair prompt once their target sheets are gone.
- */
-function dropDeadDefinedNames(wb: ExcelJS.Workbook, removedTokens: string[]): void {
-  const isDead = (range: string): boolean =>
-    /#REF!/i.test(range) ||
-    /\[[^\]]+\]/.test(range) ||
-    removedTokens.some((t) => range.includes(t));
-  try {
-    const kept = wb.definedNames.model.filter((dn) => !dn.ranges.some(isDead));
-    if (kept.length !== wb.definedNames.model.length) wb.definedNames.model = kept;
-  } catch (err) {
-    logger.warn({ err }, "Failed to drop dead defined names from Parsons workbook");
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Contributors
 // ---------------------------------------------------------------------------
@@ -523,24 +407,8 @@ function timesheetRow(category: string): number {
   }
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-
-/** Revives ISO-string dates a JSON deep-clone produced back into Date objects. */
-function reviveModelDates(model: {
-  rows?: Array<{ cells?: Array<Record<string, unknown>> }>;
-}): void {
-  for (const row of model.rows ?? []) {
-    for (const cell of row.cells ?? []) {
-      if (!cell) continue;
-      if (typeof cell.value === "string" && ISO_DATE.test(cell.value)) cell.value = new Date(cell.value);
-      if (typeof cell.result === "string" && ISO_DATE.test(cell.result as string)) {
-        cell.result = new Date(cell.result as string);
-      }
-    }
-  }
-}
-
-const DAY_COLS = ["H", "I", "J", "K", "L", "M", "N"] as const; // Sat … Fri
+/** Day columns on a generated timesheet tab: H=Sat, I=Sun … N=Fri. */
+const DAY_COLS = ["H", "I", "J", "K", "L", "M", "N"] as const;
 
 /**
  * Fills one generated weekly timesheet tab for one contributor. Day columns run
@@ -819,7 +687,7 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   }
   const removedTokens = deletedRefTokens(removed);
   freezeUnstableFormulas(wb, removedTokens);
-  dropDeadDefinedNames(wb, removedTokens);
+  dropDeadDefinedNames(wb, removedTokens, "Parsons");
   stripBrokenDefinedNames(wb);
 
   // -- 6. Generate fresh weekly timesheet tabs (one per week per contributor).
@@ -856,6 +724,7 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   const inv = wb.worksheets.findIndex((w) => w.name === INVOICE_SHEET);
   if (inv >= 0) wb.views = [{ activeTab: inv } as ExcelJS.WorkbookView];
 
+  fitSheetsToOnePage(wb);
   return { wb, timesheetTabs, financials: fin };
 }
 

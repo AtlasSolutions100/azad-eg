@@ -84,6 +84,7 @@ export const ListWorkPlansResponseItem = zod.object({
   "id": zod.number(),
   "code": zod.string(),
   "title": zod.string(),
+  "nickname": zod.string().nullish().describe('Short biller-assigned label for the work-plan picker.'),
   "client": zod.string(),
   "jobNumber": zod.string(),
   "agreementNo": zod.string().nullish(),
@@ -131,6 +132,7 @@ export const ListWorkPlansResponse = zod.array(ListWorkPlansResponseItem)
 export const CreateWorkPlanBody = zod.object({
   "code": zod.string().min(1),
   "title": zod.string().min(1),
+  "nickname": zod.string().optional(),
   "client": zod.string().min(1),
   "jobNumber": zod.string().min(1),
   "agreementNo": zod.string().optional(),
@@ -166,6 +168,7 @@ export const CreateWorkPlanResponse = zod.object({
   "id": zod.number(),
   "code": zod.string(),
   "title": zod.string(),
+  "nickname": zod.string().nullish().describe('Short biller-assigned label for the work-plan picker.'),
   "client": zod.string(),
   "jobNumber": zod.string(),
   "agreementNo": zod.string().nullish(),
@@ -211,6 +214,7 @@ export const GetWorkPlanResponse = zod.object({
   "id": zod.number(),
   "code": zod.string(),
   "title": zod.string(),
+  "nickname": zod.string().nullish().describe('Short biller-assigned label for the work-plan picker.'),
   "client": zod.string(),
   "jobNumber": zod.string(),
   "agreementNo": zod.string().nullish(),
@@ -261,6 +265,7 @@ export const UpdateWorkPlanParams = zod.object({
 export const UpdateWorkPlanBody = zod.object({
   "code": zod.string().min(1).optional(),
   "title": zod.string().min(1).optional(),
+  "nickname": zod.string().optional(),
   "client": zod.string().min(1).optional(),
   "jobNumber": zod.string().min(1).optional(),
   "agreementNo": zod.string().optional(),
@@ -297,6 +302,7 @@ export const UpdateWorkPlanResponse = zod.object({
   "id": zod.number(),
   "code": zod.string(),
   "title": zod.string(),
+  "nickname": zod.string().nullish().describe('Short biller-assigned label for the work-plan picker.'),
   "client": zod.string(),
   "jobNumber": zod.string(),
   "agreementNo": zod.string().nullish(),
@@ -2305,6 +2311,36 @@ export const CheckPackageTieOutWithProcasResponse = zod.object({
   "difference": zod.number().describe('previouslyBilled - procasBilled'),
   "matches": zod.boolean().describe('True when the two values agree within a cent'),
   "source": zod.string().nullable().describe('How the package\'s Previously Billed was originally set (procas\/manual\/null)')
+})
+
+
+/**
+ * Adds or updates one "PTO/Sick" timesheet row per week so every weekday inside the pay period reaches the standard working day. PTO bills at $0, so this changes what the timesheet shows, never the invoice total. Preview mode reports the proposed change without writing it.
+ * @summary Top each short weekday up to a full day with a combined PTO/Sick row
+ */
+export const FillPackagePtoTo40Params = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const FillPackagePtoTo40Body = zod.object({
+  "preview": zod.boolean().optional().describe('Report the proposed rows without writing them.'),
+  "standardDayHours": zod.number().optional().describe('Hours in a full working day (default 8).'),
+  "fillEmptyDays": zod.boolean().optional().describe('Also fill weekdays with nothing charged to this project. Off by default, since staff split time across jobs and an empty day usually means work booked elsewhere rather than time off.\n')
+})
+
+export const FillPackagePtoTo40Response = zod.object({
+  "preview": zod.boolean(),
+  "rowsCreated": zod.number(),
+  "rowsUpdated": zod.number(),
+  "rowsRemoved": zod.number().describe('Stale auto-fill rows cleared because the real hours now cover the day.'),
+  "hoursAdded": zod.number(),
+  "weeks": zod.array(zod.object({
+  "weekId": zod.number(),
+  "weekLabel": zod.string(),
+  "employeeName": zod.string(),
+  "hoursAdded": zod.number()
+})),
+  "warnings": zod.array(zod.string())
 })
 
 

@@ -466,7 +466,9 @@ describe("procas integration", () => {
       }
       if (table === "BillingHistory") {
         expect(url).toContain("IsVoided eq false");
-        expect(url).toContain("InvoiceDate lt 2026-01-01T00:00:00Z");
+        // Previously Billed sums ALL non-voided history for the project (the
+        // current invoice isn't in Procas yet), so there's no InvoiceDate cutoff
+        // — an earlier cutoff wrongly dropped recent, lag-dated invoices.
         return [
           { Project: "JOB", InvoiceNumber: "OLD-1", InvoiceDate: "2025-11-01T00:00:00Z", TotalBillingAmount: 1200.5, IsVoided: false },
           { Project: "JOB", InvoiceNumber: "OLD-2", InvoiceDate: "2025-12-01T00:00:00Z", TotalBillingAmount: 800, IsVoided: false },
