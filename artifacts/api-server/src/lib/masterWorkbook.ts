@@ -12,7 +12,7 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
 } from "./excel";
-import { contributorKey } from "./packageMappers";
+import { buildPackageRollup, contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
 import type { PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
@@ -85,6 +85,11 @@ function toDate(value: string): Date {
   return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
 }
 
+/** Formats a Date as "M/D/YYYY" for the cover's Period of Service line. */
+function formatMDY(date: Date): string {
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+}
+
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
@@ -98,11 +103,10 @@ function setVal(ws: ExcelJS.Worksheet, address: string, value: ExcelJS.CellValue
   cell.style = style;
 }
 
-function setFormula(ws: ExcelJS.Worksheet, address: string, formula: string): void {
-  const cell = ws.getCell(address);
-  const style = cell.style;
-  cell.value = { formula } as ExcelJS.CellValue;
-  cell.style = style;
+/** Current numeric value of a cell (0 for blanks, text, or formulas). */
+function numOf(ws: ExcelJS.Worksheet, address: string): number {
+  const v = ws.getCell(address).value;
+  return typeof v === "number" ? v : 0;
 }
 
 function clearCell(ws: ExcelJS.Worksheet, address: string): void {
@@ -183,6 +187,8 @@ interface WeekSheet {
   week: PackageWeekRow;
   /** Renamed tab names for this week (one per contributor). */
   tabNames: string[];
+  /** Billable (row 9) hours for this week, summed across contributors. */
+  billableHours: number;
 }
 
 /** Distinct contributors (employee identity → display name) from entries. */
@@ -258,26 +264,51 @@ function weekRowFor(category: string): number {
   }
 }
 
+/** Day columns on a week tab: H=Sat, I=Sun … N=Fri. */
+const DAY_COLS = ["H", "I", "J", "K", "L", "M", "N"] as const;
+
+/** Hour rows on a week tab (9 = billable, 11 = holiday, 12 = PTO). */
+const WEEK_HOUR_ROWS = [9, 10, 11, 12, 13, 14] as const;
+
+/** The week tab's "TOTAL HOURS" row, below the hour rows. */
+const WEEK_TOTAL_ROW = 15;
+
 /**
  * Fills one reference-layout week tab for one contributor. Columns H..N are
  * Sat..Fri; our weeks start Monday, so the tab's Saturday (H6) is
  * weekStart − 2 days. Row 9 is the billable row the Overview pulls (O9).
+ *
+ * Returns the per-row weekly totals so the Overview can be written as values.
  */
 function fillWeekTab(
   ws: ExcelJS.Worksheet,
   week: PackageWeekRow,
   ctx: PackageDocContext,
   person: { key: string; name: string; classification: string },
-): void {
+): Record<number, number> {
   setVal(ws, "D5", person.name);
   // H6 is the tab's Saturday: snap to the Saturday on/before weekStart.
   const start = toDate(week.weekStart);
-  setVal(ws, "H6", addDays(start, -((start.getDay() + 1) % 7)));
-  // I6..N6 are shared formulas (=prev+1) — leave them alone.
+  const saturday = addDays(start, -((start.getDay() + 1) % 7));
+  // Write all seven day headers as literal dates. The template ships I6..N6 as
+  // shared formulas (=H6+1, =I6+1, …), and leaving them alone looked safe — but
+  // `freezeSharedFormulas` later replaces every shared formula with its CACHED
+  // result, which is the date from the reference workbook (June 2026). The tab
+  // then showed a correct Saturday followed by six stale June days, which is
+  // what Julie saw as "the week ending month shows June".
+  DAY_COLS.forEach((col, i) => setVal(ws, `${col}6`, addDays(saturday, i)));
+  // "Week Ending" ships as `=N6`. A plain (non-shared) formula survives the
+  // freeze, so a viewer that does not recalculate shows its cached result — the
+  // reference workbook's date — right next to a correct day row.
+  setVal(ws, "J5", addDays(saturday, 6));
 
-  // Clear sample content: contract/description labels and all day-hour cells.
+  // Clear sample content: contract/description labels, all day-hour cells, and
+  // the weekly total in O. O was previously left alone on the assumption that
+  // its `=SUM(H:N)` would recalculate, but it is a shared formula that gets
+  // frozen to the reference workbook's cached total — so it has to be cleared
+  // and rewritten as a value like every other number in the deliverable.
   for (let r = 9; r <= 14; r++) {
-    for (const col of ["B", "D", "H", "I", "J", "K", "L", "M", "N"]) clearCell(ws, `${col}${r}`);
+    for (const col of [...DAY_COLS, "B", "D", "O"]) clearCell(ws, `${col}${r}`);
   }
   setVal(ws, "B9", `${ctx.workPlan.agreementNo || ctx.workPlan.jobNumber} / ${ctx.workPlan.code}`);
   setVal(ws, "D9", person.classification);
@@ -300,12 +331,34 @@ function fillWeekTab(
     a.N += e.hoursFri;
     acc.set(r, a);
   }
-  for (const [r, a] of acc) {
-    for (const col of ["H", "I", "J", "K", "L", "M", "N"]) {
-      const v = a[col];
-      if (v > 0) setVal(ws, `${col}${r}`, round2(v));
+  const rowTotals: Record<number, number> = {};
+  for (const r of WEEK_HOUR_ROWS) {
+    const a = acc.get(r);
+    let total = 0;
+    for (const col of DAY_COLS) {
+      const v = round2(a?.[col] ?? 0);
+      if (v > 0) setVal(ws, `${col}${r}`, v);
+      total += v;
     }
+    total = round2(total);
+    rowTotals[r] = total;
+    if (total > 0) setVal(ws, `O${r}`, total);
   }
+
+  // TOTAL HOURS (row 15) is a band of shared `=SUM(H9:H14)` formulas whose
+  // cached results are the reference workbook's 8/8/8/8/8/40. Rewrite the whole
+  // row as values so the printed total matches the hours above it.
+  let grand = 0;
+  for (const col of DAY_COLS) {
+    const colTotal = round2(
+      WEEK_HOUR_ROWS.reduce((sum, r) => sum + (acc.get(r)?.[col] ?? 0), 0),
+    );
+    setVal(ws, `${col}${WEEK_TOTAL_ROW}`, colTotal);
+    grand += colTotal;
+  }
+  setVal(ws, `O${WEEK_TOTAL_ROW}`, round2(grand));
+
+  return rowTotals;
 }
 
 /**
@@ -362,6 +415,7 @@ export async function buildMasterWorkbook(
   for (let i = 0; i < weeks.length; i++) {
     const week = weeks[i];
     const tabNames: string[] = [];
+    let billableHours = 0;
     for (const person of persons) {
       const label = sheetSafe(week.label, `Week ${i + 1}`);
       const base =
@@ -390,10 +444,11 @@ export async function buildMasterWorkbook(
         ws.name = name;
       }
       templateIdx += 1;
-      fillWeekTab(ws, week, ctx, person);
+      const rowTotals = fillWeekTab(ws, week, ctx, person);
+      billableHours = round2(billableHours + (rowTotals[9] ?? 0));
       tabNames.push(name);
     }
-    weekSheets.push({ week, tabNames });
+    weekSheets.push({ week, tabNames, billableHours });
   }
   // Unused template week tabs never ship. Their neighbours chain off them
   // (`TJ Week 3!H6 = SUM('TJ Week 2'!N6)+1`), so freeze the stragglers here
@@ -439,26 +494,26 @@ export async function buildMasterWorkbook(
   }
   setVal(master, "D23", 0);
   setVal(master, "E23", round2(pkg.previouslyBilled));
-  // W1..F5 roll-up: sum the billable row (O9) of every tab of that week.
+  // W1..F5 roll-up: the billable (row 9) hours of every tab of that week.
+  //
+  // These used to be written as live formulas (`='Week 1'!O9+'Week 2'!O9`)
+  // pointing at cells that were themselves shared `=SUM(H9:N9)` formulas. That
+  // chain is never evaluated by a writer that only emits formula text, and the
+  // frozen O9 cells it pointed at held the reference workbook's cached numbers,
+  // so the Overview arrived blank or stale — Julie's "it's still not pulling in
+  // any data for this page". Everything else in the deliverable is a computed
+  // value; the Overview is now no exception.
   const weekCols = ["B", "C", "D", "E", "F"];
   for (let i = 0; i < weekCols.length; i++) {
-    const addr = `${weekCols[i]}9`;
-    const ws = weekSheets[i];
-    if (!ws) {
-      setVal(master, addr, 0);
-    } else {
-      setFormula(master, addr, ws.tabNames.map((t) => `${quoted(t)}!O9`).join("+"));
-    }
+    setVal(master, `${weekCols[i]}9`, weekSheets[i]?.billableHours ?? 0);
   }
-  // Weeks beyond the 5-column Overview grid still roll into G9.
-  if (weekSheets.length > 5) {
-    const extra = weekSheets
-      .slice(5)
-      .flatMap((wsx) => wsx.tabNames)
-      .map((t) => `${quoted(t)}!O9`)
-      .join("+");
-    setFormula(master, "G9", `SUBTOTAL(9,B9:F9)+${extra}`);
-  }
+  // G9 is the grand total across every week, including any beyond the 5-column
+  // Overview grid (which have no column of their own).
+  setVal(
+    master,
+    "G9",
+    round2(weekSheets.reduce((sum, wsx) => sum + wsx.billableHours, 0)),
+  );
 
   // -- 4. Invoice (Cover): header, addresses, and the Billed Line Items table.
   if (pkg.invoiceDate) setVal(cover, "U6", toDate(pkg.invoiceDate));
@@ -497,9 +552,47 @@ export async function buildMasterWorkbook(
     setVal(cover, `J${r}`, round2(it.poAmount));
     setVal(cover, `M${r}`, round2(it.previousInvoiced));
     setVal(cover, `P${r}`, round2(it.currentInvoiced));
-    setFormula(cover, `S${r}`, `P${r}+M${r}`);
-    setFormula(cover, `V${r}`, `IF(ABS(J${r}-S${r})<0.01,0,J${r}-S${r})`);
+    const invoicedToDate = round2(it.currentInvoiced + it.previousInvoiced);
+    setVal(cover, `S${r}`, invoicedToDate);
+    const remaining = round2(it.poAmount - invoicedToDate);
+    setVal(cover, `V${r}`, Math.abs(remaining) < 0.01 ? 0 : remaining);
   });
+
+  // Cover header cells the template drives by formula. Their cached results
+  // are the reference invoice's, so the client saw the wrong invoice number,
+  // an empty Period of Service (the cached IF resolved to blank) and a
+  // signature date three weeks off the invoice date.
+  setVal(cover, "U4", pkg.invoiceNumber || "");
+  const agreementLine = wp.agreementNo
+    ? `${wp.agreementNo} ${wp.title || ""}`.trim()
+    : wp.title || "";
+  setVal(cover, "F16", agreementLine);
+  setVal(
+    cover,
+    "F18",
+    `${formatMDY(toDate(pkg.payPeriodStart))} to ${formatMDY(toDate(pkg.payPeriodEnd))}`,
+  );
+  if (pkg.invoiceDate) setVal(cover, "P48", toDate(pkg.invoiceDate));
+  // Billed Line Items column totals (row 35) and the Billing Summary below it.
+  const sumItems = (pick: (it: (typeof items)[number]) => number) =>
+    round2(items.reduce((a, it) => a + pick(it), 0));
+  const poTotal = sumItems((it) => it.poAmount);
+  const prevTotal = sumItems((it) => it.previousInvoiced);
+  const currentTotal = sumItems((it) => it.currentInvoiced);
+  const toDateTotal = round2(prevTotal + currentTotal);
+  setVal(cover, "J35", poTotal);
+  setVal(cover, "M35", prevTotal);
+  setVal(cover, "P35", currentTotal);
+  setVal(cover, "S35", toDateTotal);
+  setVal(cover, "V35", round2(poTotal - toDateTotal));
+  setVal(cover, "O38", poTotal);
+  setVal(cover, "O39", prevTotal);
+  setVal(cover, "O40", toDateTotal);
+  setVal(cover, "O41", round2(poTotal - toDateTotal));
+  setVal(cover, "O42", poTotal > 0 ? toDateTotal / poTotal : 0);
+  // Julie's reconciliation scratch, parked in columns AC/AE but inside the
+  // cover's print area (A1:AG58), so it printed alongside the invoice.
+  for (const addr of ["AC6", "AC7", "AC8", "AC9", "AE42"]) clearCell(cover, addr);
 
   // -- 5. Sub Calc (Cost). Rates come from the work plan; work-plan rates are
   // stored as percentages (e.g. 120.58) while the reference cells hold
@@ -575,9 +668,9 @@ export async function buildMasterWorkbook(
     setVal(cost, "G43", round2(wp.budgetFccm ?? 0));
   } else {
     setVal(cost, "G13", gOwn.laborRow);
-    setFormula(cost, "G14", "ROUND(G13*C14,2)");
+    setVal(cost, "G14", gOwn.ohRow);
     setVal(cost, "G39", gOwn.feeRow);
-    setFormula(cost, "G43", "ROUND(G13*D43,2)");
+    setVal(cost, "G43", gOwn.fccmRow);
   }
   if (prevSplit) {
     setVal(cost, "I13", round2(wp.prevBilledLabor ?? 0));
@@ -611,15 +704,117 @@ export async function buildMasterWorkbook(
   setVal(cost, "A12", otherLabel ? `${otherLabel}_Field OH` : "Field OH");
   setVal(cost, "A37", otherLabel);
   setVal(cost, "A38", otherLabel);
-  // H14 must follow the injected OH rate even for zero G rows.
-  setFormula(cost, "H14", "ROUND(H13*C14,2)");
-  setFormula(cost, "H43", "H13*D43");
+  // Budget / previously-billed subtotals as values. G16/G20/G42/G44/G45 and
+  // I16/I20/I42/I44 are SUBTOTAL formulas whose cached results are the
+  // reference workbook's own $1.28M budget and $1.05M previously billed.
+  const g13 = numOf(cost, "G13");
+  const g14 = numOf(cost, "G14");
+  const g39 = numOf(cost, "G39");
+  const g43 = numOf(cost, "G43");
+  const gTotalLabor = round2(gOther.laborRow + gOther.ohRow + g13 + g14);
+  const gTotalFee = round2(gOther.feeRow + g39);
+  setVal(cost, "G16", gTotalLabor);
+  setVal(cost, "G19", 0);
+  setVal(cost, "G20", gTotalLabor);
+  for (const addr of ["G22", "G24", "G27", "G29", "G32", "G34"]) setVal(cost, addr, 0);
+  // The last three template formulas on these sheets: the Overview's contract
+  // total and the two zero-budget leaves (home overhead, subconsultant fee).
+  setVal(master, "F18", round2(numOf(master, "B18") + numOf(master, "D18") + numOf(master, "E18")));
+  setVal(cost, "G18", 0);
+  setVal(cost, "G40", 0);
+  setVal(cost, "G42", gTotalFee);
+  const gTotal = round2(gTotalLabor + gTotalFee + g43);
+  setVal(cost, "G44", gTotal);
 
-  // -- 6. Labor Attachment. Rows 19/20 mirror the reference's rate split:
-  // D19='Master File'!I17 and D20='Master File'!I18 are template formulas we
-  // keep. With one rate, all hours land on row 19; with a mid-period rate
-  // change, row 19 carries the old-rate hours and row 20 the remainder
-  // ('Master File'!$G$9-C19), exactly as Julie's workbook does.
+  const i13 = numOf(cost, "I13");
+  const i14 = numOf(cost, "I14");
+  const i39 = numOf(cost, "I39");
+  const i43 = numOf(cost, "I43");
+  const iTotalLabor = round2(iOther.laborRow + iOther.ohRow + i13 + i14);
+  const iTotalFee = round2(iOther.feeRow + i39);
+  setVal(cost, "I16", iTotalLabor);
+  setVal(cost, "I19", 0);
+  setVal(cost, "I20", iTotalLabor);
+  for (const addr of ["I22", "I24", "I27", "I29", "I34"]) setVal(cost, addr, 0);
+  setVal(cost, "I42", iTotalFee);
+  const iTotal = round2(iTotalLabor + iTotalFee + i43);
+  setVal(cost, "I44", iTotal);
+
+  // -- 5b. Sub Calc "Amount This Period" (H) and "Amount To Date" (J).
+  //
+  // The H column was left as the template's formula chain, rooted in
+  // `'Labor Attachment'!E24` — itself a SUBTOTAL of formulas reaching back to
+  // the Overview. Nothing evaluated it, so every figure on the client's Sub
+  // Calc was the reference workbook's, and the J/K columns (Amount To Date,
+  // % Expended) still showed $2.09M and 84.5% against a package that had
+  // billed a fraction of that. The whole build-up is now written as values
+  // from the same rollup the review screen uses.
+  const rollup = buildPackageRollup(ctx.entries, wp, {
+    previouslyBilled: pkg.previouslyBilled,
+    otherDirectCosts: pkg.otherDirectCosts,
+  });
+  const hLabor = rollup.laborTotal;
+  const hOh = round2(rollup.fringeTotal + rollup.overheadTotal);
+  const hTotalLabor = round2(hLabor + hOh);
+  setVal(cost, "H11", 0);
+  setVal(cost, "H12", 0);
+  setVal(cost, "H13", hLabor);
+  setVal(cost, "H14", hOh);
+  setVal(cost, "H16", hTotalLabor);
+  setVal(cost, "H17", 0);
+  setVal(cost, "H18", 0);
+  setVal(cost, "H19", 0);
+  setVal(cost, "H20", hTotalLabor);
+  setVal(cost, "H22", rollup.otdtPremium);
+  setVal(cost, "H24", rollup.otdtPremium);
+  setVal(cost, "H29", rollup.otherDirectCosts);
+  setVal(cost, "H32", 0);
+  setVal(cost, "H34", 0);
+  setVal(cost, "H37", 0);
+  setVal(cost, "H38", 0);
+  setVal(cost, "H39", rollup.fixedFee);
+  setVal(cost, "H40", 0);
+  setVal(cost, "H41", 0);
+  setVal(cost, "H42", rollup.fixedFee);
+  setVal(cost, "H43", rollup.fccm);
+  setVal(cost, "H44", rollup.totalThisPeriod);
+
+  // Amount To Date = this period + previously billed, row by row.
+  const amountToDate = (h: string, i: string) => round2(numOf(cost, h) + numOf(cost, i));
+  for (const r of [11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 24, 27, 29, 32, 34, 37, 38, 39, 40, 41, 42, 43]) {
+    setVal(cost, `J${r}`, amountToDate(`H${r}`, `I${r}`));
+  }
+  const jTotal = round2(rollup.totalThisPeriod + iTotal);
+  setVal(cost, "J44", jTotal);
+  // % Expended, and the balance left on the work plan.
+  const pct = (num: number, den: number) => (den > 0 ? num / den : 0);
+  setVal(cost, "K20", pct(numOf(cost, "J20"), gTotalLabor));
+  setVal(cost, "K42", pct(numOf(cost, "J42"), gTotalFee));
+  setVal(cost, "K44", pct(jTotal, gTotal));
+  setVal(cost, "G45", round2(gTotal - jTotal));
+
+  // Hours to Date row (Current / Previous / To Date), also formula-driven.
+  setVal(cost, "D10", rollup.totalHours);
+  setVal(cost, "E10", 0);
+  setVal(cost, "F10", rollup.totalHours);
+
+  // Julie's scratch inside the print area (A1:M60): a stray "z" in M1 and two
+  // `=318240+100577.44+4595.61` reconciliation cells parked below the form.
+  for (const addr of ["M1", "H52", "F60"]) clearCell(cost, addr);
+
+  // -- 6. Labor Attachment. Rows 19/20 mirror the reference's rate split: with
+  // one rate every hour lands on row 19; with a mid-period rate change, row 19
+  // carries the old-rate hours and row 20 the remainder.
+  //
+  // Every cell here used to be a formula reaching back through the Overview
+  // (`C19 = +'Master File'!G9`, `D19 = Overview!I17`, `E19 = ROUND(C19*D19,2)`,
+  // and SUBTOTALs on rows 22/24). None of them are evaluated by a writer that
+  // only emits formula text, so a viewer reading cached results printed the
+  // reference workbook's own figures instead — which is why Julie's August
+  // invoice showed 144 hours (the reference month's total) all at $90.11 (the
+  // superseded rate), rather than her hours at $92.50. Both of her Labor
+  // Attachment notes are that one substitution. Values only, from here down.
+  //
   // All contributors are named on the labor line: the hours totals include
   // every contributor's billable hours.
   const laborNames = persons
@@ -628,9 +823,18 @@ export async function buildMasterWorkbook(
     .join("; ");
   setVal(labor, "A17", `${wp.code} - Project ${wp.bartProjectNumbers || ""}`.trim());
   setVal(labor, "A18", laborNames);
+  const totalBillableHours = round2(
+    weekSheets.reduce((sum, wsx) => sum + wsx.billableHours, 0),
+  );
+  const hours1 = segments.length === 2 ? round2(segments[0].hours) : totalBillableHours;
+  const hours2 = round2(totalBillableHours - hours1);
+  setVal(labor, "C19", hours1);
+  setVal(labor, "D19", rate1);
+  setVal(labor, "E19", round2(hours1 * rate1));
+  setVal(labor, "C20", hours2);
+  setVal(labor, "D20", hours2 > 0 ? rate2 : "--");
+  setVal(labor, "E20", round2(hours2 * rate2));
   if (segments.length === 2) {
-    setVal(labor, "C19", segments[0].hours);
-    setFormula(labor, "C20", "'Master File'!$G$9-C19");
     const eff = segments[1].firstWeekStart;
     setVal(
       labor,
@@ -638,14 +842,83 @@ export async function buildMasterWorkbook(
       eff ? `Labor - new rate effective ${eff.getMonth() + 1}/${eff.getDate()}` : "Labor - new rate",
     );
   } else {
-    setFormula(labor, "C19", "+'Master File'!G9");
-    setVal(labor, "C20", 0);
     clearCell(labor, "B20");
   }
-  clearCell(labor, "H13");
-  setVal(labor, "A11", "");
-  setVal(labor, "A14", "");
+  const laborThisPeriod = round2(hours1 * rate1 + hours2 * rate2);
+  setVal(labor, "C22", totalBillableHours);
+  setVal(labor, "E22", laborThisPeriod);
+  setVal(labor, "C24", totalBillableHours);
+  setVal(labor, "E24", laborThisPeriod);
+  // Rows 12-15 are the reference roster (a $88 Project Manager line and a
+  // $90.11 Labor line) plus scratch columns Julie worked in — "Total hours
+  // Travis", "hours to put", a 15CQ002/15TC002 percentage split. All of it sat
+  // inside the print area (A1:Q37) and printed on the client's attachment.
+  for (let lr = 11; lr <= 16; lr++) {
+    for (const col of ["A", "B", "C", "D", "E"]) clearCell(labor, `${col}${lr}`);
+  }
+  for (let lr = 9; lr <= 37; lr++) {
+    for (const col of ["G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"]) {
+      clearCell(labor, `${col}${lr}`);
+    }
+  }
   setVal(labor, "A22", `${wp.code} - Subtotal `);
+  // Overtime premium block (rows 26-31) and the grand total below it.
+  for (const lr of [26, 27, 28, 29]) {
+    setVal(labor, `C${lr}`, 0);
+    setVal(labor, `E${lr}`, 0);
+  }
+  setVal(labor, "C26", 0);
+  setVal(labor, "E26", rollup.otdtPremium);
+  setVal(labor, "E31", rollup.otdtPremium);
+  setVal(labor, "E33", round2(laborThisPeriod + rollup.otdtPremium));
+  clearCell(labor, "E36");
+
+  // -- 6b. Cross-sheet header cells. Every sheet pulls its invoice number, date
+  // and period from the Invoice/Overview by formula. None of those are
+  // evaluated on the way out, so each attachment printed the reference
+  // workbook's cached header — a July date and the old invoice number on an
+  // August invoice — and the Progress Report's "% has been billed" line quoted
+  // the reference's own budget burn.
+  const invDate = pkg.invoiceDate ? toDate(pkg.invoiceDate) : null;
+  const invNo = pkg.invoiceNumber || "";
+  const periodStr = `${formatMDY(toDate(pkg.payPeriodStart))} to ${formatMDY(toDate(pkg.payPeriodEnd))}`;
+
+  // Invoice face: TOTAL AMOUNT DUE THIS INVOICE (a merged band M21:T21).
+  for (const col of ["M", "N", "O", "P", "Q", "R", "S", "T"]) {
+    setVal(cover, `${col}21`, rollup.totalThisPeriod);
+  }
+  // Overview "Total Billing to This Period" (hours / cost).
+  setVal(master, "D20", totalBillableHours);
+  setVal(master, "E20", rollup.totalThisPeriod);
+  for (const col of ["D", "E", "F"]) setVal(master, `${col}16`, agreementLine);
+
+  // Sub Calc header.
+  if (invDate) for (const a of ["J5", "K5"]) setVal(cost, a, invDate);
+  for (const a of ["J6", "K6"]) setVal(cost, a, invNo);
+
+  // Labor Attachment header.
+  setVal(labor, "A5", "Azad Engineering PC");
+  if (invDate) setVal(labor, "E6", invDate);
+  setVal(labor, "E7", invNo);
+
+  // Progress Report header + billing summary.
+  if (invDate) {
+    setVal(report, "H5", invDate);
+    setVal(report, "H81", invDate);
+  }
+  setVal(report, "H6", invNo);
+  for (const a of ["D8", "E8"]) setVal(report, a, wp.bartProjectNumbers || "");
+  setVal(report, "H8", wp.agreementNo || "");
+  for (const a of ["D9", "E9"]) setVal(report, a, wp.title || "");
+  setVal(report, "H9", periodStr);
+  setVal(report, "E69", gTotal);
+  setVal(report, "E70", jTotal);
+  setVal(
+    report,
+    "G70",
+    gTotal > 0 ? `${((jTotal / gTotal) * 100).toFixed(2)}% has been billed.` : "",
+  );
+  setVal(report, "D76", laborNames);
 
   // -- 7. Progress Report: replace Julie's narrative with the package's.
   for (let r = 21; r <= 64; r++) {

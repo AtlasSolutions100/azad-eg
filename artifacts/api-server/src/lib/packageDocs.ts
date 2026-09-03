@@ -219,7 +219,7 @@ async function buildInvoice(ctx: PackageDocContext): Promise<ExcelJS.Workbook> {
   if (ws) {
     if (ctx.pkg.invoiceDate) setVal(ws, "L6", toDate(ctx.pkg.invoiceDate));
     if (wp.poNumber) setVal(ws, "L8", wp.poNumber);
-    setVal(ws, "L10", " " + (ctx.pkg.invoiceNumber || wp.code));
+    setVal(ws, "L10", ctx.pkg.invoiceNumber ? " " + ctx.pkg.invoiceNumber : "");
     if (wp.agreementNo) setVal(ws, "E21", wp.agreementNo);
     setVal(ws, "E22", wp.title);
     setVal(ws, "C27", "Work Plan " + wp.code);
@@ -262,7 +262,7 @@ async function buildLaborAttachment(ctx: PackageDocContext): Promise<ExcelJS.Wor
     const burden = (1 + fringeRate / 100) * (1 + fixedFeeRate / 100);
 
     if (ctx.pkg.invoiceDate) setVal(ws, "F1", toDate(ctx.pkg.invoiceDate));
-    setVal(ws, "F2", " " + (ctx.pkg.invoiceNumber || wp.code));
+    setVal(ws, "F2", ctx.pkg.invoiceNumber ? " " + ctx.pkg.invoiceNumber : "");
     setVal(ws, "F3", wp.jobNumber);
     // Drive the per-row burden formulas with the package's fringe fraction.
     setVal(ws, "H6", round2(fringeRate / 100));
@@ -365,7 +365,7 @@ async function buildSubCalc(ctx: PackageDocContext): Promise<ExcelJS.Workbook> {
     const fieldFccm = round2(rollup.fccm - homeFccm);
 
     if (ctx.pkg.invoiceDate) setVal(ws, "J1", toDate(ctx.pkg.invoiceDate));
-    setVal(ws, "J2", " " + (ctx.pkg.invoiceNumber || wp.code));
+    setVal(ws, "J2", ctx.pkg.invoiceNumber ? " " + ctx.pkg.invoiceNumber : "");
     setVal(ws, "J3", wp.jobNumber);
 
     // Inject only LEAF cells of the "Amount This Period" (H) column. The in-file

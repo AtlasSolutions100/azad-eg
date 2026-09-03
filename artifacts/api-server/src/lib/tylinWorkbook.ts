@@ -66,6 +66,11 @@ const TEMPLATE_FILE = "tylin-invoice-template.xlsm";
 const INVOICE_SHEET = "Invoice";
 const SUBINV_SHEET = "Sub1 Inv";
 const SUBLABOR_SHEET = "Sub1 Labor";
+const ODC_SHEET = "ODCs";
+
+/** First and last detail rows of the ODCs table (row 23 is the grand total). */
+const ODC_FIRST_ROW = 7;
+const ODC_LAST_ROW = 16;
 
 /** The pristine weekly-timesheet layout cloned for each generated tab. */
 const PRISTINE_WEEK_SHEET = "Ryan Week 1";
@@ -86,6 +91,11 @@ const INTERNAL_SHEETS = [
 /** True for the template's own `<name> Week N` timesheet tabs (regenerated). */
 function isTemplateWeekTab(name: string): boolean {
   return /\sWeek\s*\d+\s*$/i.test(name);
+}
+
+/** US-dollar text matching the template's DOLLAR() output, e.g. $2,588,054.11. */
+function money(n: number): string {
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function round2(n: number): number {
@@ -193,8 +203,22 @@ interface TylinLocationTotals {
   fccm: number; // round2(directLabor × fccmFrac); 0 for TYlin
 }
 
+/**
+ * One person's overtime/doubletime premium for the period. The ODCs sheet
+ * itemises these by name, so the premium has to be tracked per employee and
+ * not only as the two workbook-level scalars.
+ */
+export interface TylinPremiumRow {
+  employeeName: string;
+  kind: "ot" | "dt";
+  hours: number;
+  amount: number;
+}
+
 export interface TylinFinancials {
   laborRows: TylinLaborRow[];
+  /** Per-employee OT/DT premium detail, for the ODCs itemisation. */
+  premiumRows: TylinPremiumRow[];
   home: TylinLocationTotals;
   field: TylinLocationTotals;
   fixedFee: number; // (labor+fringe+pool) × feeFrac (UNROUNDED)
@@ -242,6 +266,14 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
   // (straight + night + OT + DT) bill at the base rate; the OT/DT *premium* is
   // computed separately below and added unburdened.
   const rowMap = new Map<string, TylinLaborRow>();
+  const premiumMap = new Map<string, TylinPremiumRow>();
+  const addPremium = (name: string, kind: "ot" | "dt", hrs: number, amount: number) => {
+    const k = `${name.toLowerCase()}|${kind}`;
+    const row = premiumMap.get(k) ?? { employeeName: name, kind, hours: 0, amount: 0 };
+    row.hours = round2(row.hours + hrs);
+    row.amount = round2(row.amount + amount);
+    premiumMap.set(k, row);
+  };
   let otPremiumRaw = 0;
   let dtPremiumRaw = 0;
   for (const e of ctx.entries) {
@@ -263,8 +295,13 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
         } as TylinLaborRow);
       row.hours = round2(row.hours + hrs);
       rowMap.set(key, row);
-      if (e.category === "ot") otPremiumRaw += 0.5 * hrs * e.rate;
-      else if (e.category === "dt") dtPremiumRaw += 1.0 * hrs * e.rate;
+      if (e.category === "ot") {
+        otPremiumRaw += 0.5 * hrs * e.rate;
+        addPremium(e.employeeName, "ot", hrs, 0.5 * hrs * e.rate);
+      } else if (e.category === "dt") {
+        dtPremiumRaw += 1.0 * hrs * e.rate;
+        addPremium(e.employeeName, "dt", hrs, 1.0 * hrs * e.rate);
+      }
     }
   }
   const laborRows = [...rowMap.values()].map((r) => ({
@@ -324,8 +361,13 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
   const remainingBalance = hasBudget ? budget - totalToDate : 0;
   const percentExpended = hasBudget ? totalToDate / budget : 0;
 
+  const premiumRows = [...premiumMap.values()].sort(
+    (a, b) => a.employeeName.localeCompare(b.employeeName) || a.kind.localeCompare(b.kind),
+  );
+
   return {
     laborRows,
+    premiumRows,
     home,
     field,
     fixedFee,
@@ -421,7 +463,15 @@ function fillTimesheet(
   setVal(ws, "D5", person.name);
   // Day header dates: H=Sat, I=Sun, J=Mon, K=Tue, L=Wed, M=Thu, N=Fri.
   DAY_COLS.forEach((col, i) => setVal(ws, `${col}6`, addDays(saturday, i)));
-  setVal(ws, "J5", addDays(saturday, 6)); // "Week Ending" = Friday
+  // "Week Ending" = Friday. The template formats J5 as `[$-409]mmmm d, yyyy`
+  // ("August 21, 2026"), which is 13 characters in an 8.9-wide column, so the
+  // printed timesheet read "Week Ending: ###". A short numeric date fits.
+  setVal(ws, "J5", addDays(saturday, 6));
+  ws.getCell("J5").numFmt = "m/d/yyyy";
+  // The reference workbook carries a stray backtick in V36, inside the print
+  // area (A1:V36), so it printed in the bottom-right corner of every single
+  // timesheet page.
+  clearCell(ws, "V36");
 
   // Clear the sample data region (descriptions + all day/total cells, rows 8-13).
   for (let r = 8; r <= 13; r++) {
@@ -488,7 +538,16 @@ export interface TylinBuildResult {
   financials: TylinFinancials;
 }
 
-const LABOR_COLS = ["A", "B", "C", "D", "E"] as const;
+/**
+ * Columns cleared on each Sub1 Labor line. A..E carry the generated line
+ * (classification / name / hours / rate / amount); F..L are scratch cells Julie
+ * kept beside the FIELD block in the reference workbook — a "MODIFY THE FORMULA
+ * FOR THE MONTH STARTING DATE" note, half-rate helpers, and running sums like
+ * `=E18+E20+E26+…`. Clearing only A..E left all of that sitting next to the
+ * real lines, which is the "formatting is funky for staff's names/roles" Julie
+ * saw on the Labor Attachment.
+ */
+const LABOR_COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const;
 
 /** Writes one Sub1 Labor location block (rows start..end) and its subtotal. */
 function writeLaborBlock(
@@ -551,7 +610,12 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
     JSON.stringify(wb.getWorksheet(PRISTINE_WEEK_SHEET)!.model),
   );
 
-  const invoiceNo = pkg.invoiceNumber || wp.code;
+  // An unset invoice number prints blank, never the work-plan code. Falling back
+  // to the code put "10014" in the Invoice No. box, which reads as a real invoice
+  // number and sent Julie looking for where the system got it. The package
+  // tie-out already flags a missing number, and the biller supplies the first one
+  // for a work plan (every later package increments it — see bumpInvoiceNumber).
+  const invoiceNo = pkg.invoiceNumber || "";
   const invoiceDate = pkg.invoiceDate ? toDate(pkg.invoiceDate) : null;
   const periodStart = toDate(pkg.payPeriodStart);
   const periodEnd = toDate(pkg.payPeriodEnd);
@@ -592,22 +656,47 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   setVal(invoice, "M36", budget > 0 ? totalThisPeriod / budget : 0);
   setVal(invoice, "M37", budget > 0 ? previouslyBilled / budget : 0);
   setVal(invoice, "M38", budget > 0 ? remaining / budget : 0);
+  // The form occupies columns B..O. Columns P..V hold Julie's working notes —
+  // a stray backtick, a 2,588,054.11 budget tally, a `=J38/588.75` unit-rate
+  // check — and the template's print area (A1:V49) reaches all of them, so
+  // they printed on the right-hand side of the client's invoice.
+  for (let r = 1; r <= 49; r++) {
+    for (const col of ["P", "Q", "R", "S", "T", "U", "V"]) clearCell(invoice, `${col}${r}`);
+  }
 
   // -- 2. Sub1 Inv (build-up). Leaf cells written as values; the authoritative
   // totals G42/H42/I42/J42 forced so non-recalc viewers are correct.
+  //
+  // Before writing anything, wipe the four right-hand columns across the whole
+  // body. Only column H (Amount This Period) was ever regenerated, so Budget
+  // (G), Previously Billed (I), Amount To Date (J) and % Expended (K) still
+  // carried the reference workbook's own invoice: $1.2M and $2.39M budgets,
+  // $1.95M previously billed, $2.09M to date and a 87.6% expended figure, none
+  // of which belong to this package. Those seven-figure leftovers are also what
+  // overflowed the narrow columns into the `###` Julie reported — the real
+  // numbers for this period fit fine.
+  for (let r = 5; r <= 41; r++) {
+    for (const col of ["G", "I", "J", "K"]) clearCell(subinv, `${col}${r}`);
+  }
   setVal(subinv, "K1", invoiceDate ?? "");
   setVal(subinv, "J2", invoiceNo);
 
   // Home labor block (rows 7 labor / 8 fringe / 9 overhead pool) — 0 for BART.
+  // Hours to Date: Current (D) / Previous (E) / To Date (F). E and F were left
+  // as an empty cell and a `=D+E` formula whose cached result was the template's
+  // 11,028.5 hours, so the row read blank-or-wrong. We do not carry prior-period
+  // hours in the package, so Previous is an explicit 0 and To Date equals
+  // Current — both written as values.
   setVal(subinv, "D7", round2(homeHours(fin)));
-  clearCell(subinv, "E7");
+  setVal(subinv, "E7", 0);
+  setVal(subinv, "F7", round2(homeHours(fin)));
   setVal(subinv, "H7", fin.home.directLabor);
   setVal(subinv, "H8", fin.home.fringe);
   setVal(subinv, "H9", fin.home.overheadPool);
   // Field labor block (rows 11 labor / 12 fringe / 13 overhead pool).
   setVal(subinv, "D11", round2(fieldHours(fin)));
-  clearCell(subinv, "E11");
-  setVal(subinv, "G11", 0); // per-line budget not tracked (see G42 total)
+  setVal(subinv, "E11", 0);
+  setVal(subinv, "F11", round2(fieldHours(fin)));
   setVal(subinv, "H11", fin.field.directLabor);
   setVal(subinv, "D12", fin.fringeFrac); // fringe multiplier, e.g. 1.2058 (full precision)
   setVal(subinv, "H12", fin.field.fringe);
@@ -653,7 +742,16 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   setVal(subinv, "H42", totalThisPeriod);
   setVal(subinv, "I42", previouslyBilled);
   setVal(subinv, "J42", totalToDate);
+  // % Expended was a `=J42/G42` formula, which renders #DIV/0! on a work plan
+  // whose budget has not been entered yet. Written as a value, and 0 when there
+  // is no budget to divide by.
+  setVal(subinv, "K42", budget > 0 ? totalToDate / budget : 0);
   setVal(subinv, "G43", remaining);
+  // The last three template formulas on the build-up: two hour/rate subtotals
+  // and the subconsultant fee leaf, all reading empty cells.
+  setVal(subinv, "D10", 0);
+  setVal(subinv, "D14", round2(fin.fringeFrac + fin.overheadFrac));
+  setVal(subinv, "H36", 0);
 
   // Previously-billed column I decomposition. We only carry a scalar forward,
   // so unused leaves are zeroed (never left as template constants) and the
@@ -695,18 +793,113 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   const totalLaborAmount = round2(fin.home.directLabor + fin.field.directLabor);
   setVal(sublabor, "C38", totalLaborHours);
   setVal(sublabor, "E38", totalLaborAmount);
+  // Row 38 also carried Julie's own reconciliation scratch — `=59250.7-E38` in
+  // H38 and the bare label "ODC" in I38 — parked to the right of TOTAL LABOR
+  // and outside both labor blocks, so nothing ever cleared it. It printed on
+  // the client's Labor Attachment ("hide/delete where it says ODC on the
+  // bottom right").
+  for (const col of ["F", "G", "H", "I", "J", "K", "L"]) clearCell(sublabor, `${col}38`);
+
+  // -- 3b. ODCs (Other Direct Costs detail). This sheet shipped straight from
+  // the reference workbook, untouched: it still said "Month of May", carried
+  // July invoice dates, and itemised the overtime of whoever happened to be on
+  // Julie's original invoice via `='Sub1 Labor'!B24` formulas whose cached
+  // results named staff who did not work this period. It is now regenerated
+  // from the package's own OT/DT premiums.
+  const odcs = wb.getWorksheet(ODC_SHEET);
+  if (odcs) {
+    setVal(
+      odcs,
+      "A1",
+      [
+        wp.agreementNo ? `Agreement No. ${wp.agreementNo}` : "",
+        wp.code ? `Work Plan No ${wp.code}` : "",
+      ]
+        .filter(Boolean)
+        .join("  "),
+    );
+    setVal(odcs, "C3", `${MONTH_NAMES[periodStart.getMonth()]} ${periodStart.getFullYear()}`);
+    // Rows 7..16 are the ten detail rows; row 23 is the grand total.
+    for (let r = ODC_FIRST_ROW; r <= ODC_LAST_ROW; r++) {
+      for (const col of ["A", "B", "C", "D", "E", "F", "G"]) clearCell(odcs, `${col}${r}`);
+    }
+    const vendor = wp.client || wp.sendToCompany || "";
+    const premiums = fin.premiumRows.filter((r) => r.amount > 0);
+    premiums.slice(0, ODC_LAST_ROW - ODC_FIRST_ROW + 1).forEach((row, i) => {
+      const r = ODC_FIRST_ROW + i;
+      setVal(odcs, `A${r}`, i + 1);
+      if (invoiceDate) setVal(odcs, `B${r}`, invoiceDate);
+      setVal(odcs, `C${r}`, vendor);
+      setVal(odcs, `D${r}`, `${row.employeeName}-${row.kind.toUpperCase()}`);
+      setVal(odcs, `F${r}`, row.amount);
+      setVal(odcs, `G${r}`, row.kind === "ot" ? "Overtime" : "DoubleTime");
+    });
+    if (premiums.length > ODC_LAST_ROW - ODC_FIRST_ROW + 1) {
+      logger.warn(
+        { overflow: premiums.length - (ODC_LAST_ROW - ODC_FIRST_ROW + 1) },
+        "TYlin ODCs sheet has more premium lines than template rows; extra lines omitted",
+      );
+    }
+    setVal(odcs, "F23", round2(premiums.reduce((sum, r) => sum + r.amount, 0)));
+  }
 
   // -- 4. Progress Reports: refresh the header of each retained report so the
   // period/date/work-plan no longer point at the removed `master file` feed.
+  //
+  // The template ships a progress report per person who was on the job when
+  // Julie built it. Anyone no longer charging the project (and the two hidden
+  // reports for Mahsa and Robert) would otherwise ride along into the client's
+  // package with a refreshed header and last period's narrative, so reports
+  // that do not belong to a contributor on this package are dropped.
   const reportDate = ctx.progress?.reportDate ? toDate(ctx.progress.reportDate) : invoiceDate;
-  for (const ws of wb.worksheets) {
+  const contributorTokens = new Set(
+    contributors(ctx)
+      .flatMap((p) => p.name.split(/[\s,]+/))
+      .map((t) => t.replace(/[^A-Za-z]/g, "").toLowerCase())
+      .filter((t) => t.length >= 3),
+  );
+  for (const ws of [...wb.worksheets]) {
     if (!/^Progress Report/i.test(ws.name)) continue;
+    const nameTokens = ws.name
+      .replace(/^Progress Report/i, "")
+      .split(/[\s,-]+/)
+      .map((t) => t.replace(/[^A-Za-z]/g, "").toLowerCase())
+      .filter((t) => t.length >= 3);
+    // A tab is kept when one of its name tokens prefixes (or is prefixed by) a
+    // contributor's — "Progress Report - Amir" belongs to Amirhossein
+    // Hashemiastaneh, while "Progress Report - Shane Terrell" matches no one.
+    const keep = nameTokens.some((t) =>
+      [...contributorTokens].some((c) => c.startsWith(t) || t.startsWith(c)),
+    );
+    if (!keep) {
+      wb.removeWorksheet(ws.id);
+      continue;
+    }
+    ws.state = "visible";
     setVal(ws, "C4", MONTH_NAMES[periodStart.getMonth()]);
     setVal(ws, "E4", periodStart.getFullYear());
     setVal(ws, "B6", wp.code || "");
     if (reportDate) setVal(ws, "F6", reportDate);
     setVal(ws, "F7", periodStr);
     setVal(ws, "B7", wp.title || ws.getCell("B7").value);
+    // The narrative closes with a CONCATENATE that quotes the budget, the
+    // amount billed to date and the percent expended by reaching into the
+    // Invoice and Sub1 Inv. Unevaluated, it prints the sentence built from the
+    // reference invoice — "$2,588,054.11 … 87.9% has been billed" — on a work
+    // plan that may have billed nothing at all. Rewritten as the real sentence.
+    const forecast =
+      `Cost Forecast Completion: Current approved budget is ${money(budget)}. ` +
+      `Through this invoice, ${money(totalToDate)} ` +
+      `(${budget > 0 ? ((totalToDate / budget) * 100).toFixed(1) : "0.0"}%) has been billed. `;
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value as { formula?: string } | null;
+        if (v && typeof v === "object" && typeof v.formula === "string" &&
+            v.formula.includes("Cost Forecast Completion")) {
+          setVal(ws, cell.address, forecast);
+        }
+      });
+    });
   }
 
   // -- 5. Remove internal sheets + template week tabs, then sever any straggler
@@ -742,6 +935,14 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
         ? `${firstNameOf(person.name)} Week ${i + 1}`
         : sheetSafe(week.label, `Week ${i + 1}`);
       const name = uniqueName(sheetSafe(label, `Week ${i + 1}`), usedNames);
+      // A person with no hours in a week gets no timesheet. Package weeks can
+      // straddle the billing period (the 10014 package ran six Sat-Fri weeks
+      // against an 8/1-8/31 period), and a blank sheet of zeroes for a week
+      // someone did not work is a page of noise in the client's PDF.
+      const hasHours = ctx.entries.some(
+        (x) => x.weekId === week.id && contributorKey(x) === person.key && entryHours(x) > 0,
+      );
+      if (!hasHours) continue;
       const ws = wb.addWorksheet(name);
       const cloned = JSON.parse(JSON.stringify(pristineWeek));
       reviveModelDates(cloned);

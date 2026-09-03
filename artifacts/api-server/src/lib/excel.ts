@@ -576,6 +576,27 @@ function contentWidthInches(ws: ExcelJS.Worksheet, firstCol: number, lastCol: nu
  * it is mutually exclusive with fitToPage in the OOXML spec, and leaving it
  * lets the reader do the width math.
  */
+/**
+ * Sheets whose whole point is to be a single printed form. Julie reviews these
+ * as one page each and flagged both the T.Y. Lin `Invoice` and `Sub1 Inv`
+ * spilling a few rows onto a second sheet of paper. Everything else (labor
+ * lines, timesheets, progress narratives) genuinely flows down and keeps
+ * `fitToHeight: 0`.
+ */
+const SINGLE_PAGE_FORMS = new Set(
+  [
+    "invoice",
+    "cover",
+    "sub calc",
+    "sub calc _revised",
+    "sub1 inv",
+    "sub1 labor",
+    "labor attachment",
+    "overview",
+    "odcs",
+  ].map((n) => n.toLowerCase()),
+);
+
 export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
   for (const ws of wb.worksheets) {
     if (ws.state === "hidden" || ws.state === "veryHidden") continue;
@@ -613,7 +634,9 @@ export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
       orientation,
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 0, // flow down; never squeeze every row onto one page
+      // Forms are pinned to a single page; list-shaped sheets flow down rather
+      // than being squeezed to illegibility.
+      fitToHeight: SINGLE_PAGE_FORMS.has(ws.name.toLowerCase()) ? 1 : 0,
       horizontalCentered: true,
       margins: { left: 0.3, right: 0.3, top: 0.35, bottom: 0.35, header: 0.2, footer: 0.2 },
     };

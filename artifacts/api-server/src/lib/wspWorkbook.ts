@@ -498,7 +498,12 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
     JSON.stringify(wb.getWorksheet("JP Week 5")!.model),
   );
 
-  const invoiceNo = " " + (pkg.invoiceNumber || wp.code);
+  // An unset invoice number prints blank, never the work-plan code. Falling back
+  // to the code put "10014" in the Invoice No. box, which reads as a real invoice
+  // number and sent Julie looking for where the system got it. The package
+  // tie-out already flags a missing number, and the biller supplies the first one
+  // for a work plan (every later package increments it — see bumpInvoiceNumber).
+  const invoiceNo = pkg.invoiceNumber ? " " + pkg.invoiceNumber : "";
 
   // -- 1. Invoice (face). Every cross-sheet cell is overwritten with a value.
   if (pkg.invoiceDate) {

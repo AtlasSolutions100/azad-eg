@@ -584,7 +584,12 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   // Capture a pristine week-tab layout before we drop the template's tabs.
   const pristineWeek = JSON.parse(JSON.stringify(wb.getWorksheet(PRISTINE_WEEK_SHEET)!.model));
 
-  const invoiceNo = pkg.invoiceNumber || wp.code;
+  // An unset invoice number prints blank, never the work-plan code. Falling back
+  // to the code put "10014" in the Invoice No. box, which reads as a real invoice
+  // number and sent Julie looking for where the system got it. The package
+  // tie-out already flags a missing number, and the biller supplies the first one
+  // for a work plan (every later package increments it — see bumpInvoiceNumber).
+  const invoiceNo = pkg.invoiceNumber || "";
   const invoiceDate = pkg.invoiceDate ? toDate(pkg.invoiceDate) : null;
   const periodStart = toDate(pkg.payPeriodStart);
   const periodEnd = toDate(pkg.payPeriodEnd);

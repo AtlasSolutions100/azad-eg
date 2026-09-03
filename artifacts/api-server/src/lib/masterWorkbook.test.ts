@@ -152,17 +152,94 @@ describe("buildMasterWorkbook", () => {
     ]);
   });
 
-  it("keeps the roll-up chain live across renamed tabs", () => {
+  it("writes the Overview week roll-up as values, not a formula chain", () => {
     const overview = wb.getWorksheet("Overview")!;
-    expect(fx(overview, "B9")).toBe("'Week 1'!O9");
-    expect(fx(overview, "F9")).toBe("'Week 5'!O9");
-    expect(fx(overview, "G9")).toContain("SUBTOTAL");
+    // The fixture bills 16/40/32/40/16 hours across the five weeks. These were
+    // once `='Week 1'!O9` formulas pointing at cells that were themselves
+    // shared SUM formulas — a chain nothing in the pipeline ever evaluated, so
+    // the client's Overview arrived blank. Values only.
+    expect(fx(overview, "B9")).toBeNull();
+    expect(overview.getCell("B9").value).toBe(16);
+    expect(overview.getCell("C9").value).toBe(40);
+    expect(overview.getCell("F9").value).toBe(16);
+    expect(overview.getCell("G9").value).toBe(144);
+    // Each week tab carries its own weekly total in O9 as a value too.
+    expect(wb.getWorksheet("Week 2")!.getCell("O9").value).toBe(40);
+    // The rest of the chain the Overview used to feed is values too.
     const labor = wb.getWorksheet("Labor Attachment")!;
-    expect(fx(labor, "C19")).toContain("Overview");
+    expect(fx(labor, "C19")).toBeNull();
+    expect(labor.getCell("C24").value).toBe(144);
     const cost = wb.getWorksheet("Sub Calc")!;
-    expect(fx(cost, "H13")).toContain("Labor Attachment");
-    const cover = wb.getWorksheet("Invoice")!;
-    expect(fx(cover, "M21")).toContain("Sub Calc");
+    expect(fx(cost, "H13")).toBeNull();
+    expect(cost.getCell("D10").value).toBe(144);
+    // No reference-workbook money left in the Amount To Date / % Expended
+    // columns: J20 is this period plus what was actually carried forward.
+    expect(cost.getCell("J20").value).toBeCloseTo(
+      (cost.getCell("H20").value as number) + (cost.getCell("I20").value as number),
+      2,
+    );
+  });
+
+  it("dates all seven day headers on every week tab", () => {
+    // I6..N6 ship as shared `=H6+1` formulas. Leaving them alone meant
+    // `freezeSharedFormulas` later stamped in the reference workbook's cached
+    // June dates, so a July timesheet showed one correct Saturday followed by
+    // six days from June — Julie's "the week ending month shows June".
+    for (const name of ["Week 1", "Week 2", "Week 5"]) {
+      const ws = wb.getWorksheet(name)!;
+      const days = ["H", "I", "J", "K", "L", "M", "N"].map((c) => ws.getCell(`${c}6`).value);
+      for (const d of days) expect(d).toBeInstanceOf(Date);
+      const dates = days as Date[];
+      expect(dates[0].getDay()).toBe(6); // Saturday
+      for (let i = 1; i < 7; i++) {
+        const gap = (dates[i].getTime() - dates[i - 1].getTime()) / 86400000;
+        expect(Math.round(gap)).toBe(1);
+      }
+      // Every day belongs to the same week as the tab's Saturday — no cell
+      // left pointing at the template's month.
+      expect(dates[6].getMonth()).toBe(new Date(dates[0].getTime() + 6 * 86400000).getMonth());
+    }
+  });
+
+  it("writes the week-ending date and TOTAL HOURS row as values", () => {
+    const ws = wb.getWorksheet("Week 2")!;
+    // J5 shipped as `=N6` and row 15 as shared `=SUM(H9:H14)` formulas, both of
+    // which print their cached reference-workbook results in a viewer that does
+    // not recalculate.
+    const weekEnding = ws.getCell("J5").value;
+    expect(weekEnding).toBeInstanceOf(Date);
+    expect((weekEnding as Date).getDay()).toBe(5); // Friday
+    expect((weekEnding as Date)).toEqual(ws.getCell("N6").value);
+    // Fixture week 2 is a full 40-hour Mon-Fri week.
+    expect(ws.getCell("O15").value).toBe(40);
+    expect(ws.getCell("J15").value).toBe(8);
+    expect(ws.getCell("H15").value).toBe(0); // Saturday
+  });
+
+  /**
+   * The defining bug of Julie's 9/1 review: the client-facing sheets were built
+   * as a formula chain (week tabs → Overview → Labor Attachment → Sub Calc →
+   * Invoice). ExcelJS writes formula text without evaluating it, and neither
+   * LibreOffice's PDF export nor a plain viewer recalculates on open, so every
+   * one of those cells printed the cached result stored in Julie's reference
+   * workbook — her previous invoice's hours, rates, dates and totals. There is
+   * no partial fix: one surviving formula is one wrong number on a client
+   * invoice, so the client sheets must carry values only.
+   */
+  it("has no formulas left on the client-facing sheets", () => {
+    const offenders: string[] = [];
+    for (const name of ["Overview", "Invoice", "Sub Calc", "Labor Attachment", "Progress Report"]) {
+      const ws = wb.getWorksheet(name)!;
+      ws.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          const v = cell.value as Record<string, unknown> | null;
+          if (v && typeof v === "object" && ("formula" in v || "sharedFormula" in v)) {
+            offenders.push(`${name}!${cell.address}`);
+          }
+        });
+      });
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("has no formula or defined name referencing removed/old sheet names", () => {
@@ -271,13 +348,19 @@ describe("buildMasterWorkbook", () => {
     expect(overview.getCell("I18").value).toBe(92.5);
     expect(String(overview.getCell("H18").value)).toContain("Effective 6/");
     const labor = wb2.getWorksheet("Labor Attachment")!;
+    // Julie's August AECOM invoice is exactly this shape, and it printed as a
+    // single 144-hour line at the superseded $90.11 because every cell below
+    // was an unevaluated formula showing its cached result. Both rows must
+    // carry their own hours, rate and amount as values.
     expect(labor.getCell("C19").value).toBe(16);
-    expect(fx(labor, "C20")).toContain("Overview");
-    expect(fx(labor, "C20")).toContain("$G$9-C19");
+    expect(labor.getCell("D19").value).toBe(90.11);
+    expect(labor.getCell("E19").value).toBeCloseTo(1441.76, 2);
+    expect(labor.getCell("C20").value).toBe(128);
+    expect(labor.getCell("D20").value).toBe(92.5);
+    expect(labor.getCell("E20").value).toBeCloseTo(11840, 2);
+    expect(labor.getCell("C24").value).toBe(144);
+    expect(labor.getCell("E24").value).toBeCloseTo(13281.76, 2);
     expect(String(labor.getCell("B20").value)).toContain("new rate effective 6/");
-    // Template rate formulas stay wired to the two Overview rate cells.
-    expect(fx(labor, "D19")).toContain("I17");
-    expect(fx(labor, "D20")).toContain("I18");
   });
 
   it("rejects more than two distinct billing rates", async () => {
@@ -293,8 +376,22 @@ describe("buildMasterWorkbook", () => {
     expect(cover.getCell("C25").value).toBe("B.50-01");
     expect(cover.getCell("J26").value).toBe(115293.32);
     expect(cover.getCell("P26").value).toBe(8556.96);
-    expect(fx(cover, "S26")).toBe("P26+M26");
-    expect(fx(cover, "V26")).toBe("IF(ABS(J26-S26)<0.01,0,J26-S26)");
+    // Invoiced-to-date and remaining are values, like every other figure in
+    // the deliverable — a formula here prints its cached result in a viewer
+    // that does not recalculate.
+    expect(fx(cover, "S26")).toBeNull();
+    expect(cover.getCell("S26").value).toBeCloseTo(48847.83 + 8556.96, 2);
+    expect(cover.getCell("V26").value).toBeCloseTo(115293.32 - (48847.83 + 8556.96), 2);
+    // Row 35 totals and the Billing Summary come from the same line items.
+    expect(cover.getCell("J35").value).toBeCloseTo(179582.83 + 115293.32, 2);
+    expect(cover.getCell("P35").value).toBeCloseTo(8556.96, 2);
+    expect(cover.getCell("O38").value).toBeCloseTo(179582.83 + 115293.32, 2);
+    // Period of Service and the signature date were formula-driven and shipped
+    // blank / three weeks stale.
+    expect(String(cover.getCell("F18").value)).toBe("5/30/2026 to 6/30/2026");
+    expect(cover.getCell("P48").value).toBeInstanceOf(Date);
+    expect(cover.getCell("U4").value).toBe("B.50-01-30");
+    expect(cover.getCell("AC9").value ?? null).toBeNull();
     expect(cover.getCell("C27").value).toBeNull();
     expect(cover.getCell("J34").value).toBeNull();
   });
@@ -363,8 +460,10 @@ describe("buildMasterWorkbook", () => {
     );
     const { wb: wb6 } = await buildMasterWorkbook(makeCtx({ weeks }));
     expect(wb6.getWorksheet("Week 6")).toBeTruthy();
-    const g9 = fx(wb6.getWorksheet("Overview")!, "G9");
-    expect(g9).toContain("'Week 6'!O9");
+    // Only five entry rows exist, so week 6 contributes nothing — but G9 must
+    // still total every week, including those past the 5-column grid.
+    const overview6 = wb6.getWorksheet("Overview")!;
+    expect(overview6.getCell("G9").value).toBe(144);
     void ctx;
   });
 });

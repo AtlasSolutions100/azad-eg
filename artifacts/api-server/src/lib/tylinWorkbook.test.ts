@@ -264,6 +264,129 @@ describe("buildTylinWorkbook", () => {
     expect(stale).toEqual([]);
   });
 
+  /**
+   * Julie's 9/1 review of the generated 10014 package. Every item below was a
+   * cell the engine never wrote, so the reference workbook's own invoice
+   * shipped to the client in its place.
+   */
+  it("leaves no reference-workbook figures in the Sub1 Inv right-hand columns", () => {
+    const subinv = wb.getWorksheet("Sub1 Inv")!;
+    // Budget / Previously Billed / Amount To Date / % Expended used to carry
+    // the template's $1.2M and $2.39M budgets, $1.95M previously billed and
+    // 87.6% expended. Only the row-42 totals are ours to state.
+    // I11/I12/I35 are the one thing we do state above row 42: the scalar
+    // previously-billed carry-forward (or its per-category split).
+    const carryForward = new Set(["I11", "I12", "I35"]);
+    for (let r = 5; r <= 41; r++) {
+      for (const col of ["G", "I", "J", "K"]) {
+        const addr = `${col}${r}`;
+        if (carryForward.has(addr)) continue;
+        const v = subinv.getCell(addr).value;
+        expect(v === null || v === undefined || v === 0, `${addr} = ${String(v)}`).toBe(true);
+      }
+    }
+    expect(subinv.getCell("G42").value).toBeCloseTo(2588054.112, 2);
+    expect(subinv.getCell("I42").value).toBeCloseTo(2117497.17, 2);
+  });
+
+  it("writes the Hours to Date row as values instead of a stale formula", () => {
+    const subinv = wb.getWorksheet("Sub1 Inv")!;
+    // F11 was `=D11+E11` with the template's cached 11,028.5 hours.
+    const current = subinv.getCell("D11").value as number;
+    expect(current).toBeGreaterThan(0);
+    expect(subinv.getCell("E11").value).toBe(0);
+    expect(subinv.getCell("F11").value).toBe(current);
+  });
+
+  it("clears the reconciliation scratch beside TOTAL LABOR", () => {
+    const sublabor = wb.getWorksheet("Sub1 Labor")!;
+    // H38 held `=59250.7-E38` and I38 the bare label "ODC", both printing on
+    // the client's Labor Attachment.
+    for (const col of ["F", "G", "H", "I", "J", "K", "L"]) {
+      expect(sublabor.getCell(`${col}38`).value ?? null).toBeNull();
+    }
+    // The scratch cells beside the FIELD block go too.
+    expect(sublabor.getCell("G16").value ?? null).toBeNull();
+    expect(sublabor.getCell("H32").value ?? null).toBeNull();
+  });
+
+  it("regenerates the ODCs sheet from this period's overtime", () => {
+    const odcs = wb.getWorksheet("ODCs")!;
+    // Month was hardcoded "May"; the roster's OT is Ryan Harper (24h) and
+    // Shane Terrell (8h), worth $996.00 and $370.80.
+    expect(String(odcs.getCell("C3").value)).toContain("June");
+    const names: string[] = [];
+    for (let r = 7; r <= 16; r++) {
+      const v = odcs.getCell(`D${r}`).value;
+      if (v) names.push(String(v));
+    }
+    expect(names).toEqual(["Ryan Harper-OT", "Shane Terrell-OT"]);
+    expect(odcs.getCell("F7").value).toBeCloseTo(996, 2);
+    expect(odcs.getCell("F8").value).toBeCloseTo(370.8, 2);
+    expect(odcs.getCell("F23").value).toBeCloseTo(1366.8, 2);
+    // No lingering `='Sub1 Labor'!B24` pointing at a row we rewrote.
+    for (let r = 7; r <= 16; r++) {
+      const v = odcs.getCell(`D${r}`).value as { formula?: string } | null;
+      expect(v && typeof v === "object" && "formula" in v).toBeFalsy();
+    }
+  });
+
+  it("keeps only the progress reports of people on this package", () => {
+    const reports = wb.worksheets
+      .map((w) => w.name)
+      .filter((n) => /^Progress Report/i.test(n));
+    // The template ships reports for Mahsa and Robert (hidden) who are not on
+    // the roster; every retained report must belong to a contributor.
+    expect(reports.some((n) => /mahsa/i.test(n))).toBe(false);
+    expect(reports.some((n) => /robert/i.test(n))).toBe(false);
+    expect(reports.length).toBeGreaterThan(0);
+  });
+
+  it("pins the invoice forms to a single printed page", () => {
+    for (const name of ["Invoice", "Sub1 Inv", "Sub1 Labor"]) {
+      expect(wb.getWorksheet(name)!.pageSetup.fitToHeight).toBe(1);
+    }
+    // Timesheets still flow down rather than being squeezed.
+    const week = wb.worksheets.find((w) => /Week 1$/.test(w.name))!;
+    expect(week.pageSetup.fitToHeight).toBe(0);
+  });
+
+  it("has no formulas left on the client-facing sheets", () => {
+    // Same guard as the AECOM engine: ExcelJS emits formula text without
+    // evaluating it, and neither LibreOffice's PDF export nor a plain viewer
+    // recalculates on open, so any surviving formula prints the cached result
+    // stored in Julie's reference workbook rather than this package's number.
+    const offenders: string[] = [];
+    for (const ws of wb.worksheets) {
+      if (!["Invoice", "Sub1 Inv", "Sub1 Labor", "ODCs"].includes(ws.name)) continue;
+      ws.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          const v = cell.value as Record<string, unknown> | null;
+          if (v && typeof v === "object" && ("formula" in v || "sharedFormula" in v)) {
+            offenders.push(`${ws.name}!${cell.address}`);
+          }
+        });
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("states the cost forecast from this package, not the reference invoice", () => {
+    const report = wb.worksheets.find((w) => /^Progress Report/i.test(w.name))!;
+    let sentence: string | null = null;
+    report.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value;
+        if (typeof v === "string" && v.startsWith("Cost Forecast Completion")) sentence = v;
+      });
+    });
+    expect(sentence).toBeTruthy();
+    // Budget 2,588,054.112; to date 2,276,049.75 → 87.9%.
+    expect(sentence!).toContain("$2,588,054.11");
+    expect(sentence!).toContain("$2,276,049.75");
+    expect(sentence!).toContain("(87.9%)");
+  });
+
   it("drops defined names that point at removed sheets", () => {
     const dead = wb.definedNames.model.filter((dn) =>
       dn.ranges.some(
