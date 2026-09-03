@@ -753,10 +753,15 @@ async function convertToPdfOnce(xlsxPath: string): Promise<string> {
 }
 
 /**
- * Converts an .xlsx file to PDF using headless LibreOffice. LibreOffice
- * recalculates formulas on load, so the populated template renders with
- * correct computed values. Returns the path to the generated PDF. Calls are
- * serialized (see pdfQueue) so they can share one warm user profile.
+ * Converts an .xlsx file to PDF using headless LibreOffice. Returns the path to
+ * the generated PDF. Calls are serialized (see pdfQueue) so they can share one
+ * warm user profile.
+ *
+ * Do NOT rely on this to evaluate formulas. LibreOffice defaults to "never
+ * recalculate" for xlsx, so a formula cell renders whatever cached result the
+ * file carries — which, for a workbook built from one of Julie's reference
+ * invoices, is her previous invoice's number. Every figure in a deliverable
+ * must be written as a value by its export engine before it gets here.
  */
 export async function convertToPdf(xlsxPath: string): Promise<string> {
   const task = pdfQueue.then(

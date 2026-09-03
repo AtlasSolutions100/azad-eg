@@ -31,9 +31,17 @@ import type { PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
  *    Report, TJ Week n→week labels) and every formula + defined name is
  *    rewritten for the renames (ExcelJS renames do NOT rewrite formulas);
  *  - Julie's internal notes/reminders and comments are cleared;
- *  - package data is injected at the reference cell addresses, keeping the
- *    live roll-up chain intact: week tab O totals → Overview B9:F9 →
- *    Labor C19 → Sub Calc H44 → Invoice M21 / Billing Summary.
+ *  - package data is injected at the reference cell addresses as VALUES.
+ *
+ * That last point is the load-bearing one. The engine originally kept the
+ * template's roll-up chain live (week tab O totals → Overview B9:F9 → Labor
+ * C19 → Sub Calc H44 → Invoice M21 / Billing Summary) on the assumption that
+ * something downstream would evaluate it. Nothing does: ExcelJS writes formula
+ * text without computing it, and LibreOffice defaults to "never recalculate"
+ * for xlsx, so each cell rendered the cached result stored in Julie's reference
+ * invoice. Clients received her *previous* invoice's hours, rates, dates and
+ * totals wearing this period's header. Every figure on a client-facing sheet is
+ * now written as a value, and a test asserts no formula survives on one.
  *
  * Deleting a sheet orphans every formula and defined name that pointed at it,
  * and Excel answers an uncompilable reference with the "We found a problem with
@@ -860,6 +868,10 @@ export async function buildMasterWorkbook(
     for (const col of ["G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"]) {
       clearCell(labor, `${col}${lr}`);
     }
+  }
+  // Below the last total (row 33) the template keeps a "TT" marker in D35.
+  for (let lr = 34; lr <= 37; lr++) {
+    for (const col of ["A", "B", "C", "D", "E", "F"]) clearCell(labor, `${col}${lr}`);
   }
   setVal(labor, "A22", `${wp.code} - Subtotal `);
   // Overtime premium block (rows 26-31) and the grand total below it.
