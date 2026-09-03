@@ -531,7 +531,11 @@ export async function buildMasterWorkbook(
   setVal(cover, "H10", wp.sendToCompany || "");
   setVal(cover, "H11", wp.sendToAddress1 || "");
   setVal(cover, "H12", wp.sendToAddress2 || "");
-  setVal(cover, "B13", `${(wp.sendToCompany || "Client").trim()} Contact Person: `);
+  // Short client name, not the legal entity on the Send To block: with the
+  // full name this label reads "AECOM Technical Services, Inc. Contact
+  // Person:" and overruns its cell into the value beside it.
+  const contactLabelName = (wp.client || wp.sendToCompany || "Client").trim();
+  setVal(cover, "B13", `${contactLabelName} Contact Person: `);
   setVal(cover, "H13", wp.contactPerson || "");
   setVal(cover, "F17", ` ${wp.title}`);
   setVal(cover, "R17", wp.bartProjectNumbers || "");

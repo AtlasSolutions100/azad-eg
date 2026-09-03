@@ -1359,9 +1359,69 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
     }
   }
 
+  // Invoice header fields that print on the client's cover page. None of these
+  // can be derived — a Procas-imported work plan arrives with them empty — and
+  // nothing downstream fails, so the package used to validate clean and then
+  // export an invoice with a blank "Send to" and a "--" where the PO number
+  // goes. The invoice's own footer says an invoice without a PO will be
+  // rejected by AP, so silence here costs Julie a rejected invoice and a
+  // re-issue. Reported as one grouped warning naming the blank fields (by the
+  // label they carry on the printed invoice) rather than one flag per field.
+  if (wp) {
+    const headerFields: Array<[string | null | undefined, string]> = [
+      [wp.poNumber, "Purchase Order No."],
+      [wp.supplierId, "Supplier ID"],
+      [wp.clientProjectNo, `${wp.client || "Client"} Project No.`],
+      [wp.sendToCompany, "Send To company"],
+      [wp.sendToAddress1, "Send To address"],
+      [wp.contactPerson, "Client Contact Person"],
+      [wp.agreementNo, "Agreement No."],
+      [wp.bartProjectNumbers, "BART Project Number(s)"],
+    ];
+    const missing = headerFields
+      .filter(([value]) => !String(value ?? "").trim())
+      .map(([, label]) => label);
+    if (missing.length > 0) {
+      flags.push({
+        severity: "warning",
+        field: "workPlan",
+        message:
+          `These will print blank on the client's invoice: ${missing.join(", ")}. ` +
+          `Fill them in on the Work Plan screen (Work Plans → ${wp.nickname || wp.code} → Edit), ` +
+          `then re-export. An invoice without a Purchase Order No. is rejected by AP.`,
+      });
+    }
+    // Terms is the one header field that is not blank when unset: the reference
+    // workbook carries "Net 30 Days" and it prints. That is the right default
+    // for these BART contracts, but it prints whether or not it is this
+    // contract's actual term, so say so rather than let it pass silently.
+    if (!String(wp.terms ?? "").trim()) {
+      flags.push({
+        severity: "info",
+        field: "terms",
+        message:
+          "Terms is not set on the work plan, so the invoice prints the template's default of " +
+          "\"Net 30 Days\". Set it on the Work Plan screen if this contract differs.",
+      });
+    }
+  }
+
   const view = effectiveWorkPlan(pkg, wp);
   if (pkg.workPlanId != null && !wp) {
     flags.push({ severity: "error", field: "workPlan", message: "Package references a missing work plan." });
+  } else if (view.totalBudget <= 0) {
+    // Julie flagged this on the T.Y. Lin invoice ("it's missing the info for
+    // Total work plan budget"). A Procas-imported plan carries no budget, and
+    // without one the Billing Summary has nothing to state and % expended and
+    // Amount Remaining are meaningless.
+    flags.push({
+      severity: "warning",
+      field: "totalBudget",
+      message:
+        `Total budget is not set on work plan ${wp?.nickname || wp?.code || ""}`.trim() +
+        ", so the invoice's Billing Summary will show no budget, no amount remaining and 0% expended. " +
+        "Enter the contract value on the Work Plan screen.",
+    });
   } else if (view.totalBudget > 0) {
     const rollup = buildPackageRollup(entries, view, {
       previouslyBilled: pkg.previouslyBilled,
