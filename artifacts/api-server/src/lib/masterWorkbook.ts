@@ -571,9 +571,13 @@ export async function buildMasterWorkbook(
   // an empty Period of Service (the cached IF resolved to blank) and a
   // signature date three weeks off the invoice date.
   setVal(cover, "U4", pkg.invoiceNumber || "");
-  const agreementLine = wp.agreementNo
-    ? `${wp.agreementNo} ${wp.title || ""}`.trim()
-    : wp.title || "";
+  // The "Agreement No." line. The template built this as
+  // `Agreement_No & " Architectural and General Engineering Services"`; using
+  // the work-plan title in place of that hardcoded service description just
+  // repeated row 17 ("Work Plan Title") verbatim, so the cover printed the same
+  // sentence twice under two different labels. The label asks for the agreement
+  // number, so that is what goes there.
+  const agreementLine = wp.agreementNo || "";
   setVal(cover, "F16", agreementLine);
   setVal(
     cover,
@@ -593,14 +597,18 @@ export async function buildMasterWorkbook(
   setVal(cover, "P35", currentTotal);
   setVal(cover, "S35", toDateTotal);
   setVal(cover, "V35", round2(poTotal - toDateTotal));
-  setVal(cover, "O38", poTotal);
-  setVal(cover, "O39", prevTotal);
-  setVal(cover, "O40", toDateTotal);
-  setVal(cover, "O41", round2(poTotal - toDateTotal));
-  setVal(cover, "O42", poTotal > 0 ? toDateTotal / poTotal : 0);
-  // Julie's reconciliation scratch, parked in columns AC/AE but inside the
-  // cover's print area (A1:AG58), so it printed alongside the invoice.
-  for (const addr of ["AC6", "AC7", "AC8", "AC9", "AE42"]) clearCell(cover, addr);
+  // The Billing Summary (O38:O42) is written later, from the work plan rather
+  // than from this table — see section 6b.
+  //
+  // The form ends at column Y. Everything to the right is Julie's working
+  // space — a "=22,702.34 + 436,617.12" note beside the total, loose figures
+  // in AC — and the print area (A1:AG58) reaches all of it, so it printed down
+  // the right-hand side of the client's invoice.
+  for (let r = 1; r <= 58; r++) {
+    for (const col of ["Z", "AA", "AB", "AC", "AD", "AE", "AF", "AG"]) {
+      clearCell(cover, `${col}${r}`);
+    }
+  }
 
   // -- 5. Sub Calc (Cost). Rates come from the work plan; work-plan rates are
   // stored as percentages (e.g. 120.58) while the reference cells hold
@@ -899,6 +907,18 @@ export async function buildMasterWorkbook(
   for (const col of ["M", "N", "O", "P", "Q", "R", "S", "T"]) {
     setVal(cover, `${col}21`, rollup.totalThisPeriod);
   }
+  // Billing Summary. The template drove this off the Billed Line Items table
+  // (O38 = J35 and so on), so a package with no line items entered — which is
+  // most of them until Julie fills the PO schedule in — printed a summary of
+  // dashes even though the work plan carries a $1.38M budget and the invoice
+  // below it showed a real total. These are the same figures the Sub Calc
+  // states, which fall back to the work plan when there are no line items.
+  setVal(cover, "O38", gTotal);
+  setVal(cover, "O39", iTotal);
+  setVal(cover, "O40", jTotal);
+  setVal(cover, "O41", round2(gTotal - jTotal));
+  setVal(cover, "O42", gTotal > 0 ? jTotal / gTotal : 0);
+
   // Overview "Total Billing to This Period" (hours / cost).
   setVal(master, "D20", totalBillableHours);
   setVal(master, "E20", rollup.totalThisPeriod);
@@ -919,7 +939,11 @@ export async function buildMasterWorkbook(
     setVal(report, "H81", invDate);
   }
   setVal(report, "H6", invNo);
-  for (const a of ["D8", "E8"]) setVal(report, a, wp.bartProjectNumbers || "");
+  // "Work Plan No" on the progress report. Julie's template wires this to the
+  // cover's BART Project Number(s), so that stays the primary value; the work
+  // plan's own code fills in when a plan carries no project numbers, rather
+  // than leaving the field blank.
+  for (const a of ["D8", "E8"]) setVal(report, a, wp.bartProjectNumbers || wp.code || "");
   setVal(report, "H8", wp.agreementNo || "");
   for (const a of ["D9", "E9"]) setVal(report, a, wp.title || "");
   setVal(report, "H9", periodStr);

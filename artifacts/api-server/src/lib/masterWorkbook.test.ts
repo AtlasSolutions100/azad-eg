@@ -226,6 +226,35 @@ describe("buildMasterWorkbook", () => {
    * no partial fix: one surviving formula is one wrong number on a client
    * invoice, so the client sheets must carry values only.
    */
+  it("states the Billing Summary from the work plan when no line items exist", async () => {
+    // Most packages have no Billed Line Items entered — that PO schedule is
+    // filled in separately. The template drove the Billing Summary off that
+    // table (O38 = J35), so the cover printed a summary of dashes even though
+    // the work plan carries a $1.38M budget and the invoice below it showed a
+    // real total. Julie's reviewer reads that page as blank.
+    const { wb: bare } = await buildMasterWorkbook(
+      makeCtx({ billedLineItems: [] as unknown as PackageDocContext["billedLineItems"] }),
+    );
+    const cover = bare.getWorksheet("Invoice")!;
+    expect(cover.getCell("O38").value).toBeCloseTo(1_381_971.85, 2);
+    expect(cover.getCell("O39").value).toBeCloseTo(1_135_877.49, 2);
+    const toDate = cover.getCell("O40").value as number;
+    expect(toDate).toBeGreaterThan(1_135_877.49);
+    expect(cover.getCell("O41").value).toBeCloseTo(1_381_971.85 - toDate, 2);
+    expect(cover.getCell("O42").value as number).toBeGreaterThan(0);
+    // And the invoice total is still stated.
+    expect(cover.getCell("M21").value as number).toBeGreaterThan(0);
+  });
+
+  it("clears the working columns right of the cover form", () => {
+    // Columns Z..AG held a "=22,702.34 + 436,617.12" note beside the total and
+    // loose figures in AC, all inside the print area (A1:AG58).
+    const cover = wb.getWorksheet("Invoice")!;
+    for (const addr of ["AE21", "AF21", "AG21", "AC23", "AC9"]) {
+      expect(cover.getCell(addr).value ?? null, addr).toBeNull();
+    }
+  });
+
   it("has no formulas left on the client-facing sheets", () => {
     const offenders: string[] = [];
     for (const name of ["Overview", "Invoice", "Sub Calc", "Labor Attachment", "Progress Report"]) {
