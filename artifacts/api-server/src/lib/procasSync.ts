@@ -229,6 +229,15 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
     const client = toStr(pr.ClientDesc) || toStr(pr.Client) || "Unknown client";
     const status = pr.IsClosed === true ? "archived" : "active";
     const budget = toNum(pr.ObligatedAmount) > 0 ? toNum(pr.ObligatedAmount) : toNum(pr.EstimatedTotal);
+    // Procas' ContractNumber is the prime agreement the work is billed under —
+    // "6M8213 GEC" on the T.Y. Lin job, whose invoice carries Agreement No.
+    // 6M8213 — and 430 of the 532 projects have one. It is the only invoice
+    // header field Procas knows; the rest (PO number, supplier ID, remit-to
+    // address, client contact) live on the client's own paperwork. Carried over
+    // verbatim rather than parsed: guessing which part of a contract string is
+    // "the" agreement number would be wrong somewhere, and Julie's own entry
+    // always wins over this.
+    const contractNumber = toStr(pr.ContractNumber);
     const linked = importedByProject.get(code);
     if (linked) {
       // Refresh the Procas-owned display fields on imported/linked plans.
@@ -239,6 +248,10 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       // Budget: only fill when the local plan has none, so manual budget
       // decompositions Julie entered are never stomped.
       if (linked.totalBudget === 0 && budget > 0) changes.totalBudget = budget;
+      // Same rule for the agreement number: fill a blank, never overwrite.
+      if (!String(linked.agreementNo ?? "").trim() && contractNumber) {
+        changes.agreementNo = contractNumber;
+      }
       if (Object.keys(changes).length > 0) {
         // Guard on source at write time: if a biller edited this plan while
         // the import was running (flipping it to manual), the stale snapshot
@@ -278,6 +291,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
         client,
         jobNumber: code,
         totalBudget: budget,
+        agreementNo: contractNumber || null,
         procasProject: code,
         status,
         source: "procas",

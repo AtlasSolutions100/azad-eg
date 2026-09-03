@@ -108,6 +108,9 @@ describe("importWorkPlansFromProcas", () => {
     expect(p1.jobNumber).toBe("90001");
     expect(p1.procasProject).toBe("90001");
     expect(p1.totalBudget).toBe(250000); // ObligatedAmount wins over EstimatedTotal
+    // ContractNumber is the one invoice header field Procas knows, so the
+    // Agreement No. arrives filled instead of Julie typing it per work plan.
+    expect(p1.agreementNo).toBe("C-90001");
     expect(p1.status).toBe("active");
     expect(p1.fringeRate).toBe(55.5);
     expect(p1.overheadRate).toBe(90.25);
@@ -118,6 +121,7 @@ describe("importWorkPlansFromProcas", () => {
     const [p2] = await db.select().from(workPlansTable).where(eq(workPlansTable.code, "90002"));
     expect(p2.status).toBe("archived"); // IsClosed
     expect(p2.totalBudget).toBe(80000); // falls back to EstimatedTotal
+    expect(p2.agreementNo).toBeNull(); // Procas has no contract number for it
   });
 
   it("is idempotent and refreshes Procas-owned fields on imported rows", async () => {
@@ -125,7 +129,7 @@ describe("importWorkPlansFromProcas", () => {
     // the rerun refreshes it, but the local budget is preserved.
     await db
       .update(workPlansTable)
-      .set({ title: "Stale title", totalBudget: 999 })
+      .set({ title: "Stale title", totalBudget: 999, agreementNo: "6M8213" })
       .where(eq(workPlansTable.code, "90001"));
 
     const second = await importWorkPlansFromProcas(creds);
@@ -135,6 +139,7 @@ describe("importWorkPlansFromProcas", () => {
     const [p1] = await db.select().from(workPlansTable).where(eq(workPlansTable.code, "90001"));
     expect(p1.title).toBe("Transit Station Upgrade");
     expect(p1.totalBudget).toBe(999); // manual budget never stomped
+    expect(p1.agreementNo).toBe("6M8213"); // nor a hand-corrected agreement no
   });
 
   it("leaves manually-owned plans alone even when linked to a Procas project", async () => {
