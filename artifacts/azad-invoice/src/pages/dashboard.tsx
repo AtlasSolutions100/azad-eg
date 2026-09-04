@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { isBillableJob } from "@/lib/work-plans";
 import {
   Dialog,
   DialogContent,
@@ -283,6 +284,7 @@ export default function Dashboard() {
   const [manualEntry, setManualEntry] = useState(false);
   // The full Procas library can be long — the wizard filters it client-side.
   const [wpSearch, setWpSearch] = useState("");
+  const [showAllPlans, setShowAllPlans] = useState(false);
   // Billing period: the work plan's own cycle is the default, but an admin can
   // override it per package (Julie's ask — some months bill to the last day,
   // others to the last Friday). null = "follow the work plan".
@@ -325,11 +327,16 @@ export default function Dashboard() {
   }, [groups]);
 
   // Julie's ask: the Procas library import makes this list far too long to scan.
-  // Narrow it in three ways before the biller ever types anything —
+  // Narrow it in four ways before the biller ever types anything —
   //   1. drop archived plans (the ones no longer billed),
-  //   2. when a Prime was chosen on step 0, show that prime's plans first,
-  //   3. free-text search still matches nickname/code/title/client/job.
+  //   2. show only jobs that look billable (see isBillableJob),
+  //   3. when a Prime was chosen on step 0, show that prime's plans first,
+  //   4. free-text search still matches nickname/code/title/client/job.
   // The selected plan always stays visible so its label keeps rendering.
+  const billablePlans = useMemo(
+    () => (workPlans ?? []).filter(isBillableJob).length,
+    [workPlans],
+  );
   const filteredWizardPlans = useMemo(() => {
     if (!workPlans) return workPlans;
     const q = wpSearch.trim().toLowerCase();
@@ -337,10 +344,16 @@ export default function Dashboard() {
     const matches = workPlans.filter((wp) => {
       if (wp.id === form.workPlanId) return true;
       if (wp.status === "archived") return false;
-      if (!q) return true;
-      return [wp.code, wp.title, wp.nickname ?? "", wp.client, wp.jobNumber].some((v) =>
-        v.toLowerCase().includes(q),
-      );
+      // A search reaches the whole library. Narrowing the default view is a
+      // convenience; making a job unfindable because it was filtered out is a
+      // bug, so as soon as Julie types anything the filter steps aside.
+      if (q) {
+        return [wp.code, wp.title, wp.nickname ?? "", wp.client, wp.jobNumber].some((v) =>
+          v.toLowerCase().includes(q),
+        );
+      }
+      if (!showAllPlans && !isBillableJob(wp)) return false;
+      return true;
     });
     if (!prime) return matches;
     // Rank the chosen prime's plans to the top rather than hiding the rest —
@@ -350,7 +363,7 @@ export default function Dashboard() {
         v.toLowerCase().includes(prime),
       );
     return [...matches.filter(onPrime), ...matches.filter((wp) => !onPrime(wp))];
-  }, [workPlans, wpSearch, form.workPlanId, form.prime]);
+  }, [workPlans, wpSearch, form.workPlanId, form.prime, showAllPlans]);
 
   // The picker label Julie reads: nickname when set, otherwise code - title.
   const planLabel = (wp: { code: string; title: string; nickname?: string | null }) =>
@@ -697,9 +710,39 @@ export default function Dashboard() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-[#5F5F5F]">
+                  {wpSearch.trim() ? (
+                    <>Searching all {workPlans?.length ?? 0} work plans. </>
+                  ) : showAllPlans ? (
+                    <>
+                      Showing all {workPlans?.length ?? 0} work plans, including
+                      Procas sub-task codes.{" "}
+                      <button
+                        type="button"
+                        className="font-medium text-[#8a7326] underline underline-offset-2"
+                        onClick={() => setShowAllPlans(false)}
+                      >
+                        Show billable jobs only
+                      </button>
+                      .{" "}
+                    </>
+                  ) : (
+                    <>
+                      Showing {billablePlans} billable jobs of{" "}
+                      {workPlans?.length ?? 0}; Procas sub-task codes without a
+                      budget are hidden.{" "}
+                      <button
+                        type="button"
+                        className="font-medium text-[#8a7326] underline underline-offset-2"
+                        onClick={() => setShowAllPlans(true)}
+                      >
+                        Show all
+                      </button>
+                      . Typing above searches every work plan.{" "}
+                    </>
+                  )}
                   {form.prime?.trim()
-                    ? `Sorted with ${form.prime.trim()} work plans first; archived plans are hidden. `
-                    : "Archived plans are hidden. "}
+                    ? `Sorted with ${form.prime.trim()} work plans first. `
+                    : ""}
                   The work plan number pulls from Procas and drives rates
                   automatically from Billing Setup.
                 </p>

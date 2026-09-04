@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isBillableJob } from "@/lib/work-plans";
 import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPlan, useListPackages, useListProcasProjects, useSyncWorkPlansFromProcas, getListPackagesQueryKey, WorkPlanInput, WorkPlanUpdate } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,18 +22,25 @@ export default function WorkPlans() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [showAllPlans, setShowAllPlans] = useState(false);
 
   // The Procas library can be long — filter by any visible column so Julie
-  // can find the right plan quickly.
+  // can find the right plan quickly. With nothing typed the list defaults to
+  // the jobs that can actually be billed (see isBillableJob); the sub-task
+  // codes are still one click away, and a search always reaches all of them.
+  // This is also the screen a package's "these will print blank" warning sends
+  // her to, so it has to open on something she can scan.
   const filteredPlans = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return plans;
-    return plans?.filter((p) =>
-      [p.code, p.title, p.nickname ?? "", p.client, p.jobNumber, p.procasProject ?? ""].some((v) =>
-        v.toLowerCase().includes(q),
-      ),
-    );
-  }, [plans, search]);
+    if (q) {
+      return plans?.filter((p) =>
+        [p.code, p.title, p.nickname ?? "", p.client, p.jobNumber, p.procasProject ?? ""].some((v) =>
+          v.toLowerCase().includes(q),
+        ),
+      );
+    }
+    return showAllPlans ? plans : plans?.filter(isBillableJob);
+  }, [plans, search, showAllPlans]);
 
   const handleSyncFromProcas = async () => {
     try {
@@ -218,6 +226,18 @@ export default function WorkPlans() {
         {!isLoading && plans && (
           <span className="whitespace-nowrap text-sm text-[#9a9a9a]">
             {filteredPlans?.length ?? 0} of {plans.length} work plans
+            {!search.trim() && (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  className="font-medium text-[#8a7326] underline underline-offset-2"
+                  onClick={() => setShowAllPlans((v) => !v)}
+                >
+                  {showAllPlans ? "Billable jobs only" : "Show Procas sub-codes"}
+                </button>
+              </>
+            )}
           </span>
         )}
       </div>
