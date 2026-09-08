@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import path from "node:path";
-import { eq, and, asc, desc, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, isNotNull, ne } from "drizzle-orm";
 import {
   db,
   packagesTable,
@@ -1339,7 +1339,37 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
   const flags: { severity: "error" | "warning" | "info"; field?: string | null; message: string }[] = [];
 
   if (!pkg.invoiceNumber) {
-    flags.push({ severity: "warning", field: "invoiceNumber", message: "Invoice number is not set." });
+    // A new package inherits the next number automatically by bumping the
+    // trailing digits on the work plan's most recent invoice (see the create
+    // handler). That only works once a first number exists on the work plan, so
+    // say which case this is: seed the series, or the previous number had no
+    // trailing digits to increment.
+    const [priorNumbered] =
+      pkg.workPlanId != null
+        ? await db
+            .select({ n: packagesTable.invoiceNumber })
+            .from(packagesTable)
+            .where(
+              and(
+                eq(packagesTable.workPlanId, pkg.workPlanId),
+                isNotNull(packagesTable.invoiceNumber),
+                ne(packagesTable.id, id),
+              ),
+            )
+            .orderBy(desc(packagesTable.createdAt))
+            .limit(1)
+        : [];
+    flags.push({
+      severity: "warning",
+      field: "invoiceNumber",
+      message: priorNumbered?.n
+        ? `Invoice number is not set. The last invoice on this work plan was ` +
+          `"${priorNumbered.n}", which has no trailing number to increment — ` +
+          `type this one in and the next package will continue from it.`
+        : `Invoice number is not set. This is the first numbered invoice on this ` +
+          `work plan, so type it in your own format (e.g. "B.50-01-30"). Every ` +
+          `later package on this work plan increments the trailing number for you.`,
+    });
   }
   if (!pkg.invoiceDate) {
     flags.push({ severity: "warning", field: "invoiceDate", message: "Invoice date is not set." });
@@ -1356,6 +1386,56 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
     }
     if (e.rate <= 0) {
       flags.push({ severity: "warning", field: "entries", message: `${e.employeeName} has an entry with a zero rate.` });
+    }
+  }
+
+  // A billing rate that jumps between invoices on the same work plan is much
+  // more often a mapping problem in the Procas pull than a raise, and it is
+  // invisible until the client questions the invoice: on T.Y. Lin work plan
+  // 10014 the pull produced $180-$214/hr against a reference invoice built on
+  // $75-$93, which the burden chain turns into roughly $470/hr effective.
+  // Compare each person against their rate on the most recent prior package.
+  if (pkg.workPlanId != null && entries.length > 0) {
+    // The last invoice on this work plan that actually billed hours.
+    const [priorPkg] = await db
+      .selectDistinct({ id: packagesTable.id, periodEnd: packagesTable.payPeriodEnd })
+      .from(packagesTable)
+      .innerJoin(timesheetEntriesTable, eq(timesheetEntriesTable.packageId, packagesTable.id))
+      .where(and(eq(packagesTable.workPlanId, pkg.workPlanId), ne(packagesTable.id, id)))
+      .orderBy(desc(packagesTable.payPeriodEnd))
+      .limit(1);
+    const priorRates = priorPkg
+      ? await db
+          .select({
+            name: timesheetEntriesTable.employeeName,
+            rate: timesheetEntriesTable.rate,
+          })
+          .from(timesheetEntriesTable)
+          .where(eq(timesheetEntriesTable.packageId, priorPkg.id))
+      : [];
+    const lastRate = new Map<string, number>();
+    for (const r of priorRates) {
+      if (r.rate > 0 && !lastRate.has(r.name)) lastRate.set(r.name, r.rate);
+    }
+    const moved = new Map<string, [number, number]>();
+    for (const e of entries) {
+      const prev = lastRate.get(e.employeeName);
+      if (prev == null || prev <= 0 || e.rate <= 0 || moved.has(e.employeeName)) continue;
+      if (Math.abs(e.rate - prev) / prev > 0.25) moved.set(e.employeeName, [prev, e.rate]);
+    }
+    if (moved.size > 0) {
+      const money = (n: number) => `$${n.toFixed(2)}`;
+      const changes = [...moved.entries()]
+        .map(([name, [prev, now]]) => `${name} ${money(prev)} → ${money(now)}`)
+        .join(", ");
+      flags.push({
+        severity: "warning",
+        field: "entries",
+        message:
+          `Billing rate changed sharply since the last invoice on this work plan: ${changes}. ` +
+          `If that is not a real rate change, check the Procas pull — and the work plan's ` +
+          `Max Bill Rate, which caps anything above it.`,
+      });
     }
   }
 

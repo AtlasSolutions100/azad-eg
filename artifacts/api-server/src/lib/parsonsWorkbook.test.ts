@@ -206,7 +206,13 @@ describe("buildParsonsWorkbook", () => {
     const inv = wb.getWorksheet("Invoice")!;
     const calc = wb.getWorksheet("Invoice Calc")!;
     expect(round2(num(calc, "H52"))).toBe(TARGET_TOTAL_THIS_PERIOD); // AUTHORITATIVE
-    expect(round2(num(calc, "H92"))).toBe(TARGET_TOTAL_THIS_PERIOD); // Line 1.2 mirror
+    // The template's Line 1.2 block (rows 53-95) was a +40-row mirror written
+    // with the same totals. Two identical "Total Amount Due" build-ups on one
+    // attachment invite double-counting, and LibreOffice printed the second as
+    // its own page, so the mirror is cleared and hidden instead.
+    expect(calc.getCell("H92").value).toBeFalsy();
+    expect(calc.getCell("A54").value).toBeFalsy();
+    expect(calc.getRow(60).hidden).toBe(true);
     expect(round2(num(calc, "I52"))).toBe(107453.11);
     expect(round2(num(calc, "J52"))).toBe(TARGET_TOTAL_TO_DATE);
     expect(round2(num(inv, "L27"))).toBe(TARGET_TOTAL_THIS_PERIOD);
@@ -370,5 +376,127 @@ describe("Parsons export ↔ on-screen rollup parity", () => {
     expect(Math.abs(cents(rollup.totalThisPeriod) - cents(parsons.totalThisPeriod))).toBeLessThanOrEqual(1);
     expect(Math.abs(cents(rollup.totalToDate) - cents(parsons.totalToDate))).toBeLessThanOrEqual(1);
     expect(rollup.totalHours).toBe(parsons.totalHours);
+  });
+});
+
+/**
+ * Everything on a client-facing sheet must be a value. ExcelJS writes formula
+ * TEXT without evaluating it, and neither LibreOffice's PDF export nor a plain
+ * viewer recalculates an .xlsx on open — so a surviving formula prints the
+ * cached result stored in Julie's reference workbook rather than this
+ * package's number.
+ */
+function formulaCells(wb: ExcelJS.Workbook): string[] {
+  const offenders: string[] = [];
+  for (const ws of wb.worksheets) {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value as Record<string, unknown> | null;
+        if (v && typeof v === "object" && ("formula" in v || "sharedFormula" in v)) {
+          offenders.push(`${ws.name}!${cell.address}`);
+        }
+      });
+    });
+  }
+  return offenders;
+}
+
+function allValues(wb: ExcelJS.Workbook): Array<{ at: string; value: unknown }> {
+  const out: Array<{ at: string; value: unknown }> = [];
+  for (const ws of wb.worksheets) {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        out.push({ at: `${ws.name}!${cell.address}`, value: cell.value });
+      });
+    });
+  }
+  return out;
+}
+
+describe("buildParsonsWorkbook — no reference-workbook leftovers", () => {
+  it("has no formulas left anywhere in the deliverable", async () => {
+    const { wb } = await buildParsonsWorkbook(makeCtx());
+    expect(formulaCells(wb)).toEqual([]);
+  });
+
+  /**
+   * The default fixture reproduces Julie's own AZAD-11 invoice, so a stale cell
+   * and a correct one look identical. This one bills a different person, rate
+   * and budget, which makes any surviving reference figure visible.
+   */
+  function makeDifferentCtx(): PackageDocContext {
+    const base = makeCtx();
+    const wp = {
+      ...base.workPlan,
+      totalBudget: 250000,
+      clientProjectNo: "77XX999",
+    } as PackageDocContext["workPlan"];
+    const entries = base.entries.map(
+      (e, i) =>
+        ({
+          ...e,
+          id: 900 + i,
+          employeeId: 8,
+          employeeName: "Ana Ruiz",
+          classification: "Resident Engineer",
+          rate: 44.25,
+        }) as PackageDocContext["entries"][number],
+    );
+    return {
+      ...base,
+      workPlan: wp,
+      entries,
+      pkg: { ...base.pkg, previouslyBilled: 12000 } as PackageDocContext["pkg"],
+    };
+  }
+
+  it("carries none of the reference invoice's figures into a different package", async () => {
+    const { wb } = await buildParsonsWorkbook(makeDifferentCtx());
+    // Julie's own B.55 invoice: her labor budget, her previously-billed and
+    // to-date columns, her 339.75 prior hours, the 168-hour SUBTOTAL (HOME)
+    // that printed under an 84-hour field line, her burdened cross-check, and
+    // the per-PO reconciliation summary beside the form.
+    const fingerprints = [
+      61776, 45031.74, 99331.01, 111663.73, 136265.5008, 74489.5008, 339.75, 423.75,
+      13163.544576, 147407.67, 107453.11, 120794.26, 294815.3316, 26682.3, 7946.48,
+      10901.24,
+    ];
+    const notes = ["Check!!!", "54RR510", "Hashmatullah"];
+    const cells = allValues(wb);
+    expect(cells.length).toBeGreaterThan(200); // the scan actually looked at the book
+    const found: string[] = [];
+    for (const { at, value } of cells) {
+      if (typeof value === "number" && fingerprints.some((f) => Math.abs(value - f) < 0.005)) {
+        found.push(`${at}=${value}`);
+      }
+      if (typeof value === "string" && notes.some((n) => value.includes(n))) {
+        found.push(`${at}="${value}"`);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+
+  it("states this period's hours and a live cost forecast", async () => {
+    const { wb } = await buildParsonsWorkbook(makeDifferentCtx());
+    const calc = wb.getWorksheet("Invoice Calc")!;
+    expect(calc.getCell("D22").value).toBe(84);
+    expect(calc.getCell("E22").value).toBe(0); // no prior-period hours are carried
+    expect(calc.getCell("F22").value).toBe(84);
+    expect(String(calc.getCell("A14").value)).toBe("P.O. Line 1.1 - 77XX999");
+    // SUBTOTAL (HOME) printed the reference's 168 hours beneath an 84-hour line.
+    const labor = wb.getWorksheet("Labor_")!;
+    expect(labor.getCell("E24").value).toBe(0);
+    expect(labor.getCell("E31").value).toBe(84);
+    // The progress report restated the reference's "81.95% has been billed".
+    const report = wb.worksheets.find((w) => /^Progress Report/i.test(w.name))!;
+    expect(String(report.getCell("G54").value)).toMatch(/^\d+\.\d\d% has been billed\.$/);
+    expect(String(report.getCell("G54").value)).not.toContain("81.95");
+  });
+
+  it("prints the first PO-line block only", async () => {
+    const { wb } = await buildParsonsWorkbook(makeCtx());
+    // A7:K59 ran six rows into the Line 1.2 mirror, so the client's page ended
+    // on a stranded "P.O. Line 1.2" header with nothing under it.
+    expect(wb.getWorksheet("Invoice Calc")!.pageSetup.printArea).toBe("$A$7:$K$52");
   });
 });

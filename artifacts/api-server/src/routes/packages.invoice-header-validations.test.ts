@@ -45,7 +45,10 @@ async function seed(overrides: Record<string, unknown> = {}): Promise<number> {
       jobNumber: "10007",
       totalBudget: 1_000_000,
       fixedFeeRate: 8,
-      ...overrides,
+      ...(() => {
+        const { __invoiceNumber: _ignored, ...rest } = overrides;
+        return rest;
+      })(),
     })
     .returning();
   createdWorkPlanIds.push(wp.id);
@@ -55,7 +58,10 @@ async function seed(overrides: Record<string, unknown> = {}): Promise<number> {
       workPlanId: wp.id,
       payPeriodStart: "2026-08-01",
       payPeriodEnd: "2026-08-31",
-      invoiceNumber: "B.50-01-31",
+      invoiceNumber:
+        "__invoiceNumber" in overrides
+          ? (overrides.__invoiceNumber as string | null)
+          : "B.50-01-31",
       invoiceDate: "2026-09-01",
     })
     .returning();
@@ -149,5 +155,140 @@ describe("GET /packages/:id/validations — invoice header readiness", () => {
     // informational note rather than a "will print blank" warning.
     expect(flag.severity).toBe("info");
     expect(flag.message).toContain("Net 30 Days");
+  });
+});
+
+describe("GET /packages/:id/validations — invoice numbering", () => {
+  it("tells the biller to seed the series on the first invoice of a work plan", async () => {
+    const id = await seed({ __invoiceNumber: null });
+    const res = await request(app).get(`/api/packages/${id}/validations`);
+    const flag = res.body.flags.find((f: { field: string }) => f.field === "invoiceNumber");
+    expect(flag).toBeTruthy();
+    // "Invoice number is not set." on its own left Julie asking whether the
+    // system was meant to derive it. Say which case this is and what happens next.
+    expect(flag.message).toContain("first numbered invoice");
+    expect(flag.message).toContain("B.50-01-30");
+    expect(flag.message).toContain("increments the trailing number");
+    expect(flag.severity).toBe("warning");
+  });
+
+  it("explains when the previous number had nothing to increment", async () => {
+    const id = await seed({ __invoiceNumber: null });
+    const [pkg] = await db
+      .select()
+      .from(packagesTable)
+      .where(inArray(packagesTable.id, [id]));
+    const [sibling] = await db
+      .insert(packagesTable)
+      .values({
+        workPlanId: pkg.workPlanId,
+        payPeriodStart: "2026-07-01",
+        payPeriodEnd: "2026-07-31",
+        invoiceNumber: "AZAD-FINAL",
+      })
+      .returning();
+    createdPackageIds.push(sibling.id);
+    const res = await request(app).get(`/api/packages/${id}/validations`);
+    const flag = res.body.flags.find((f: { field: string }) => f.field === "invoiceNumber");
+    expect(flag.message).toContain("AZAD-FINAL");
+    expect(flag.message).toContain("no trailing number to increment");
+  });
+});
+
+describe("GET /packages/:id/validations — billing rate drift", () => {
+  it("flags a rate that jumps since the last invoice on the work plan", async () => {
+    const id = await seed();
+    const [pkg] = await db.select().from(packagesTable).where(inArray(packagesTable.id, [id]));
+    // A prior invoice on the same work plan, billing the same person at the
+    // rate Julie's reference workbook uses.
+    const [prior] = await db
+      .insert(packagesTable)
+      .values({
+        workPlanId: pkg.workPlanId,
+        payPeriodStart: "2026-07-01",
+        payPeriodEnd: "2026-07-31",
+        invoiceNumber: "B.50-01-30",
+      })
+      .returning();
+    createdPackageIds.push(prior.id);
+    const [priorWeek] = await db
+      .insert(packageWeeksTable)
+      .values({
+        packageId: prior.id,
+        label: "Week 1",
+        weekStart: "2026-07-06",
+        weekEnd: "2026-07-12",
+        sortOrder: 1,
+      })
+      .returning();
+    await db.insert(timesheetEntriesTable).values({
+      packageId: prior.id,
+      weekId: priorWeek.id,
+      employeeName: "Travis Johnson",
+      classification: "Program Manager",
+      category: "regular",
+      location: "home",
+      hoursMon: 8,
+      hoursTue: 8,
+      hoursWed: 8,
+      hoursThu: 8,
+      hoursFri: 8,
+      rate: 40,
+    });
+
+    const res = await request(app).get(`/api/packages/${id}/validations`);
+    const flag = res.body.flags.find(
+      (f: { field: string; message: string }) =>
+        f.field === "entries" && f.message.includes("changed sharply"),
+    );
+    expect(flag, "expected a rate-drift warning").toBeTruthy();
+    expect(flag.message).toContain("Travis Johnson $40.00 → $92.50");
+    expect(flag.message).toContain("Max Bill Rate");
+    // A rate move is a question for the biller, not a blocked export.
+    expect(flag.severity).toBe("warning");
+    expect(res.body.isValid).toBe(true);
+  });
+
+  it("stays quiet when the rate holds steady", async () => {
+    const id = await seed();
+    const [pkg] = await db.select().from(packagesTable).where(inArray(packagesTable.id, [id]));
+    const [prior] = await db
+      .insert(packagesTable)
+      .values({
+        workPlanId: pkg.workPlanId,
+        payPeriodStart: "2026-07-01",
+        payPeriodEnd: "2026-07-31",
+        invoiceNumber: "B.50-01-30",
+      })
+      .returning();
+    createdPackageIds.push(prior.id);
+    const [priorWeek] = await db
+      .insert(packageWeeksTable)
+      .values({
+        packageId: prior.id,
+        label: "Week 1",
+        weekStart: "2026-07-06",
+        weekEnd: "2026-07-12",
+        sortOrder: 1,
+      })
+      .returning();
+    await db.insert(timesheetEntriesTable).values({
+      packageId: prior.id,
+      weekId: priorWeek.id,
+      employeeName: "Travis Johnson",
+      classification: "Program Manager",
+      category: "regular",
+      location: "home",
+      hoursMon: 8,
+      hoursTue: 8,
+      hoursWed: 8,
+      hoursThu: 8,
+      hoursFri: 8,
+      rate: 92.5,
+    });
+    const res = await request(app).get(`/api/packages/${id}/validations`);
+    expect(
+      res.body.flags.filter((f: { message: string }) => f.message.includes("changed sharply")),
+    ).toEqual([]);
   });
 });

@@ -27,16 +27,26 @@ import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/d
  *
  *  - Invoice (face): dates, invoice no, period, this-period total L27/L30,
  *    billing summary J34-J38.
- *  - `Sub Calc _revised` (build-up): labor H11, fringe H12, fixed fee H43,
- *    FCCM H49, OT/DT premium H24/H25, and the authoritative totals G51/H51/
- *    I51/J51. Fringe and fee are written UNROUNDED and FCCM ROUNDED, exactly as
- *    the reference workbook computes them, so the headline rounds to the same
- *    cent (26,189.78 on the sample).
+ *  - `Sub Calc _revised` (build-up): the whole five-column grid — Budget (G),
+ *    Amount This Period (H), Previously Billed (I), Amount To Date (J), %
+ *    Expended (K) — plus the Hours to Date band and every SUBTOTAL row, all as
+ *    values. Fringe and fee stay UNROUNDED and FCCM ROUNDED, exactly as the
+ *    reference workbook computes them, so the headline rounds to the same cent
+ *    (26,189.78 on the sample).
  *  - `Sub Labor` (per-employee lines): classification / name / hours / rate /
  *    amount, with location subtotals.
  *  - `Progress Report`: header, period, dates, narrative, percent expended.
  *  - Weekly timesheet tabs: 7 day columns G..M starting SATURDAY (G=Sat …
  *    M=Fri), rows for straight / OT / DT / PTO / holiday, and weekly totals.
+ *
+ * Two sheets carry Julie's working notes outside the form — a "Budget Increase"
+ * back-solve calculator, a reconciliation strip, a "Max Rate Cap at $115"
+ * reminder — and the template's print areas (`Sub Calc _revised`!A1:Q59 and
+ * `Sub Labor`!A1:U31) reach all of it, so the client's copy printed her scratch
+ * and scaled the type down to fit ~19 inches of it onto a page. Those cells are
+ * CLEARED, which is what actually fixes the print: LibreOffice paginates an
+ * .xlsx by the sheet's used extent and ignores the print area. The areas are
+ * narrowed to the form as well, for Excel, which does honour them.
  *
  * The billing math follows the definitive V1 WSP/BART model:
  *   direct labor (straight+OT+DT hours × base rate)
@@ -89,6 +99,30 @@ const DELETED_REF_TOKENS = [
   "'MISC'!",
   "MISC!",
   ...TEMPLATE_WEEK_TABS.map((n) => `'${n}'!`),
+];
+
+/** `Sub Labor` columns right of the form (I..U) — Julie's working notes. */
+const SUBLABOR_SCRATCH_COLS = [
+  "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U",
+] as const;
+
+/** Columns the `Sub Calc _revised` form occupies (A..K). */
+const SUBCALC_COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"] as const;
+
+/**
+ * `Sub Calc _revised` subtotal rows as `[row, firstRow, lastRow]` — the bands
+ * the template summed with `SUBTOTAL(9, …)`. Written as values because nothing
+ * downstream of ExcelJS recalculates them.
+ */
+const SUBCALC_SUBTOTALS: ReadonlyArray<readonly [number, number, number]> = [
+  [10, 7, 9], // Home & Branch labor + burden
+  [14, 11, 13], // Field labor + burden
+  [19, 16, 18], // spare labor rows
+  [20, 7, 19], // Total Labor
+  [31, 22, 30], // Total Other Direct Cost
+  [37, 33, 36], // Total Subconsultants
+  [41, 39, 40], // Total PMAC
+  [47, 42, 46], // Total Fixed Fee
 ];
 
 function round2(n: number): number {
@@ -406,7 +440,11 @@ function fillTimesheet(
   // Day header dates: G=Sat, H=Sun, I=Mon, J=Tue, K=Wed, L=Thu, M=Fri.
   const dayCols = ["G", "H", "I", "J", "K", "L", "M"];
   dayCols.forEach((col, i) => setVal(ws, `${col}6`, addDays(saturday, i)));
-  setVal(ws, "I5", addDays(saturday, 6)); // "Week Ending" = Friday
+  // "Week Ending" = Friday. The template formats I5 as a long date in a narrow
+  // day column, so the printed timesheet read "Week Ending: ###" — the same
+  // symptom Julie reported on the T.Y. Lin timesheets. A short numeric date fits.
+  setVal(ws, "I5", addDays(saturday, 6));
+  ws.getCell("I5").numFmt = "m/d/yyyy";
 
   // Clear the sample data region (descriptions + all day/total cells, rows 9-15).
   for (let r = 9; r <= 15; r++) {
@@ -505,6 +543,10 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   // for a work plan (every later package increments it — see bumpInvoiceNumber).
   const invoiceNo = pkg.invoiceNumber ? " " + pkg.invoiceNumber : "";
 
+  // Several attachment headers read `=Invoice!B4` for the firm name. Resolve it
+  // once from the cell itself so those become values without hardcoding it.
+  const firmName = String(invoice.getCell("B4").value ?? "");
+
   // -- 1. Invoice (face). Every cross-sheet cell is overwritten with a value.
   if (pkg.invoiceDate) {
     setVal(invoice, "L6", toDate(pkg.invoiceDate));
@@ -537,64 +579,205 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   setVal(invoice, "J37", fin.totalToDate);
   setVal(invoice, "J38", fin.remainingBalance);
 
-  // -- 2. Sub Calc _revised (build-up). Leaf cells written as values; the
-  // headline totals G51/H51/I51/J51 forced so non-recalc viewers are correct.
+  // -- 2. Sub Calc _revised (build-up).
+  //
+  // The sheet is a five-column grid: Budget (G), Amount This Period (H),
+  // Previously Billed (I), Amount To Date (J), % Expended (K). Only column H
+  // was ever regenerated, so G/J/K still carried the reference invoice's own
+  // figures — a $68,450 labor budget, $137,956.72 previously billed, a 113.4%
+  // expended reading and a `#DIV/0!` on the PMAC row — and the Hours to Date
+  // band still showed the reference's 1,475 previous hours. Wipe the four
+  // columns across the body, then write every figure this package can actually
+  // state, as a value.
+  for (let r = 5; r <= 50; r++) {
+    for (const col of ["G", "I", "J", "K"]) clearCell(subcalc, `${col}${r}`);
+  }
+  // Rows 53-59 are Julie's reconciliation strip (Original / Checked / Fixed
+  // Fee, and `=+'Sub Calc _revised'!INVOICE-H31` beside the words "labor" and
+  // "expenses"); columns O..Q hold a "Budget Increase" back-solve calculator
+  // carrying the reference contract's target total and a 1.09 fringe. Both sit
+  // inside the template's print area (A1:Q59), so both printed on the client's
+  // invoice detail.
+  for (let r = 53; r <= 59; r++) {
+    for (const col of SUBCALC_COLS) clearCell(subcalc, `${col}${r}`);
+  }
+  for (let r = 1; r <= 25; r++) {
+    for (const col of ["O", "P", "Q"]) clearCell(subcalc, `${col}${r}`);
+  }
+  // The header band read `=Invoice!B4` across A1:D1 and repeated the reference
+  // invoice number in K2, beside the cell the engine writes.
+  setVal(subcalc, "A1", firmName);
   setVal(subcalc, "J1", pkg.invoiceDate ? toDate(pkg.invoiceDate) : "");
   setVal(subcalc, "J2", invoiceNo);
+  setVal(subcalc, "K2", invoiceNo);
   setVal(subcalc, "J3", wp.code);
-  // Fringe multiplier cell (e.g. 1.2058 for a 120.58% fringe rate).
-  setVal(subcalc, "D12", fin.fringeFrac);
-  // Home labor block (rows 7 labor / 8 fringe / 9 overhead pool).
-  setVal(subcalc, "H7", fin.home.directLabor);
-  setVal(subcalc, "H8", fin.home.fringe);
-  setVal(subcalc, "H9", fin.home.overheadPool);
-  // Field labor block (rows 11 labor / 12 fringe / 13 overhead pool).
-  setVal(subcalc, "H11", fin.field.directLabor);
-  setVal(subcalc, "H12", fin.field.fringe);
-  setVal(subcalc, "H13", fin.field.overheadPool);
-  for (const r of [16, 17, 18]) setVal(subcalc, `H${r}`, 0);
-  // Other Direct Costs + OT/DT premium (unburdened) + misc rows.
-  setVal(subcalc, "H23", fin.otherDirectCosts);
-  setVal(subcalc, "H24", fin.otPremium);
-  setVal(subcalc, "H25", fin.dtPremium);
-  for (const r of [26, 27, 28, 29, 30]) setVal(subcalc, `H${r}`, 0);
-  // Subconsultants / PMAC unused.
-  for (const r of [33, 34, 35, 36, 39]) setVal(subcalc, `H${r}`, 0);
-  // Fixed fee (unrounded) and its subconsultant companion (0).
-  setVal(subcalc, "H43", fin.fixedFee);
-  setVal(subcalc, "H44", 0);
-  // FCCM (rounded, per location) and the rounding row.
-  setVal(subcalc, "H48", fin.home.fccm);
-  setVal(subcalc, "H49", fin.field.fccm);
-  setVal(subcalc, "H50", 0);
-  // Authoritative totals (values, not formulas).
-  setVal(subcalc, "G51", fin.budget);
-  setVal(subcalc, "H51", fin.totalThisPeriod);
-  setVal(subcalc, "I51", fin.previouslyBilled);
-  setVal(subcalc, "J51", fin.totalToDate);
 
-  // Previously-billed column I decomposition. We only carry a scalar forward,
-  // so unused leaves are zeroed (never left as template constants) and the
-  // scalar lands on the field-labor previous row unless the work plan supplies
-  // an explicit per-category split (labor / overhead / fixed fee / FCCM).
-  for (const r of [7, 8, 9, 11, 12, 13, 16, 17, 18, 23, 24, 25, 43, 48, 49]) {
-    clearCell(subcalc, `I${r}`);
+  // Hours to Date band: Current (D) / Previous (E) / To Date (F), per location.
+  // We do not carry prior-period hours on the package, so Previous is an
+  // explicit 0 and To Date equals Current — never the template's 1,475.
+  const hoursAt = (loc: "home" | "field") =>
+    round2(fin.laborRows.filter((r) => r.location === loc).reduce((s, r) => s + r.hours, 0));
+  for (const [row, loc] of [[7, "home"], [11, "field"]] as const) {
+    setVal(subcalc, `D${row}`, hoursAt(loc));
+    setVal(subcalc, `E${row}`, 0);
+    setVal(subcalc, `F${row}`, hoursAt(loc));
   }
+  // The rate cells the burden rows multiply by, and their `=SUM()` companions.
+  setVal(subcalc, "D8", fin.fringeFrac);
+  setVal(subcalc, "D9", fin.overheadFrac);
+  setVal(subcalc, "D10", fin.fringeFrac + fin.overheadFrac);
+  setVal(subcalc, "D12", fin.fringeFrac);
+  setVal(subcalc, "D13", fin.overheadFrac);
+  setVal(subcalc, "D14", fin.fringeFrac + fin.overheadFrac);
+  setVal(subcalc, "E43", fin.feeFrac);
+  setVal(subcalc, "E44", 0);
+  setVal(subcalc, "E48", fin.fccmFrac);
+  setVal(subcalc, "E49", fin.fccmFrac);
+  // Both FCCM labels are literal text in the template and read "(0.00% x Direct
+  // labor)" however the contract's rate is actually set.
+  const fccmPct = round2(fin.fccmFrac * 100);
+  setVal(subcalc, "B48", `FCCM Home (${fccmPct}% x Direct labor)`);
+  setVal(subcalc, "B49", `FCCM Field (${fccmPct}% x Direct labor)`);
+
+  // Amount This Period (H), row by row.
+  const amountThisPeriod: Record<number, number> = {
+    7: fin.home.directLabor,
+    8: fin.home.fringe,
+    9: fin.home.overheadPool,
+    11: fin.field.directLabor,
+    12: fin.field.fringe,
+    13: fin.field.overheadPool,
+    16: 0,
+    17: 0,
+    18: 0,
+    23: fin.otherDirectCosts,
+    24: fin.otPremium,
+    25: fin.dtPremium,
+    26: 0,
+    27: 0,
+    28: 0,
+    29: 0,
+    30: 0,
+    33: 0,
+    34: 0,
+    35: 0,
+    36: 0,
+    39: 0,
+    43: fin.fixedFee,
+    44: 0,
+    48: fin.home.fccm,
+    49: fin.field.fccm,
+    50: 0,
+  };
+
+  // Previously Billed (I). We carry a scalar forward, so unused leaves are zero
+  // (never left as template constants) and the scalar lands on the field-labor
+  // row unless the work plan supplies an explicit per-category split.
+  const previouslyBilledRows: Record<number, number> = {};
+  for (const r of Object.keys(amountThisPeriod)) previouslyBilledRows[Number(r)] = 0;
   const prevSplit =
     wp.prevBilledLabor != null ||
     wp.prevBilledOverhead != null ||
     wp.prevBilledFixedFee != null ||
     wp.prevBilledFccm != null;
   if (prevSplit) {
-    setVal(subcalc, "I11", round2(wp.prevBilledLabor ?? 0));
-    setVal(subcalc, "I12", round2(wp.prevBilledOverhead ?? 0));
-    setVal(subcalc, "I43", round2(wp.prevBilledFixedFee ?? 0));
-    setVal(subcalc, "I49", round2(wp.prevBilledFccm ?? 0));
+    previouslyBilledRows[11] = round2(wp.prevBilledLabor ?? 0);
+    previouslyBilledRows[12] = round2(wp.prevBilledOverhead ?? 0);
+    previouslyBilledRows[43] = round2(wp.prevBilledFixedFee ?? 0);
+    previouslyBilledRows[49] = round2(wp.prevBilledFccm ?? 0);
   } else if (fin.previouslyBilled !== 0) {
-    setVal(subcalc, "I11", fin.previouslyBilled);
+    previouslyBilledRows[11] = fin.previouslyBilled;
   }
 
+  // Budget (G) per row. The work plan stores a total; the per-category split is
+  // optional and only the biller can supply it, so the column stays blank
+  // rather than showing a back-solved figure that would not tie to the
+  // contract. The total (G51) and remaining balance (G52) are always stated.
+  const budgetRows: Record<number, number> = {};
+  if (
+    wp.budgetLabor != null ||
+    wp.budgetOverhead != null ||
+    wp.budgetFixedFee != null ||
+    wp.budgetFccm != null
+  ) {
+    budgetRows[11] = round2(wp.budgetLabor ?? 0);
+    budgetRows[12] = round2(wp.budgetOverhead ?? 0);
+    budgetRows[43] = round2(wp.budgetFixedFee ?? 0);
+    budgetRows[49] = round2(wp.budgetFccm ?? 0);
+  }
+
+  // Written UNROUNDED, as the reference workbook's own formulas leave them: the
+  // fringe and fixed-fee leaves carry full precision so the headline rounds to
+  // 26,189.78 rather than .77. The cells' number formats do the displaying.
+  for (const [row, amount] of Object.entries(amountThisPeriod)) {
+    const r = Number(row);
+    const prev = previouslyBilledRows[r] ?? 0;
+    setVal(subcalc, `H${r}`, amount);
+    setVal(subcalc, `I${r}`, prev);
+    setVal(subcalc, `J${r}`, amount + prev);
+    if (budgetRows[r] != null) setVal(subcalc, `G${r}`, budgetRows[r]);
+  }
+
+  // Subtotal rows, as values. Each mirrors the SUBTOTAL(9, …) band it replaced.
+  const bandSum = (src: Record<number, number>, from: number, to: number) =>
+    Object.entries(src)
+      .filter(([r]) => Number(r) >= from && Number(r) <= to)
+      .reduce((s, [, v]) => s + v, 0);
+  for (const [row, from, to] of SUBCALC_SUBTOTALS) {
+    const period = bandSum(amountThisPeriod, from, to);
+    const prev = bandSum(previouslyBilledRows, from, to);
+    const budgeted = bandSum(budgetRows, from, to);
+    setVal(subcalc, `H${row}`, period);
+    setVal(subcalc, `I${row}`, prev);
+    setVal(subcalc, `J${row}`, period + prev);
+    if (budgeted > 0) {
+      setVal(subcalc, `G${row}`, budgeted);
+      setVal(subcalc, `K${row}`, (period + prev) / budgeted);
+    }
+  }
+
+  // The OT/DT premium rows named one employee and one rate from the reference
+  // workbook ("SS OT Premium(Jordy)", "37/HR") no matter who actually worked
+  // the overtime — the same complaint Julie raised about the T.Y. Lin ODCs
+  // sheet. Name this period's people, their premium rate and their hours.
+  writePremiumRow(subcalc, 24, "SS OT Premium", premiumDetail(ctx, "ot"));
+  writePremiumRow(subcalc, 25, "SS DT Premium", premiumDetail(ctx, "dt"));
+
+  // The unit-priced ODC lines (car rental / lodging / meals) are not sourced
+  // from the package, so their quantity and count cells are zeroed rather than
+  // left carrying the reference invoice's.
+  for (let r = 27; r <= 30; r++) {
+    setVal(subcalc, `D${r}`, 0);
+    setVal(subcalc, `F${r}`, 0);
+  }
+
+  // Authoritative totals (values, not formulas).
+  setVal(subcalc, "G51", fin.budget);
+  setVal(subcalc, "H51", fin.totalThisPeriod);
+  setVal(subcalc, "I51", fin.previouslyBilled);
+  setVal(subcalc, "J51", fin.totalToDate);
+  // `=J51/G51` renders #DIV/0! on a work plan whose budget has not been entered
+  // yet; written as a value, and 0 when there is no budget to divide by.
+  setVal(subcalc, "K51", fin.budget > 0 ? fin.totalToDate / fin.budget : 0);
+  setVal(subcalc, "G52", fin.remainingBalance);
+
+  // Print only the form (Excel honours this; LibreOffice goes by the used
+  // extent, which the clearing above is what fixes).
+  subcalc.pageSetup = { ...subcalc.pageSetup, printArea: "$A$1:$K$52" };
+
   // -- 3. Sub Labor (per-employee lines). Clear both blocks, then write rows.
+  //
+  // The form is columns A..H, but the template's print area runs A1:U31 and
+  // columns I..U hold Julie's working notes: a "Max Rate Cap / at $115 / Bill
+  // Rate Overide" reminder, a 1/1/2022 effective date, a "Total Billed Hours"
+  // tally across L..U, and a fringe/fee reconciliation in I21:I26. All of it
+  // printed on the client's labor attachment and stretched the sheet across 21
+  // columns, so the type scaled down to fit.
+  for (let r = 1; r <= 31; r++) {
+    for (const col of SUBLABOR_SCRATCH_COLS) clearCell(sublabor, `${col}${r}`);
+  }
+  sublabor.pageSetup = { ...sublabor.pageSetup, printArea: "$A$1:$H$29" };
+  setVal(sublabor, "B1", firmName);
   setVal(sublabor, "F1", pkg.invoiceDate ? toDate(pkg.invoiceDate) : "");
   setVal(sublabor, "F2", invoiceNo);
   setVal(sublabor, "F3", wp.code);
@@ -611,8 +794,22 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   setVal(sublabor, "D29", totalHours);
   setVal(sublabor, "F29", totalAmount);
   setVal(sublabor, "H29", round2(totalAmount * burden));
-  setVal(sublabor, "H30", 0);
-  setVal(sublabor, "H31", round2(totalAmount * burden));
+  // Rows 30-31 were a reconciliation strip below TOTAL LABOR — two burdened
+  // figures whose only labels ("ODC", "manual") lived in the notes column we
+  // clear above, leaving bare numbers under the total. The attachment ends at
+  // TOTAL LABOR.
+  for (let r = 30; r <= 31; r++) {
+    for (const col of ["A", ...LABOR_COLS]) clearCell(sublabor, `${col}${r}`);
+  }
+  // Column A carries a one-per-row "does this line have hours" flag, written in
+  // the template as `=IF(D7=0,"0","1")`. Evaluate it against the lines we just
+  // wrote; left as a formula it printed the reference workbook's flags.
+  for (let r = 5; r <= 31; r++) {
+    const flag = sublabor.getCell(`A${r}`).value;
+    if (!flag || typeof flag !== "object") continue;
+    const hours = sublabor.getCell(`D${r}`).value;
+    setVal(sublabor, `A${r}`, typeof hours === "number" && hours !== 0 ? "1" : "0");
+  }
 
   // -- 4. Progress Report: header, period, dates, narrative, percent expended.
   const reportDate = ctx.progress?.reportDate || pkg.invoiceDate;
@@ -627,6 +824,11 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   setVal(report, "B7", wp.title || "");
   setVal(report, "G7", toDate(pkg.payPeriodStart));
   setVal(report, "I7", toDate(pkg.payPeriodEnd));
+  // The period row printed "5/2/2026 to ###": column I is a couple of
+  // characters narrower than G, so the end date did not fit beside the start.
+  for (const addr of ["G7", "I7", "I6"]) report.getCell(addr).numFmt = "m/d/yyyy";
+  const periodEndCol = report.getColumn("I");
+  periodEndCol.width = Math.max(periodEndCol.width ?? 0, 11);
   const people = contributors(ctx);
   setVal(
     report,
@@ -653,6 +855,13 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   }
   setVal(report, "C22", (ctx.progress?.concerns || "").trim() || "N/A");
   setVal(report, "C25", (ctx.progress?.correctiveAction || "").trim() || "N/A");
+  // Row 28 carried the reference report's schedule sentence verbatim
+  // ("Schedule: 24months. Time Passed: 11 months, Remaining 14 months") beside
+  // Julie's own "UPDATE" reminder in K28, and the print area (A1:K36) reached
+  // both. We hold no contract start/end date, so the line is cleared rather
+  // than restated from another work plan's schedule.
+  clearCell(report, "B28");
+  clearCell(report, "K28");
   const pct =
     ctx.progress?.percentComplete != null
       ? round2(ctx.progress.percentComplete / 100)
@@ -702,6 +911,66 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
 
   fitSheetsToOnePage(wb);
   return { wb, timesheetTabs, financials: fin };
+}
+
+/** Who worked overtime (or doubletime) this period, at what premium rate. */
+interface PremiumDetail {
+  names: string[];
+  hours: number;
+  /** Distinct premium rates (0.5 × base for OT, 1.0 × base for DT). */
+  rates: number[];
+}
+
+function premiumDetail(ctx: PackageDocContext, category: "ot" | "dt"): PremiumDetail {
+  const factor = category === "ot" ? 0.5 : 1;
+  const names = new Set<string>();
+  const rates = new Set<number>();
+  let hours = 0;
+  for (const e of ctx.entries) {
+    if (e.category !== category) continue;
+    const h = entryHours(e);
+    if (h <= 0) continue;
+    const name = e.employeeName.trim();
+    if (name) names.add(name);
+    rates.add(round2(e.rate * factor));
+    hours += h;
+  }
+  return { names: [...names], hours: round2(hours), rates: [...rates] };
+}
+
+/**
+ * Writes one `Sub Calc _revised` premium row (24 = OT, 25 = DT). The template
+ * hardcodes the reference invoice's employee and rate into the label cells
+ * ("SS OT Premium(Jordy)" / "37/HR"), so a period worked by somebody else still
+ * printed Jordy's name. When nobody worked the category the row is blanked
+ * rather than left naming a person who did not.
+ */
+function writePremiumRow(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  label: string,
+  detail: PremiumDetail,
+): void {
+  if (detail.hours <= 0 || detail.names.length === 0) {
+    for (const col of ["D", "E", "F"]) clearCell(ws, `${col}${row}`);
+    return;
+  }
+  const multiplier = row === 24 ? "0.5" : "1.0";
+  const text = `${label} (${detail.names.join(", ")})`;
+  setVal(ws, `D${row}`, text);
+  // The label column is sized for the template's one-name text and the rate
+  // cell beside it clips anything longer, so "SS OT Premium (Ana Ruiz)" printed
+  // as "SS OT Premium (Ana". Widen it to fit whoever actually worked.
+  const labelCol = ws.getColumn("D");
+  labelCol.width = Math.max(labelCol.width ?? 0, text.length + 2);
+  setVal(
+    ws,
+    `E${row}`,
+    detail.rates.length === 1
+      ? `${detail.rates[0].toFixed(2)}/HR`
+      : `${multiplier} x base rate`,
+  );
+  setVal(ws, `F${row}`, `${detail.hours} HRS`);
 }
 
 const LABOR_COLS = ["B", "C", "D", "E", "F", "G", "H"] as const;

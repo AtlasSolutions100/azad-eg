@@ -277,3 +277,160 @@ describe("WSP export ↔ on-screen rollup parity", () => {
     expect(rollup.otdtPremium).toBeCloseTo(wsp.otPremium + wsp.dtPremium, 2);
   });
 });
+
+/**
+ * Everything on a client-facing sheet must be a value. ExcelJS writes formula
+ * TEXT without evaluating it, and neither LibreOffice's PDF export nor a plain
+ * viewer recalculates an .xlsx on open — so a surviving formula prints the
+ * cached result stored in Julie's reference workbook rather than this
+ * package's number. This is the guard the AECOM and T.Y. Lin engines carry.
+ */
+function formulaCells(wb: ExcelJS.Workbook): string[] {
+  const offenders: string[] = [];
+  for (const ws of wb.worksheets) {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value as Record<string, unknown> | null;
+        if (v && typeof v === "object" && ("formula" in v || "sharedFormula" in v)) {
+          offenders.push(`${ws.name}!${cell.address}`);
+        }
+      });
+    });
+  }
+  return offenders;
+}
+
+/** Every cell value on every sheet, flattened for fingerprint scanning. */
+function allValues(wb: ExcelJS.Workbook): Array<{ at: string; value: unknown }> {
+  const out: Array<{ at: string; value: unknown }> = [];
+  for (const ws of wb.worksheets) {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        out.push({ at: `${ws.name}!${cell.address}`, value: cell.value });
+      });
+    });
+  }
+  return out;
+}
+
+describe("buildWspWorkbook — no reference-workbook leftovers", () => {
+  it("has no formulas left anywhere in the deliverable", async () => {
+    const { wb } = await buildWspWorkbook(makeCtx());
+    expect(formulaCells(wb)).toEqual([]);
+  });
+
+  /**
+   * The default fixture reproduces Julie's own sample invoice, so a stale cell
+   * and a correct one look identical. This one bills different people, hours,
+   * rates and budget, which makes any surviving reference figure visible.
+   */
+  function makeDifferentCtx(): PackageDocContext {
+    const base = makeCtx();
+    const wp = {
+      ...base.workPlan,
+      totalBudget: 400000,
+      fccmRate: 0.5,
+    } as PackageDocContext["workPlan"];
+    const entries = [
+      {
+        ...base.entries[0],
+        id: 91,
+        weekId: 1,
+        employeeId: 7,
+        employeeName: "Ana Ruiz",
+        classification: "Resident Engineer",
+        rate: 55.5,
+        hoursMon: 8,
+        hoursTue: 8,
+        hoursWed: 8,
+        hoursThu: 8,
+        hoursFri: 8,
+      },
+      {
+        ...base.entries[0],
+        id: 92,
+        weekId: 2,
+        employeeId: 7,
+        employeeName: "Ana Ruiz",
+        classification: "Resident Engineer",
+        category: "ot",
+        rate: 55.5,
+        hoursMon: 4,
+        hoursTue: 0,
+        hoursWed: 0,
+        hoursThu: 0,
+        hoursFri: 0,
+      },
+    ] as PackageDocContext["entries"];
+    return {
+      ...base,
+      workPlan: wp,
+      entries,
+      pkg: { ...base.pkg, previouslyBilled: 9000 } as PackageDocContext["pkg"],
+    };
+  }
+
+  it("carries none of the reference invoice's figures into a different package", async () => {
+    const { wb } = await buildWspWorkbook(makeDifferentCtx());
+    // Every one of these is a number or a note that lives only in Julie's own
+    // A.04-02 invoice: her labor/fringe/ODC budgets, her previously-billed and
+    // to-date columns, her 1,475 prior hours, her burdened labor total, the
+    // "Budget Increase" back-solve beside the form, and her working notes.
+    const fingerprints = [
+      68450, 74610.51, 1680, 3700, 143060.51, 137956.72, 162166.8749, 1619, 1475,
+      26146.97, 133202.19, 156185.3508, 152693.26,
+    ];
+    const notes = [
+      "Max Rate Cap",
+      "Bill Rate Overide",
+      "Budget Increase",
+      "Target Total",
+      "Grand Total (Check)",
+      "Time Passed",
+      "UPDATE",
+      "Jordy",
+    ];
+    const cells = allValues(wb);
+    expect(cells.length).toBeGreaterThan(200); // the scan actually looked at the book
+    const found: string[] = [];
+    for (const { at, value } of cells) {
+      if (typeof value === "number" && fingerprints.some((f) => Math.abs(value - f) < 0.005)) {
+        found.push(`${at}=${value}`);
+      }
+      if (typeof value === "string" && notes.some((n) => value.includes(n))) {
+        found.push(`${at}="${value}"`);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+
+  it("states this period's hours, not the reference's prior-period band", async () => {
+    const { wb } = await buildWspWorkbook(makeDifferentCtx());
+    const sc = wb.getWorksheet("Sub Calc _revised")!;
+    // 5 straight days + 4 OT hours, all field.
+    expect(sc.getCell("D11").value).toBe(44);
+    expect(sc.getCell("E11").value).toBe(0); // no prior-period hours are carried
+    expect(sc.getCell("F11").value).toBe(44);
+    // % Expended computes off this work plan's budget, never #DIV/0!.
+    expect(Number(sc.getCell("K51").value)).toBeGreaterThan(0);
+    expect(Number(sc.getCell("K51").value)).toBeLessThan(1);
+  });
+
+  it("names the people who actually worked overtime on the premium rows", async () => {
+    const { wb } = await buildWspWorkbook(makeDifferentCtx());
+    const sc = wb.getWorksheet("Sub Calc _revised")!;
+    expect(String(sc.getCell("D24").value)).toBe("SS OT Premium (Ana Ruiz)");
+    expect(String(sc.getCell("E24").value)).toBe("27.75/HR"); // 0.5 × 55.50
+    expect(String(sc.getCell("F24").value)).toBe("4 HRS");
+    // Nobody worked doubletime, so that row is blank rather than naming anyone.
+    expect(sc.getCell("D25").value).toBeFalsy();
+  });
+
+  it("prints the forms without Julie's working columns", async () => {
+    const { wb } = await buildWspWorkbook(makeCtx());
+    // The template ships A1:Q59 / A1:U31, which reach the scratch beside each
+    // form and stretch the page past 19in.
+    expect(wb.getWorksheet("Sub Calc _revised")!.pageSetup.printArea).toBe("$A$1:$K$52");
+    expect(wb.getWorksheet("Sub Labor")!.pageSetup.printArea).toBe("$A$1:$H$29");
+  });
+});

@@ -32,13 +32,14 @@ import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/d
  *  - `Invoice` (face): invoice no L5, date L7, PO L9, agreement E18, work-plan
  *    code E19, period G23, terms L24, billed line L27, TOTAL AMOUNT DUE L29, and
  *    the billing summary J33-J36.
- *  - `Invoice Calc` (build-up): the invoice detail attachment. It carries the
- *    contract's TWO reconciliation PO-line copies (Line 1.1 / 15NL005 at rows
- *    14-52 and Line 1.2 / 54RR510 at rows 54-92, a +40 row mirror). Each block's
- *    "Total Amount Due" this-period cell (H52 / H92) is the authoritative
- *    "total this period" — the analog of WSP's `Sub Calc _revised!H51` and
- *    TYlin's `Sub1 Inv!H42`. `Invoice Calc!H52` is mirrored to Invoice L27/L29.
- *    On the AZAD-11 sample it is 13,341.15.
+ *  - `Invoice Calc` (build-up): the invoice detail attachment, rows 14-52. Its
+ *    "Total Amount Due" this-period cell (H52) is the authoritative "total this
+ *    period" — the analog of WSP's `Sub Calc _revised!H51` and TYlin's
+ *    `Sub1 Inv!H42` — and is mirrored to Invoice L27/L29. On the AZAD-11 sample
+ *    it is 13,341.15. The template carries the reference contract's SECOND
+ *    PO-line copy below it (Line 1.2 / 54RR510, rows 54-92, a +40 row mirror);
+ *    we cannot split a package across PO lines, so that block is cleared and
+ *    hidden rather than filled with a duplicate of the same totals.
  *  - `Labor_` (labor attachment): field labor hours/rate/amount.
  *  - `Progress Report-Hash` (per employee): header refreshed; narrative left as
  *    authored unless the package supplies one.
@@ -428,7 +429,13 @@ function fillTimesheet(
   setVal(ws, "D6", person.name);
   // Day header dates: H=Sat, I=Sun, J=Mon, K=Tue, L=Wed, M=Thu, N=Fri.
   DAY_COLS.forEach((col, i) => setVal(ws, `${col}7`, addDays(saturday, i)));
-  setVal(ws, "J6", addDays(saturday, 6)); // "Week Ending" = Friday
+  // "Week Ending" = Friday. The template's long date format does not fit the
+  // narrow day column, so the printed timesheet read "Week Ending: ###" — the
+  // same symptom Julie reported on the T.Y. Lin timesheets.
+  setVal(ws, "J6", addDays(saturday, 6));
+  ws.getCell("J6").numFmt = "m/d/yyyy";
+  const weekEndingCol = ws.getColumn("J");
+  weekEndingCol.width = Math.max(weekEndingCol.width ?? 0, 11);
   setVal(ws, "C21", person.name); // submitted-by signer name
 
   // Clear the sample data region (labels + all day/total cells, rows 9-15).
@@ -487,67 +494,229 @@ function fillTimesheet(
 // Build-up (Invoice Calc) writer
 // ---------------------------------------------------------------------------
 
+/** Columns the `Labor_` attachment form occupies (B..H). */
+const LABOR_COLS = ["B", "C", "D", "E", "F", "G", "H"] as const;
+
+/** Columns the `Invoice Calc` form occupies (A..K). */
+const CALC_COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"] as const;
+
+/** `Invoice Calc` columns right of the form (L..V) — reference scratch. */
+const CALC_SCRATCH_COLS = [
+  "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
+] as const;
+
 /**
- * Writes one PO-line build-up block on `Invoice Calc`. Line 1.1 lives at the
- * base rows (offset 0); Line 1.2 is a +40-row mirror. Both are written with the
- * same authoritative values (they are reconciliation duplicates of the same
- * billed work), so the sheet's own reconciliation stays at 0. Every cell is a
- * value, never a formula.
+ * `Invoice Calc` subtotal rows within one block, as `[row, firstRow, lastRow]`
+ * offsets from the block's base. These were `SUBTOTAL(9, …)` bands, which
+ * ExcelJS emits without evaluating.
  */
-function writeCalcBlock(ws: ExcelJS.Worksheet, fin: ParsonsFinancials, offset: number): void {
+const CALC_SUBTOTALS: ReadonlyArray<readonly [number, number, number]> = [
+  [26, 22, 24], // field labor + burden
+  [30, 17, 29], // Total Labor
+  [37, 32, 36], // Total Other Direct Cost
+  [49, 44, 48], // Total Fixed Fee
+];
+
+/**
+ * Writes the PO-line build-up block on `Invoice Calc`. Line 1.1 lives at the
+ * base rows (offset 0); the template's Line 1.2 mirror at +40 is cleared by the
+ * builder rather than filled with a duplicate of the same totals.
+ *
+ * The block is the same five-column grid the other BART forms use: Budget (G),
+ * Amount This Period (H), Previously Billed (I), Amount To Date (J), %
+ * Expended (K). Only column H was ever written, so the rest still held the
+ * reference invoice's own figures — a $61,776 labor budget, $45,031.74
+ * previously billed, $111,663.73 to date, 81.9% expended — next to this
+ * package's numbers. Every cell is a value, never a formula.
+ */
+function writeCalcBlock(
+  ws: ExcelJS.Worksheet,
+  fin: ParsonsFinancials,
+  wp: PackageDocContext["workPlan"],
+  offset: number,
+): void {
+  /** Block-relative row → sheet row. */
   const r = (row: number) => row + offset;
-  const totalLabor = round2(fin.laborTotal + fin.fringeTotal + fin.overheadTotal);
-  // Home & Branch (H&B) labor block (rows 17 labor / 18 fringe / 19 OH / 20 FCCM).
-  setVal(ws, `H${r(17)}`, fin.homeDirectLabor);
-  setVal(ws, `H${r(18)}`, 0);
-  setVal(ws, `H${r(19)}`, 0);
-  setVal(ws, `H${r(20)}`, 0);
-  // Field labor block (rows 22 labor / 23 fringe / 24 OH pool).
-  setVal(ws, `H${r(22)}`, fin.fieldDirectLabor);
-  setVal(ws, `H${r(23)}`, fin.fringeTotal);
-  setVal(ws, `D${r(24)}`, fin.overheadFrac); // "H&B Overhead Pool" multiplier (e.g. 1.2058)
-  setVal(ws, `H${r(24)}`, fin.overheadTotal);
-  // Field subtotal (row 26) and Total Labor (row 30).
-  setVal(ws, `H${r(26)}`, totalLabor);
-  setVal(ws, `H${r(30)}`, totalLabor);
-  // Fixed Fee (row 45), Total Fixed Fee (row 49).
+  // Wipe the four columns the engine never regenerated, plus the hours band.
+  for (let row = r(15); row <= r(52); row++) {
+    for (const col of ["D", "E", "F", "G", "I", "J", "K"]) clearCell(ws, `${col}${row}`);
+  }
+  // "Check!!!" is a QA marker the template raises when a line exceeds budget;
+  // it has no business on the client's copy, and its cached value came from the
+  // reference invoice anyway.
+  clearCell(ws, `K${r(46)}`);
+  clearCell(ws, `K${r(48)}`);
+  setVal(ws, `G${r(14)}`, `Budget ${wp.code}`);
+
+  // Hours to Date band: Current (D) / Previous (E) / To Date (F). No
+  // prior-period hours are carried on the package, so Previous is 0 and To Date
+  // equals Current rather than the reference's 339.75.
+  const hoursAt = (loc: "home" | "field") =>
+    round2(fin.laborRows.filter((x) => x.location === loc).reduce((s, x) => s + x.hours, 0));
+  for (const [row, loc] of [[17, "home"], [22, "field"]] as const) {
+    setVal(ws, `D${r(row)}`, hoursAt(loc));
+    setVal(ws, `E${r(row)}`, 0);
+    setVal(ws, `F${r(row)}`, hoursAt(loc));
+  }
+  // Rate cells the burden rows multiply by.
+  setVal(ws, `D${r(18)}`, fin.fringeFrac);
+  setVal(ws, `D${r(19)}`, fin.overheadFrac);
+  setVal(ws, `D${r(20)}`, fin.fccmFrac);
+  setVal(ws, `D${r(23)}`, fin.fringeFrac);
+  setVal(ws, `D${r(24)}`, fin.overheadFrac); // "H&B Overhead Pool" multiplier
   setVal(ws, `E${r(45)}`, fin.feeFrac);
-  setVal(ws, `H${r(45)}`, fin.fixedFee);
-  setVal(ws, `H${r(49)}`, fin.fixedFee);
-  // FCCM (row 51).
   setVal(ws, `D${r(51)}`, fin.fccmFrac);
-  setVal(ws, `H${r(51)}`, fin.fccm);
+
+  // The OT/DT premium is unburdened and was never written onto the build-up at
+  // all, so a period with overtime produced a detail attachment that did not
+  // add up to the invoice it was attached to. It lands on the Other Direct
+  // Costs block, whose "Travel"/"Reproduction" labels were placeholders.
+  setVal(ws, `B${r(33)}`, "OT Premium (0.5 x base rate)");
+  setVal(ws, `B${r(34)}`, "DT Premium (1.0 x base rate)");
+  setVal(ws, `B${r(35)}`, "Other Direct Costs");
+
+  const amountThisPeriod: Record<number, number> = {
+    17: fin.homeDirectLabor,
+    18: 0,
+    19: 0,
+    20: 0,
+    22: fin.fieldDirectLabor,
+    23: fin.fringeTotal,
+    24: fin.overheadTotal,
+    33: fin.otPremium,
+    34: fin.dtPremium,
+    35: fin.otherDirectCosts,
+    45: fin.fixedFee,
+    51: fin.fccm,
+  };
+
+  // Previously Billed carries forward as a scalar; it lands on the field-labor
+  // row unless the work plan supplies an explicit per-category split.
+  const previouslyBilledRows: Record<number, number> = {};
+  for (const row of Object.keys(amountThisPeriod)) previouslyBilledRows[Number(row)] = 0;
+  if (
+    wp.prevBilledLabor != null ||
+    wp.prevBilledOverhead != null ||
+    wp.prevBilledFixedFee != null ||
+    wp.prevBilledFccm != null
+  ) {
+    previouslyBilledRows[22] = round2(wp.prevBilledLabor ?? 0);
+    previouslyBilledRows[24] = round2(wp.prevBilledOverhead ?? 0);
+    previouslyBilledRows[45] = round2(wp.prevBilledFixedFee ?? 0);
+    previouslyBilledRows[51] = round2(wp.prevBilledFccm ?? 0);
+  } else if (fin.previouslyBilled !== 0) {
+    previouslyBilledRows[22] = fin.previouslyBilled;
+  }
+
+  // Budget per row only when the work plan carries an explicit split — the
+  // total alone cannot be apportioned without guessing at the contract.
+  const budgetRows: Record<number, number> = {};
+  if (
+    wp.budgetLabor != null ||
+    wp.budgetOverhead != null ||
+    wp.budgetFixedFee != null ||
+    wp.budgetFccm != null
+  ) {
+    budgetRows[22] = round2(wp.budgetLabor ?? 0);
+    budgetRows[24] = round2(wp.budgetOverhead ?? 0);
+    budgetRows[45] = round2(wp.budgetFixedFee ?? 0);
+    budgetRows[51] = round2(wp.budgetFccm ?? 0);
+  }
+
+  for (const [row, amount] of Object.entries(amountThisPeriod)) {
+    const row0 = Number(row);
+    const prev = previouslyBilledRows[row0] ?? 0;
+    setVal(ws, `H${r(row0)}`, amount);
+    setVal(ws, `I${r(row0)}`, prev);
+    setVal(ws, `J${r(row0)}`, round2(amount + prev));
+    if (budgetRows[row0] != null) setVal(ws, `G${r(row0)}`, budgetRows[row0]);
+  }
+
+  const bandSum = (src: Record<number, number>, from: number, to: number) =>
+    Object.entries(src)
+      .filter(([row]) => Number(row) >= from && Number(row) <= to)
+      .reduce((s, [, v]) => s + v, 0);
+  for (const [row, from, to] of CALC_SUBTOTALS) {
+    const period = round2(bandSum(amountThisPeriod, from, to));
+    const prev = round2(bandSum(previouslyBilledRows, from, to));
+    const budgeted = round2(bandSum(budgetRows, from, to));
+    setVal(ws, `H${r(row)}`, period);
+    setVal(ws, `I${r(row)}`, prev);
+    setVal(ws, `J${r(row)}`, round2(period + prev));
+    if (budgeted > 0) {
+      setVal(ws, `G${r(row)}`, budgeted);
+      setVal(ws, `K${r(row)}`, (period + prev) / budgeted);
+    }
+  }
+
   // Total Amount Due (row 52) — AUTHORITATIVE "total this period".
   setVal(ws, `H${r(52)}`, fin.totalThisPeriod);
-  // Budget / previously billed / to-date (row 52 columns G/I/J).
   setVal(ws, `G${r(52)}`, fin.budget);
   setVal(ws, `I${r(52)}`, fin.previouslyBilled);
   setVal(ws, `J${r(52)}`, fin.totalToDate);
+  // `=J52/G52` renders #DIV/0! on a work plan with no budget entered yet.
+  setVal(ws, `K${r(52)}`, fin.budget > 0 ? fin.totalToDate / fin.budget : 0);
 }
 
 // ---------------------------------------------------------------------------
 // Labor attachment (Labor_) writer
 // ---------------------------------------------------------------------------
 
-/** Writes the field-labor lines onto the `Labor_` attachment. */
-function writeLaborAttachment(ws: ExcelJS.Worksheet, fin: ParsonsFinancials, names: string): void {
-  const field = fin.laborRows.filter((r) => r.location === "field");
-  const totalFieldHours = round2(field.reduce((s, r) => s + r.hours, 0));
-  const uniformRate = field.length > 0 && field.every((r) => r.rate === field[0].rate) ? field[0].rate : 0;
+/**
+ * Writes the labor lines onto the `Labor_` attachment.
+ *
+ * Rows 16-23 were the reference invoice's home-labor split: two PO-line
+ * headings fed from `Invoice Calc` (`='Invoice Calc'!A14`), two bare
+ * classification lines, and a `SUBTOTAL(9, E15:E23)` that printed the
+ * reference's 168 hours directly under this package's 84. They are cleared and
+ * the home aggregate is written on row 15 the way the field one is on row 26.
+ */
+function writeLaborAttachment(
+  ws: ExcelJS.Worksheet,
+  fin: ParsonsFinancials,
+  names: string,
+  invoiceDate: Date | null,
+  invoiceNo: string,
+): void {
+  const aggregate = (loc: "home" | "field") => {
+    const rows = fin.laborRows.filter((r) => r.location === loc);
+    const hours = round2(rows.reduce((s, r) => s + r.hours, 0));
+    const uniformRate =
+      rows.length > 0 && rows.every((r) => r.rate === rows[0].rate) ? rows[0].rate : 0;
+    return { hours, uniformRate };
+  };
+  const home = aggregate("home");
+  const field = aggregate("field");
 
+  // The header read `=Invoice!L7` / `=Invoice!L5` across the sheet boundary.
+  if (invoiceDate) setVal(ws, "G9", invoiceDate);
+  else clearCell(ws, "G9");
+  setVal(ws, "G10", invoiceNo);
   setVal(ws, "C12", names);
-  // Clear the template's Home split rows (they double-count the field hours).
-  for (const addr of ["E21", "E23", "C21", "C23"]) clearCell(ws, addr);
+  // Home aggregate (row 15) and its subtotal (row 24).
+  setVal(ws, "E15", home.hours);
+  setVal(ws, "F15", home.uniformRate);
+  setVal(ws, "G15", fin.homeDirectLabor);
+  for (let r = 16; r <= 23; r++) {
+    for (const col of LABOR_COLS) clearCell(ws, `${col}${r}`);
+  }
+  setVal(ws, "E24", home.hours);
+  setVal(ws, "G24", fin.homeDirectLabor);
   // Field aggregate (row 26): hours / rate / amount as values (was a
   // `='master file'!...` feed — overwrite so no #REF! after removal).
-  setVal(ws, "E26", totalFieldHours);
-  setVal(ws, "F26", uniformRate);
+  setVal(ws, "E26", field.hours);
+  setVal(ws, "F26", field.uniformRate);
   setVal(ws, "G26", fin.fieldDirectLabor);
   // Field + total-labor subtotals.
-  setVal(ws, "E28", totalFieldHours);
+  setVal(ws, "E28", field.hours);
   setVal(ws, "G28", fin.fieldDirectLabor);
-  setVal(ws, "E31", round2(fin.homeDirectLabor > 0 ? totalFieldHours : totalFieldHours));
+  setVal(ws, "E31", round2(home.hours + field.hours));
   setVal(ws, "G31", round2(fin.homeDirectLabor + fin.fieldDirectLabor));
+  // Columns I..M carried a burdened cross-check (`=G26*1.09*1.08`) beside the
+  // form. Outside the print area (B7:H42), but it ships in the .xlsx.
+  for (let r = 7; r <= 42; r++) {
+    for (const col of ["I", "J", "K", "L", "M"]) clearCell(ws, `${col}${r}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -624,23 +793,74 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   setVal(invoice, "J33", budget);
   setVal(invoice, "J34", -totalThisPeriod);
   setVal(invoice, "J35", -previouslyBilled);
-  setVal(invoice, "J36", round2(budget - totalToDate));
+  setVal(invoice, "J36", remaining);
+  // Each summary line also prints its share of the budget in M/N (`=-J34/$J$33`)
+  // — inside the print area, and still showing the reference invoice's split.
+  const shareOfBudget = (amount: number) => (budget > 0 ? amount / budget : 0);
+  for (const col of ["M", "N"]) {
+    setVal(invoice, `${col}34`, shareOfBudget(totalThisPeriod));
+    setVal(invoice, `${col}35`, shareOfBudget(previouslyBilled));
+    setVal(invoice, `${col}36`, shareOfBudget(remaining));
+  }
+  // The signature block's date cells read `=L7` off the invoice-date cell.
+  for (const col of ["I", "J", "K"]) {
+    if (invoiceDate) setVal(invoice, `${col}43`, invoiceDate);
+    else clearCell(invoice, `${col}43`);
+  }
 
   // -- 2. Invoice Calc (build-up). Both reconciliation PO-line copies get the
   // same authoritative values; H52 (Line 1.1) is the headline "total this
   // period". Clear the stray N34 = #REF! first.
   clearCell(calc, "N34");
-  writeCalcBlock(calc, fin, 0); // Line 1.1 (rows 14-52)
-  writeCalcBlock(calc, fin, 40); // Line 1.2 (rows 54-92) — +40 mirror
+  // Columns L..V hold the reference workbook's own reconciliation — a per-PO
+  // "Summary" table (Budget / Previously billed / Currently Invoiced /
+  // Remaining) and a column of half-rate checks. They sit outside the printed
+  // form but ship in the .xlsx the client opens.
+  for (let r = 7; r <= 95; r++) {
+    for (const col of CALC_SCRATCH_COLS) clearCell(calc, `${col}${r}`);
+  }
+  writeCalcBlock(calc, fin, wp, 0); // Line 1.1 (rows 14-52)
+  // Rows 53-95 are the reference contract's second PO-line block (Line 1.2 /
+  // 54RR510), a +40-row mirror, plus a two-cell tie-out below it. The engine
+  // has no way to split a package across two PO lines, so it used to write the
+  // SAME totals into both blocks — and LibreOffice paginated straight past the
+  // print area, printing the duplicate as a second page of the client's invoice
+  // detail. Two identical "Total Amount Due" blocks on one attachment invite
+  // exactly the wrong reading, so the mirror is cleared rather than duplicated.
+  // (If a contract really does bill against two PO lines, that is a data model
+  // change — one billed line item per PO line — not a copy of the same block.)
+  //
+  // They are hidden as well as cleared: LibreOffice paginates an .xlsx by the
+  // sheet's used extent and ignores the print area, so 43 rows of empty-but-
+  // styled cells still came out as a blank third page. Hidden rows it skips.
+  for (let r = 53; r <= 95; r++) {
+    for (const col of [...CALC_COLS, ...CALC_SCRATCH_COLS]) clearCell(calc, `${col}${r}`);
+    calc.getRow(r).hidden = true;
+  }
+  // Header band: the firm name and the work-plan subtitle were defined-name
+  // formulas (`=Firm_Name`, `=WP_Title&" "&Proj_No`), and the "Project No:"
+  // cell read an empty date cell on the Invoice face, so it printed 12/30/1899.
+  setVal(calc, "A10", String(invoice.getCell("B4").value ?? ""));
+  setVal(calc, "A11", [wp.code, wp.title].filter(Boolean).join(" "));
   if (invoiceDate) setVal(calc, "J10", invoiceDate);
   setVal(calc, "J11", invoiceNo);
+  setVal(calc, "J12", wp.clientProjectNo || wp.wspProjectNo || wp.jobNumber || "");
+  // The PO-line heading names the reference contract's own line and project ID
+  // ("P.O. Line 1.1 - 15NL005"), and `Labor_` fed off it. We hold one client
+  // project number per work plan, so it labels the block we ship.
+  const clientProjectNo = (wp.clientProjectNo || "").trim();
+  setVal(calc, "A14", clientProjectNo ? `P.O. Line 1.1 - ${clientProjectNo}` : "P.O. Line 1.1");
+  // Print the first PO-line block only. The template's area (A7:K59) ran six
+  // rows into the second block, so the client's page ended on a stranded
+  // "P.O. Line 1.2" header with nothing under it.
+  calc.pageSetup = { ...calc.pageSetup, printArea: "$A$7:$K$52" };
 
   // -- 3. Labor_ (labor attachment).
   const laborNames = people.length > 0
     ? people.map((p) => `${p.name}${p.classification ? `, ${p.classification}` : ""}`).join("; ")
     : "";
   setVal(labor, "C11", `${wp.jobNumber ?? wp.agreementNo ?? ""}-${wp.code}`.replace(/^-|-$/g, ""));
-  writeLaborAttachment(labor, fin, laborNames);
+  writeLaborAttachment(labor, fin, laborNames, invoiceDate, invoiceNo);
 
   // -- 4. Progress Report(s): refresh the header cells that fed off the removed
   // `master file`, plus the period, and (optionally) the narrative.
@@ -654,6 +874,25 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
     setVal(ws, "D8", wp.code || "");
     setVal(ws, "D9", wp.title || "");
     setVal(ws, "H9", periodStr);
+    // Signature block: "Submitted by" read `=Labor_!C12` and the date `=H5`.
+    setVal(ws, "D60", laborNames);
+    if (reportDate) setVal(ws, "H65", reportDate);
+    else clearCell(ws, "H65");
+    // Cost Forecast at Completion. The budget and to-date cells fed off
+    // `Invoice Calc`, and the sentence beside them was an IFERROR/TEXT formula,
+    // so the report stated the reference invoice's "81.95% has been billed"
+    // whatever this package's numbers were.
+    setVal(ws, "E53", budget);
+    setVal(ws, "E54", totalToDate);
+    // A seven-figure budget does not fit the template's column width, so the
+    // approved-budget line printed "###" beside a to-date figure that fitted.
+    const forecastCol = ws.getColumn("E");
+    forecastCol.width = Math.max(forecastCol.width ?? 0, 16);
+    setVal(
+      ws,
+      "G54",
+      budget > 0 ? `${((totalToDate / budget) * 100).toFixed(2)}% has been billed.` : "",
+    );
     const narrative = (ctx.progress?.workPerformed || ctx.progress?.summary || "").trim();
     if (narrative) {
       // Clear the template's sample bullet rows (17-48), then write ours.
