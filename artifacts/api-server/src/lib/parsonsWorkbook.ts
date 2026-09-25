@@ -533,6 +533,7 @@ function writeCalcBlock(
   ws: ExcelJS.Worksheet,
   fin: ParsonsFinancials,
   wp: PackageDocContext["workPlan"],
+  previousHours: number | null,
   offset: number,
 ): void {
   /** Block-relative row → sheet row. */
@@ -549,14 +550,23 @@ function writeCalcBlock(
   setVal(ws, `G${r(14)}`, `Budget ${wp.code}`);
 
   // Hours to Date band: Current (D) / Previous (E) / To Date (F). No
-  // prior-period hours are carried on the package, so Previous is 0 and To Date
-  // equals Current rather than the reference's 339.75.
+  // Previous comes from Procas — every hour under this project's leaf codes
+  // before the period start, captured on the package at creation. It was a
+  // hard 0, which is what Julie's "missing previous hours" note was about, and
+  // the template's own cached 339.75 before that. Null means Procas was never
+  // asked, and the cell stays blank rather than stating a confident 0. The
+  // figure is a project total, so it lands on the row carrying this period's
+  // labor — the same rule the previously-billed dollars follow.
   const hoursAt = (loc: "home" | "field") =>
     round2(fin.laborRows.filter((x) => x.location === loc).reduce((s, x) => s + x.hours, 0));
+  const fieldIsBilling = hoursAt("field") > 0;
   for (const [row, loc] of [[17, "home"], [22, "field"]] as const) {
-    setVal(ws, `D${r(row)}`, hoursAt(loc));
-    setVal(ws, `E${r(row)}`, 0);
-    setVal(ws, `F${r(row)}`, hoursAt(loc));
+    const current = hoursAt(loc);
+    const previous = (loc === "field") === fieldIsBilling ? previousHours : null;
+    setVal(ws, `D${r(row)}`, current);
+    if (previous == null) clearCell(ws, `E${r(row)}`);
+    else setVal(ws, `E${r(row)}`, previous);
+    setVal(ws, `F${r(row)}`, round2(current + (previous ?? 0)));
   }
   // Rate cells the burden rows multiply by.
   setVal(ws, `D${r(18)}`, fin.fringeFrac);
@@ -819,7 +829,7 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   for (let r = 7; r <= 95; r++) {
     for (const col of CALC_SCRATCH_COLS) clearCell(calc, `${col}${r}`);
   }
-  writeCalcBlock(calc, fin, wp, 0); // Line 1.1 (rows 14-52)
+  writeCalcBlock(calc, fin, wp, pkg.previousHours ?? null, 0); // Line 1.1 (rows 14-52)
   // Rows 53-95 are the reference contract's second PO-line block (Line 1.2 /
   // 54RR510), a +40-row mirror, plus a two-cell tie-out below it. The engine
   // has no way to split a package across two PO lines, so it used to write the

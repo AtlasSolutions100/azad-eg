@@ -77,7 +77,11 @@ import {
 import { resolveSignaturePath } from "../lib/excel";
 import { evaluateBudgetStatus } from "../lib/financials";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
-import { fetchPreviouslyBilledFromProcas, fetchBillingRatesFromProcas } from "../lib/procasSync";
+import {
+  fetchPreviouslyBilledFromProcas,
+  fetchPreviousHoursFromProcas,
+  fetchBillingRatesFromProcas,
+} from "../lib/procasSync";
 import { effectiveWorkPlan, cappedBillRate } from "../lib/billingProfile";
 import { deriveBillingPeriod, type BillingCycle } from "../lib/billingPeriod";
 import { computePtoFill, totalDayHours } from "../lib/ptoFill";
@@ -334,17 +338,24 @@ router.post("/packages", async (req, res): Promise<void> => {
       previouslyBilledSource = "carryforward";
     }
   }
-  if (previouslyBilledSource == null && billingJob) {
-    try {
-      if (creds) {
-        const fromProcas = await fetchPreviouslyBilledFromProcas(creds, billingJob);
-        // BillingHistory is authoritative — including a legitimate $0.
-        previouslyBilled = fromProcas;
-        previouslyBilledSource = "procas";
-      }
-    } catch {
-      // Procas being unreachable must never block package creation.
+  // Hours billed before this period, for the sub-calc's "Hours to Date:
+  // Previous" column. Fetched alongside the billing history rather than after
+  // it: both are one Procas round trip, and running them back-to-back inside
+  // the create request is what pushes it towards the proxy's timeout.
+  let previousHours: number | null = null;
+  if (creds && billingJob) {
+    const [billed, hours] = await Promise.all([
+      previouslyBilledSource == null
+        ? fetchPreviouslyBilledFromProcas(creds, billingJob).catch(() => null)
+        : Promise.resolve(null),
+      fetchPreviousHoursFromProcas(creds, billingJob, payPeriodStart).catch(() => null),
+    ]);
+    if (billed != null) {
+      // BillingHistory is authoritative — including a legitimate $0.
+      previouslyBilled = billed;
+      previouslyBilledSource = "procas";
     }
+    previousHours = hours;
   }
 
   let row: typeof packagesTable.$inferSelect;
@@ -369,6 +380,7 @@ router.post("/packages", async (req, res): Promise<void> => {
         invoiceDate: parsed.data.invoiceDate,
         previouslyBilled,
         previouslyBilledSource,
+        previousHours,
         otherDirectCosts: parsed.data.otherDirectCosts ?? 0,
         preparedBy: parsed.data.preparedBy,
       })

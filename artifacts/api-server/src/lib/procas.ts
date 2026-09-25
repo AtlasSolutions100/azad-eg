@@ -6,6 +6,19 @@ const CONNECTION_ID = 1;
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_PAGES = 50;
 
+/**
+ * Ceiling on the wall time one `fetchProcasTable` call may spend, across all
+ * its pages.
+ *
+ * `REQUEST_TIMEOUT_MS` bounds a single page, but 50 slow pages could keep one
+ * HTTP request open for minutes. The proxy in front of the app gives up long
+ * before that and answers the browser with a 502 fetch timeout — which is
+ * what Julie hit pulling timesheets, while the import ran on to completion
+ * behind it and left her with an error message and imported hours. Failing
+ * inside our own budget turns that into an honest, actionable message.
+ */
+const TOTAL_BUDGET_MS = 40_000;
+
 // The Procas Web API is a read-only OData feed served from a copy of the
 // accounting database refreshed daily at 6 AM Eastern. The base URL is fixed;
 // only the company code varies per customer. PROCAS_BASE_URL can override the
@@ -152,8 +165,17 @@ export async function fetchProcasTable(
     `${procasBaseUrl()}/${encodeURIComponent(creds.companyCode.trim())}/${table}?${params.toString()}`;
   const rows: Array<Record<string, unknown>> = [];
   let pages = 0;
+  const startedAt = Date.now();
 
   while (url && pages < MAX_PAGES) {
+    if (pages > 0 && Date.now() - startedAt > TOTAL_BUDGET_MS) {
+      throw new Error(
+        `Fetching ${table} from Procas took longer than ${Math.round(
+          TOTAL_BUDGET_MS / 1000,
+        )}s (${rows.length} rows over ${pages} pages) and was stopped before the ` +
+          `request timed out. Narrow the period and try again.`,
+      );
+    }
     pages += 1;
     let res: Response;
     try {

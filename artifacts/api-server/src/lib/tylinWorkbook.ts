@@ -532,6 +532,23 @@ function fillTimesheet(
 // Builder
 // ---------------------------------------------------------------------------
 
+/**
+ * Writes one "Hours to Date" band: Current (D) / Previous (E) / To Date (F).
+ * A null `previous` leaves Previous blank and makes To Date equal Current —
+ * better than a 0 that reads as "nobody has ever worked this job".
+ */
+function writeHoursToDate(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  current: number,
+  previous: number | null,
+): void {
+  setVal(ws, `D${row}`, current);
+  if (previous == null) clearCell(ws, `E${row}`);
+  else setVal(ws, `E${row}`, previous);
+  setVal(ws, `F${row}`, round2(current + (previous ?? 0)));
+}
+
 export interface TylinBuildResult {
   wb: ExcelJS.Workbook;
   timesheetTabs: string[];
@@ -682,21 +699,25 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   setVal(subinv, "J2", invoiceNo);
 
   // Home labor block (rows 7 labor / 8 fringe / 9 overhead pool) — 0 for BART.
+  //
   // Hours to Date: Current (D) / Previous (E) / To Date (F). E and F were left
-  // as an empty cell and a `=D+E` formula whose cached result was the template's
-  // 11,028.5 hours, so the row read blank-or-wrong. We do not carry prior-period
-  // hours in the package, so Previous is an explicit 0 and To Date equals
-  // Current — both written as values.
-  setVal(subinv, "D7", round2(homeHours(fin)));
-  setVal(subinv, "E7", 0);
-  setVal(subinv, "F7", round2(homeHours(fin)));
+  // as an empty cell and a `=D+E` formula whose cached result was the
+  // template's 11,028.5 hours, so the row read blank-or-wrong. Previous now
+  // comes from Procas — every hour booked under this project's leaf codes
+  // before the period start, captured on the package at creation (10007 has
+  // 6,627 of them); it used to be a hard 0, which is what Julie's "missing
+  // previous hours" note was about. Null means Procas was never asked, and the
+  // cell is left blank rather than stating a confident 0.
+  //
+  // The figure is a project total, not split by location, so it lands on the
+  // row that carries this period's labor — the same rule the previously-billed
+  // dollars follow.
+  writeHoursToDate(subinv, 7, round2(homeHours(fin)), fieldHours(fin) <= 0 ? ctx.pkg.previousHours : null);
   setVal(subinv, "H7", fin.home.directLabor);
   setVal(subinv, "H8", fin.home.fringe);
   setVal(subinv, "H9", fin.home.overheadPool);
   // Field labor block (rows 11 labor / 12 fringe / 13 overhead pool).
-  setVal(subinv, "D11", round2(fieldHours(fin)));
-  setVal(subinv, "E11", 0);
-  setVal(subinv, "F11", round2(fieldHours(fin)));
+  writeHoursToDate(subinv, 11, round2(fieldHours(fin)), fieldHours(fin) > 0 ? ctx.pkg.previousHours : null);
   setVal(subinv, "H11", fin.field.directLabor);
   setVal(subinv, "D12", fin.fringeFrac); // fringe multiplier, e.g. 1.2058 (full precision)
   setVal(subinv, "H12", fin.field.fringe);

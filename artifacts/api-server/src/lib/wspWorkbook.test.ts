@@ -409,11 +409,27 @@ describe("buildWspWorkbook — no reference-workbook leftovers", () => {
     const sc = wb.getWorksheet("Sub Calc _revised")!;
     // 5 straight days + 4 OT hours, all field.
     expect(sc.getCell("D11").value).toBe(44);
-    expect(sc.getCell("E11").value).toBe(0); // no prior-period hours are carried
+    // No previousHours on this fixture, so Previous prints blank rather than a
+    // 0 that would read as "nobody has ever worked this job".
+    expect(sc.getCell("E11").value).toBeNull();
     expect(sc.getCell("F11").value).toBe(44);
     // % Expended computes off this work plan's budget, never #DIV/0!.
     expect(Number(sc.getCell("K51").value)).toBeGreaterThan(0);
     expect(Number(sc.getCell("K51").value)).toBeLessThan(1);
+  });
+
+  it("states the previous hours Procas holds, on the row carrying the labor", async () => {
+    const base = makeDifferentCtx();
+    const { wb } = await buildWspWorkbook({
+      ...base,
+      pkg: { ...base.pkg, previousHours: 6627 } as typeof base.pkg,
+    });
+    const sc = wb.getWorksheet("Sub Calc _revised")!;
+    // All 44 hours are field, so the project total lands on the field row.
+    expect(sc.getCell("E11").value).toBe(6627);
+    expect(sc.getCell("F11").value).toBe(6671);
+    // And is not double-counted on the empty home row.
+    expect(sc.getCell("E7").value).toBeNull();
   });
 
   it("names the people who actually worked overtime on the premium rows", async () => {

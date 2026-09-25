@@ -46,6 +46,12 @@ export const packagesTable = pgTable(
   // Where the previouslyBilled value came from: "procas" when defaulted from
   // Procas BillingHistory, "manual" once a user edits it, null when neither.
   previouslyBilledSource: text("previously_billed_source"),
+  // Hours billed on this work plan BEFORE this period, for the "Hours to Date:
+  // Previous" column the BART sub-calc forms carry. Sourced from Procas the
+  // same way previouslyBilled is (all hours under the project's leaf codes
+  // dated before the period start). Null = not known, which the exports print
+  // as blank rather than as a misleading 0.
+  previousHours: doublePrecision("previous_hours"),
   otherDirectCosts: doublePrecision("other_direct_costs").notNull().default(0),
   signatureId: integer("signature_id"),
   preparedBy: text("prepared_by"),

@@ -294,8 +294,27 @@ describe("buildTylinWorkbook", () => {
     // F11 was `=D11+E11` with the template's cached 11,028.5 hours.
     const current = subinv.getCell("D11").value as number;
     expect(current).toBeGreaterThan(0);
-    expect(subinv.getCell("E11").value).toBe(0);
+    // This fixture carries no previousHours, so Previous prints blank rather
+    // than a 0 that would read as "nobody has ever worked this job", and To
+    // Date equals Current.
+    expect(subinv.getCell("E11").value).toBeNull();
     expect(subinv.getCell("F11").value).toBe(current);
+  });
+
+  it("states the previous hours Procas holds, on the row carrying the labor", async () => {
+    // Work plan 10007 has 6,627 hours booked before the period; the sub-calc
+    // used to print a hard 0 there ("missing previous hours").
+    const ctx = makeCtx();
+    const { wb: withPrev } = await buildTylinWorkbook({
+      ...ctx,
+      pkg: { ...ctx.pkg, previousHours: 6627 } as typeof ctx.pkg,
+    });
+    const subinv = withPrev.getWorksheet("Sub1 Inv")!;
+    const current = subinv.getCell("D11").value as number;
+    expect(subinv.getCell("E11").value).toBe(6627);
+    expect(subinv.getCell("F11").value).toBe(round2(current + 6627));
+    // It is a project total, not a per-location one, so it appears once.
+    expect(subinv.getCell("E7").value).toBeNull();
   });
 
   it("clears the reconciliation scratch beside TOTAL LABOR", () => {

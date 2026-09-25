@@ -186,10 +186,19 @@ export async function pullPackageHoursFromProcas(
   let tsRows: Array<Record<string, unknown>>;
   let billingItems: Array<Record<string, unknown>>;
   try {
-    tsRows = await fetchProcasTable(creds, "Timesheet", {
-      filter: `${projectFilter} and WorkDate ge ${dayStart(pkg.payPeriodStart)} and WorkDate le ${dayEnd(pkg.payPeriodEnd)}`,
-    });
-    billingItems = await fetchProcasTable(creds, "BillingItem", { filter: projectFilter });
+    // Fetched together, not one after the other. Neither depends on the other,
+    // and on Replit these two round trips ran back-to-back inside one HTTP
+    // request — long enough for the proxy in front of the app to give up and
+    // return a 502 while the import carried on and completed server-side.
+    // Julie saw a fetch-timeout error and then found the hours had imported
+    // anyway. Halving the wall time keeps the response inside the proxy's
+    // budget; `withProcasDeadline` below bounds the worst case.
+    [tsRows, billingItems] = await Promise.all([
+      fetchProcasTable(creds, "Timesheet", {
+        filter: `${projectFilter} and WorkDate ge ${dayStart(pkg.payPeriodStart)} and WorkDate le ${dayEnd(pkg.payPeriodEnd)}`,
+      }),
+      fetchProcasTable(creds, "BillingItem", { filter: projectFilter }),
+    ]);
   } catch (e) {
     return {
       ok: false, importedCount: 0, replacedCount: 0, weeksCreated: 0, unapprovedHours: 0, warnings,

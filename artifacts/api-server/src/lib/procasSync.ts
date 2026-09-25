@@ -131,6 +131,29 @@ export async function fetchPreviouslyBilledFromProcas(
   return Math.round((sum + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Hours booked on a project (and every leaf code beneath it) BEFORE a date.
+ *
+ * This is the "Hours to Date: Previous" column on the BART sub-calc forms.
+ * The exports used to write a hard 0 there with a comment saying we do not
+ * carry prior-period hours — but Procas does: work plan 10007 has 6,627 of
+ * them. Julie's note on the invoice detail was simply "missing previous hours".
+ *
+ * Unapproved rows are included deliberately: this is a historical total for a
+ * reference column, not the billable hours for the period being invoiced.
+ */
+export async function fetchPreviousHoursFromProcas(
+  creds: ProcasCreds,
+  jobNumber: string,
+  beforeDate: string,
+): Promise<number> {
+  const rows = await fetchProcasTable(creds, "Timesheet", {
+    filter: `${projectScopeFilter(jobNumber)} and WorkDate lt ${beforeDate}T00:00:00Z`,
+  });
+  const sum = rows.reduce((s, r) => s + toNum(r.HoursWorked), 0);
+  return Math.round((sum + Number.EPSILON) * 100) / 100;
+}
+
 // --- Billing Setup rates for one Procas project ---
 
 export interface ProcasBillingRates {

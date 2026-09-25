@@ -617,10 +617,21 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   // explicit 0 and To Date equals Current — never the template's 1,475.
   const hoursAt = (loc: "home" | "field") =>
     round2(fin.laborRows.filter((r) => r.location === loc).reduce((s, r) => s + r.hours, 0));
+  // Previous comes from Procas — every hour under this project's leaf codes
+  // before the period start, captured on the package at creation. It was a
+  // hard 0 ("missing previous hours"). Null means Procas was never asked, and
+  // the cell stays blank rather than stating a confident 0. The figure is a
+  // project total, so it lands on the row carrying this period's labor — the
+  // same rule the previously-billed dollars follow.
+  const fieldIsBilling = hoursAt("field") > 0;
   for (const [row, loc] of [[7, "home"], [11, "field"]] as const) {
-    setVal(subcalc, `D${row}`, hoursAt(loc));
-    setVal(subcalc, `E${row}`, 0);
-    setVal(subcalc, `F${row}`, hoursAt(loc));
+    const current = hoursAt(loc);
+    const previous =
+      (loc === "field") === fieldIsBilling ? (pkg.previousHours ?? null) : null;
+    setVal(subcalc, `D${row}`, current);
+    if (previous == null) clearCell(subcalc, `E${row}`);
+    else setVal(subcalc, `E${row}`, previous);
+    setVal(subcalc, `F${row}`, round2(current + (previous ?? 0)));
   }
   // The rate cells the burden rows multiply by, and their `=SUM()` companions.
   setVal(subcalc, "D8", fin.fringeFrac);

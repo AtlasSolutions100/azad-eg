@@ -128,8 +128,16 @@ export default function Signatures() {
               ))
             ) : signatures?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  No signatures found.
+                <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
+                  {/* An empty table here is why an approval reports "no
+                      signatures found" and why the invoice ships unsigned, so
+                      say what to do about it rather than just that it is
+                      empty. */}
+                  <p className="font-medium text-[#333333]">No signatures yet</p>
+                  <p className="mt-1 text-sm">
+                    Approving a package stamps its invoice and progress report with the
+                    default signature. Upload one above, then mark it Default.
+                  </p>
                 </TableCell>
               </TableRow>
             ) : (

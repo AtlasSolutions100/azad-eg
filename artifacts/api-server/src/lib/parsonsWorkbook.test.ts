@@ -480,7 +480,9 @@ describe("buildParsonsWorkbook — no reference-workbook leftovers", () => {
     const { wb } = await buildParsonsWorkbook(makeDifferentCtx());
     const calc = wb.getWorksheet("Invoice Calc")!;
     expect(calc.getCell("D22").value).toBe(84);
-    expect(calc.getCell("E22").value).toBe(0); // no prior-period hours are carried
+    // No previousHours on this fixture, so Previous prints blank rather than a
+    // 0 — and never the template's cached 339.75.
+    expect(calc.getCell("E22").value).toBeNull();
     expect(calc.getCell("F22").value).toBe(84);
     expect(String(calc.getCell("A14").value)).toBe("P.O. Line 1.1 - 77XX999");
     // SUBTOTAL (HOME) printed the reference's 168 hours beneath an 84-hour line.

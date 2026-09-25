@@ -814,9 +814,16 @@ export async function buildMasterWorkbook(
   setVal(cost, "G45", round2(gTotal - jTotal));
 
   // Hours to Date row (Current / Previous / To Date), also formula-driven.
+  // "Hours to Date: Previous" comes from Procas — all hours booked under this
+  // project's leaf codes before the period start, captured on the package at
+  // creation (10007 has 6,627 of them). It used to be a hard 0, which is what
+  // Julie's "missing previous hours" note was about. Null means we never got
+  // to ask Procas, so the cell is left blank rather than stating a false 0.
+  const previousHours = ctx.pkg.previousHours;
   setVal(cost, "D10", rollup.totalHours);
-  setVal(cost, "E10", 0);
-  setVal(cost, "F10", rollup.totalHours);
+  if (previousHours == null) clearCell(cost, "E10");
+  else setVal(cost, "E10", previousHours);
+  setVal(cost, "F10", round2(rollup.totalHours + (previousHours ?? 0)));
 
   // Julie's scratch inside the print area (A1:M60): a stray "z" in M1 and two
   // `=318240+100577.44+4595.61` reconciliation cells parked below the form.

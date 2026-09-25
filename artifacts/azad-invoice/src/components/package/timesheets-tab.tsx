@@ -90,11 +90,39 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
           (result.warnings.length > 0 ? `. ${result.warnings.join(" ")}` : ""),
       });
     } catch (err) {
-      const message =
+      // The import can finish server-side after the response has been given up
+      // on: the pull holds one HTTP request open across two Procas round trips,
+      // and the proxy in front of the app answers 502 if that runs long. Julie
+      // hit exactly that — a fetch-timeout error, and Travis's timesheets
+      // imported regardless. So refresh either way, and when the failure looks
+      // like a timeout rather than a refusal, say what actually happened
+      // instead of reporting a failure that may not have been one.
+      queryClient.invalidateQueries();
+      const status =
+        err && typeof err === "object" && "status" in err && typeof err.status === "number"
+          ? err.status
+          : null;
+      const serverError =
         err && typeof err === "object" && "error" in err && typeof err.error === "string"
           ? err.error
-          : "Could not pull hours from Procas.";
-      toast({ variant: "destructive", title: "Procas pull failed", description: message });
+          : null;
+      const timedOut =
+        (status != null && status >= 502 && status <= 504) ||
+        /timed? ?out|gateway|network/i.test(serverError ?? (err instanceof Error ? err.message : ""));
+      if (timedOut) {
+        toast({
+          title: "Procas took too long to answer",
+          description:
+            "The request timed out, but the import may have finished anyway — the table below has been refreshed. " +
+            "If the hours are not there, try again.",
+        });
+        return;
+      }
+      toast({
+        variant: "destructive",
+        title: "Procas pull failed",
+        description: serverError ?? "Could not pull hours from Procas.",
+      });
     }
   };
 

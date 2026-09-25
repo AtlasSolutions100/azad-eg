@@ -976,8 +976,18 @@ export default function Dashboard() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Invoice Number (optional)</Label>
+                  {/* Julie asked whether "(optional)" meant the system would
+                      fill it in. It does, from the last invoice on this work
+                      plan — but only once that work plan has a first number to
+                      count from. Say which, rather than leave her guessing. */}
+                  <Label>
+                    Invoice Number{" "}
+                    <span className="text-xs font-normal text-[#9a9a9a]">
+                      (counts up from the last invoice on this work plan)
+                    </span>
+                  </Label>
                   <Input
+                    placeholder="Leave blank to continue the series"
                     value={form.invoiceNumber || ""}
                     onChange={(e) =>
                       setForm({ ...form, invoiceNumber: e.target.value })
