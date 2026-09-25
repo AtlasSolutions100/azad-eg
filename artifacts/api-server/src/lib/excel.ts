@@ -538,13 +538,21 @@ function colLetterToNumber(letters: string): number {
  * sheet-name prefixes Excel writes into print areas ("'Sub Calc'!$A$1:$K$52").
  * Multi-area print ranges (comma separated) fall back to their first area.
  */
-function parseRangeBounds(range: string): { firstCol: number; lastCol: number } | null {
+function parseRangeBounds(
+  range: string,
+): { firstCol: number; lastCol: number; firstRow: number; lastRow: number } | null {
   const firstArea = range.split(",")[0];
   const cells = firstArea.replace(/^.*!/, "").replace(/\$/g, "");
-  const m = cells.match(/^([A-Za-z]+)\d+(?::([A-Za-z]+)\d+)?$/);
+  const m = cells.match(/^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/);
   if (!m) return null;
   const firstCol = colLetterToNumber(m[1]);
-  return { firstCol, lastCol: m[2] ? colLetterToNumber(m[2]) : firstCol };
+  const firstRow = Number(m[2]);
+  return {
+    firstCol,
+    lastCol: m[3] ? colLetterToNumber(m[3]) : firstCol,
+    firstRow,
+    lastRow: m[4] ? Number(m[4]) : firstRow,
+  };
 }
 
 function contentWidthInches(ws: ExcelJS.Worksheet, firstCol: number, lastCol: number): number {
@@ -555,6 +563,42 @@ function contentWidthInches(ws: ExcelJS.Worksheet, firstCol: number, lastCol: nu
     units += col.width ?? DEFAULT_COL_WIDTH;
   }
   return units * EXCEL_WIDTH_UNIT_INCHES;
+}
+
+/** Excel's default row height, in points (1pt = 1/72in). */
+const DEFAULT_ROW_HEIGHT_PT = 15;
+
+/** Printable height of a row band, in inches, skipping hidden rows. */
+function contentHeightInches(ws: ExcelJS.Worksheet, firstRow: number, lastRow: number): number {
+  let points = 0;
+  for (let r = firstRow; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    if (row.hidden) continue;
+    points += row.height ?? DEFAULT_ROW_HEIGHT_PT;
+  }
+  return points / 72;
+}
+
+/** US Letter less the margins set in `fitSheetsToOnePage`, both ways round. */
+const PORTRAIT_PAGE = { w: 8.5 - 0.6, h: 11 - 0.7 };
+const LANDSCAPE_PAGE = { w: 11 - 0.7, h: 8.5 - 0.6 };
+
+/**
+ * The orientation that prints a one-page form LARGEST.
+ *
+ * The old rule turned any form wider than a portrait page sideways. That is
+ * right for a wide, short sheet and wrong for a wide, TALL one: the AECOM
+ * cover is 11.0in × 12.7in, so landscape fits it by height at 62% and leaves
+ * ~3.5in of empty page either side — Julie's "still big blank space when
+ * printing". Portrait fits it by width at 72%, edge to edge. The Progress
+ * Report (11.3 × 13.3in) is the same shape and was also going sideways.
+ *
+ * Fit-to-page scales down only, so each candidate's scale is capped at 1.
+ */
+function bestOrientation(width: number, height: number): "portrait" | "landscape" {
+  const scale = (page: { w: number; h: number }) =>
+    Math.min(1, page.w / width, page.h / height);
+  return scale(LANDSCAPE_PAGE) > scale(PORTRAIT_PAGE) ? "landscape" : "portrait";
 }
 
 /**
@@ -597,6 +641,18 @@ const SINGLE_PAGE_FORMS = new Set(
   ].map((n) => n.toLowerCase()),
 );
 
+/**
+ * The progress report is a one-page form too. It flowed instead, and on the
+ * AECOM package its last six lines — corrective actions, "Submitted by",
+ * "Approved by" and the date — came out alone on a page 5 ("should be on one
+ * page"). Matched by prefix: the T.Y. Lin and Parsons engines name one per
+ * employee ("Progress Report - Jordy").
+ */
+function isSinglePageForm(sheetName: string): boolean {
+  const name = sheetName.toLowerCase();
+  return SINGLE_PAGE_FORMS.has(name) || name.startsWith("progress report");
+}
+
 export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
   for (const ws of wb.worksheets) {
     if (ws.state === "hidden" || ws.state === "veryHidden") continue;
@@ -618,15 +674,22 @@ export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
     const printArea =
       ws.pageSetup?.printArea ?? `A1:${ws.getColumn(lastCol).letter}${lastRow}`;
 
-    // Orientation follows whatever we are actually printing. A form that is
-    // genuinely wider than a portrait page gets turned sideways rather than
-    // scaled into illegibility; anything that fits keeps the template's look.
+    const onePage = isSinglePageForm(ws.name);
     const bounds = parseRangeBounds(printArea);
-    const width = bounds
-      ? contentWidthInches(ws, bounds.firstCol, bounds.lastCol)
-      : 0;
-    const orientation: "portrait" | "landscape" =
-      width > PORTRAIT_PRINTABLE_INCHES ? "landscape" : (ws.pageSetup?.orientation ?? "portrait");
+    const width = bounds ? contentWidthInches(ws, bounds.firstCol, bounds.lastCol) : 0;
+    const height = bounds ? contentHeightInches(ws, bounds.firstRow, bounds.lastRow) : 0;
+
+    // Orientation follows what we are actually printing. A one-page form goes
+    // whichever way prints it largest (see `bestOrientation`); a sheet that
+    // flows down pages only cares about width, so it turns sideways just when
+    // it is wider than a portrait page.
+    let orientation: "portrait" | "landscape";
+    if (bounds && onePage) {
+      orientation = bestOrientation(width, height);
+    } else {
+      orientation =
+        width > PORTRAIT_PRINTABLE_INCHES ? "landscape" : (ws.pageSetup?.orientation ?? "portrait");
+    }
 
     ws.pageSetup = {
       ...ws.pageSetup,
@@ -636,8 +699,13 @@ export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
       fitToWidth: 1,
       // Forms are pinned to a single page; list-shaped sheets flow down rather
       // than being squeezed to illegibility.
-      fitToHeight: SINGLE_PAGE_FORMS.has(ws.name.toLowerCase()) ? 1 : 0,
+      fitToHeight: onePage ? 1 : 0,
       horizontalCentered: true,
+      // A form smaller than the page (the Labor Attachment prints at 100% and
+      // fills a little over half the height) used to sit at the top-left with
+      // the empty page below it — "not centered on page". Flowing sheets stay
+      // top-anchored so a page break never leaves a half-empty page floating.
+      verticalCentered: onePage,
       margins: { left: 0.3, right: 0.3, top: 0.35, bottom: 0.35, header: 0.2, footer: 0.2 },
     };
   }

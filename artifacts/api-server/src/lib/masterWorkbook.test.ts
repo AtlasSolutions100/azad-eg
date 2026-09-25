@@ -377,6 +377,11 @@ describe("buildMasterWorkbook", () => {
     expect(overview.getCell("I18").value).toBe(92.5);
     expect(String(overview.getCell("H18").value)).toContain("Effective 6/");
     const labor = wb2.getWorksheet("Labor Attachment")!;
+    // The second-rate line is shown only when it carries hours; with a single
+    // rate it printed as a bare "0  --  $0.00" between the labor line and its
+    // subtotal.
+    expect(labor.getRow(20).hidden).toBe(false);
+    expect(wb.getWorksheet("Labor Attachment")!.getRow(20).hidden).toBe(true);
     // Julie's August AECOM invoice is exactly this shape, and it printed as a
     // single 144-hour line at the superseded $90.11 because every cell below
     // was an unevaluated formula showing its cached result. Both rows must

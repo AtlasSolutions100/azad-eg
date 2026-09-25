@@ -871,6 +871,10 @@ export async function buildMasterWorkbook(
   } else {
     clearCell(labor, "B20");
   }
+  // Row 20 only exists for a mid-period rate change. With a single rate it
+  // printed as a bare "0  --  $0.00" line between the labor line and its
+  // subtotal, so it is hidden unless it carries hours.
+  labor.getRow(20).hidden = hours2 <= 0;
   const laborThisPeriod = round2(hours1 * rate1 + hours2 * rate2);
   setVal(labor, "C22", totalBillableHours);
   setVal(labor, "E22", laborThisPeriod);

@@ -118,3 +118,52 @@ describe("print setup for exported workbooks", () => {
     expect(ws.pageSetup.printArea).toBeUndefined();
   });
 });
+
+/**
+ * Julie's 10007 review, pages 1, 3 and 5. The cover printed with "still big
+ * blank space", the Labor Attachment was "not centered on page", and the
+ * Progress Report's last six lines came out alone on a page 5.
+ */
+describe("one-page forms: orientation and centering", () => {
+  function form(name: string, cols: number, rows: number, colWidth = 12, rowHeight = 15) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(name);
+    for (let c = 1; c <= cols; c++) ws.getColumn(c).width = colWidth;
+    for (let r = 1; r <= rows; r++) {
+      ws.getRow(r).height = rowHeight;
+      ws.getCell(r, 1).value = "x";
+    }
+    ws.getCell(rows, cols).value = "y";
+    fitSheetsToOnePage(wb);
+    return ws;
+  }
+
+  it("prints a form that is taller than it is wide in portrait", () => {
+    // The AECOM cover: ~11in wide, ~12.7in tall. Landscape fits it by height
+    // at 62% and leaves ~3.5in of empty page either side; portrait fits it by
+    // width at 72%, edge to edge.
+    const ws = form("Invoice", 12, 61); // 12 × 12 units ≈ 11.4in; 61 × 15pt ≈ 12.7in
+    expect(ws.pageSetup.orientation).toBe("portrait");
+    expect(ws.pageSetup.fitToHeight).toBe(1);
+  });
+
+  it("still prints a wide, short form in landscape", () => {
+    // The Sub Calc: ~12.9in wide, ~9.2in tall.
+    const ws = form("Sub Calc", 14, 44);
+    expect(ws.pageSetup.orientation).toBe("landscape");
+  });
+
+  it("pins every engine's progress report to one page, matched by prefix", () => {
+    for (const name of ["Progress Report", "Progress Report - Jordy", "Progress Report-Hash"]) {
+      const ws = form(name, 8, 70);
+      expect(ws.pageSetup.fitToHeight, name).toBe(1);
+    }
+  });
+
+  it("centers one-page forms on the page but keeps flowing sheets top-anchored", () => {
+    expect(form("Labor Attachment", 5, 23).pageSetup.verticalCentered).toBe(true);
+    // A timesheet list flows across pages; centering it vertically would leave
+    // a half-empty page floating at every break.
+    expect(form("Week 1", 15, 120).pageSetup.verticalCentered).toBe(false);
+  });
+});
