@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { isBillableJob } from "@/lib/work-plans";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -611,7 +612,11 @@ export default function Dashboard() {
           New Package
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      {/* Wider than the default dialog so the two-column rows in steps 2 and 3
+          are not cramped, and `overflow-hidden` so the scrolling happens in
+          DialogBody rather than the whole dialog — that is what keeps "Next"
+          on screen no matter how tall the step is. */}
+      <DialogContent className="max-w-2xl overflow-hidden">
         <DialogHeader>
           <DialogTitle>Create Package</DialogTitle>
           <p className="text-xs text-[#9a9a9a]">
@@ -619,7 +624,11 @@ export default function Dashboard() {
             {["Owner & Prime", "Work Plan", "Pay Period & Details"][step]}
           </p>
         </DialogHeader>
-        <form onSubmit={handleCreatePackage} className="space-y-4">
+        <form
+          onSubmit={handleCreatePackage}
+          className="flex min-h-0 flex-1 flex-col gap-4"
+        >
+          <DialogBody className="space-y-4 py-1">
           {step === 0 && (
             <div className="space-y-4">
               <div className="space-y-2">
@@ -997,7 +1006,8 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2 pt-1">
+          </DialogBody>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t pt-4">
             {step > 0 ? (
               <Button
                 type="button"

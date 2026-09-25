@@ -219,6 +219,24 @@ export function odataString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/**
+ * An OData filter matching a work plan's Procas project AND everything booked
+ * beneath it.
+ *
+ * Procas does not post against the top-level project code. Work plan 10007's
+ * whole billing history — 347 invoices, $1,230,254.44 — and all 6,627 of its
+ * historical hours sit on the leaf code `10007.00.00.00.CA`, so a
+ * `Project eq '10007'` filter matches nothing and returns a confident $0. That
+ * is what put "Previously Billed --" on an invoice numbered 25.
+ *
+ * The trailing dot is load-bearing: it scopes to real sub-codes of this
+ * project, so a neighbouring `100070` can never be swept in.
+ */
+export function projectScopeFilter(project: string): string {
+  const p = project.trim();
+  return `(Project eq ${odataString(p)} or startswith(Project,${odataString(p + ".")}))`;
+}
+
 // --- Persisted connection state (single row) ---
 
 // The password column holds AES-256-GCM ciphertext, never plaintext. We

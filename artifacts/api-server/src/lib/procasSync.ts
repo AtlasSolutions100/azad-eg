@@ -13,6 +13,7 @@ import {
   credsFromConnection,
   markProcasSynced,
   odataString,
+  projectScopeFilter,
   type ProcasCreds,
 } from "./procas";
 import type { ParsedLine } from "./timeimport";
@@ -124,7 +125,7 @@ export async function fetchPreviouslyBilledFromProcas(
   // filtered by InvoiceDate < period-start, which wrongly dropped recent
   // invoices — BART invoices are dated ~2 months after their service period.)
   const rows = await fetchProcasTable(creds, "BillingHistory", {
-    filter: `Project eq ${odataString(jobNumber)} and IsVoided eq false`,
+    filter: `${projectScopeFilter(jobNumber)} and IsVoided eq false`,
   });
   const sum = rows.reduce((s, r) => s + toNum(r.TotalBillingAmount), 0);
   return Math.round((sum + Number.EPSILON) * 100) / 100;
@@ -182,6 +183,8 @@ export interface WorkPlanImportResult {
   created: number;
   updated: number;
   total: number;
+  /** Procas-sourced plans moved off the old `whole_month` column default. */
+  cyclesCorrected: number;
 }
 
 // Imports the full Procas project library as work plans so the Workplans tab
@@ -221,6 +224,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
   let created = 0;
   let updated = 0;
   let total = 0;
+  let cyclesCorrected = 0;
   for (const pr of projects) {
     const code = toStr(pr.Project);
     if (!code) continue;
@@ -251,6 +255,16 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       // Same rule for the agreement number: fill a blank, never overwrite.
       if (!String(linked.agreementNo ?? "").trim() && contractNumber) {
         changes.agreementNo = contractNumber;
+      }
+      // Correct the billing cycle on plans imported before `last_friday` became
+      // the default. These rows were never chosen by a biller — they landed on
+      // the old column default and pre-filled whole-calendar-month periods on
+      // BART invoices that bill Sat→Fri through the last Friday. Only ever
+      // applied to Procas-sourced plans, and still switchable per plan and per
+      // package; the count is reported so the correction is not silent.
+      if (linked.billingCycle === "whole_month") {
+        changes.billingCycle = "last_friday";
+        cyclesCorrected += 1;
       }
       if (Object.keys(changes).length > 0) {
         // Guard on source at write time: if a biller edited this plan while
@@ -293,6 +307,13 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
         totalBudget: budget,
         agreementNo: contractNumber || null,
         procasProject: code,
+        // Every contract in this system is a BART work plan, and BART bills on
+        // the Sat→Fri cycle that ENDS on the last Friday of the month (June
+        // excepted). Imported plans used to land on the column default of
+        // `whole_month`, which pre-filled 9/1-9/30 on an AECOM package whose
+        // period should have ended Friday 9/25 — "billing period is wrong,
+        // should be the last Friday". Still switchable per plan and per package.
+        billingCycle: "last_friday",
         status,
         source: "procas",
         ...rates,
@@ -304,7 +325,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       claimed.add(code);
     }
   }
-  return { created, updated, total };
+  return { created, updated, total, cyclesCorrected };
 }
 
 // Pulls the approved reference tables and folds them into existing entities:
@@ -460,7 +481,7 @@ export async function syncInvoiceFromProcas(
 
   let lines: ParsedLine[];
   try {
-    const projectFilter = `Project eq ${odataString(job)}`;
+    const projectFilter = projectScopeFilter(job);
     const glRows = await fetchProcasTable(creds, "GLDetail", {
       filter: `${projectFilter} and TransDate ge ${dayStart(invoice.periodStart)} and TransDate le ${dayEnd(invoice.periodEnd)} and GLQty gt 0 and LCItem ne null`,
     });

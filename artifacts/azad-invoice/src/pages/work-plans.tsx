@@ -4,7 +4,7 @@ import { useListWorkPlans, useCreateWorkPlan, useUpdateWorkPlan, useDeleteWorkPl
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -243,11 +243,15 @@ export default function WorkPlans() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* `overflow-hidden` keeps the scrolling inside DialogBody, so Save
+            stays on screen. This form is long — it is where the biller fills
+            in every field that prints on the client's invoice header. */}
+        <DialogContent className="max-w-2xl overflow-hidden">
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Work Plan" : "Create Work Plan"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+            <DialogBody className="grid grid-cols-1 gap-4 py-1 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Code</Label>
               <Input required value={formData.code || ''} onChange={e => setFormData({...formData, code: e.target.value})} />
@@ -308,7 +312,7 @@ export default function WorkPlans() {
               <Label>WSP Project No</Label>
               <Input value={formData.wspProjectNo || ''} onChange={e => setFormData({...formData, wspProjectNo: e.target.value})} />
             </div>
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label>Procas Project (for pulling labor hours)</Label>
               <Input
                 list="procas-projects"
@@ -323,7 +327,7 @@ export default function WorkPlans() {
               </datalist>
               <p className="text-xs text-[#5F5F5F]">Timesheet hours booked under this Procas project (including its sub-tasks) can be pulled into billing packages.</p>
             </div>
-            <div className="col-span-2 border-t pt-4">
+            <div className="border-t pt-4 sm:col-span-2">
               <p className="text-sm font-medium text-[#333333]">Burden rates (drive Fringe, Overhead, Fixed Fee &amp; FCCM in every document)</p>
               <p className="text-xs text-[#5F5F5F]">Enter as percentages, e.g. 120.58 for 120.58%.</p>
             </div>
@@ -347,11 +351,11 @@ export default function WorkPlans() {
               <Label>Max Bill Rate ($/hr)</Label>
               <Input type="number" step="0.01" placeholder="e.g. 115 — leave blank for no cap" value={formData.maxBillRate ?? ''} onChange={e => setFormData({...formData, maxBillRate: e.target.value === '' ? undefined : Number(e.target.value)})} />
             </div>
-            <div className="col-span-2 border-t pt-4">
+            <div className="border-t pt-4 sm:col-span-2">
               <p className="text-sm font-medium text-[#333333]">Budget breakdown by cost category (optional)</p>
               <p className="text-xs text-[#5F5F5F]">Splits the Sub Calc budget and previously-billed columns across labor, overhead, fixed fee, and FCCM rows exactly as entered. Leave blank to let the export calculate the split from the totals.</p>
             </div>
-            <div className="col-span-2 flex items-end gap-3">
+            <div className="flex flex-wrap items-end gap-3 sm:col-span-2">
               <div className="space-y-2 flex-1">
                 <Label>Previously Billed Total ($) — used only by the calculator</Label>
                 <Input type="number" step="0.01" value={prevBilledTotal ?? ''} onChange={e => { setPrevBilledEdited(true); setPrevBilledTotal(e.target.value === '' ? undefined : Number(e.target.value)); }} />
@@ -380,7 +384,7 @@ export default function WorkPlans() {
                 <Input type="number" step="0.01" value={formData[field] ?? ''} onChange={e => setFormData({...formData, [field]: e.target.value === '' ? undefined : Number(e.target.value)})} />
               </div>
             ))}
-            <div className="col-span-2 border-t pt-4">
+            <div className="border-t pt-4 sm:col-span-2">
               <p className="text-sm font-medium text-[#333333]">Invoice cover header (printed on the client invoice)</p>
               <p className="text-xs text-[#5F5F5F]">Supplier, remit-to, and project references shown on the cover page.</p>
             </div>
@@ -416,7 +420,8 @@ export default function WorkPlans() {
               <Label>Payment Terms</Label>
               <Input placeholder="Net 30 Days" value={formData.terms || ''} onChange={e => setFormData({...formData, terms: e.target.value})} />
             </div>
-            <div className="col-span-2 pt-4 flex justify-end">
+            </DialogBody>
+            <div className="flex shrink-0 justify-end border-t pt-4">
               <Button type="submit" className="bg-[#CFAF42] text-white">
                 {createPlan.isPending || updatePlan.isPending ? "Saving..." : "Save"}
               </Button>

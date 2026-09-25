@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -524,12 +525,13 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
 
       {/* Entry dialog */}
       <Dialog open={entryOpen} onOpenChange={setEntryOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl overflow-hidden">
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Entry" : "Add Entry"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={submitEntry} className="grid grid-cols-2 gap-4">
-            <div className="col-span-2 space-y-2">
+          <form onSubmit={submitEntry} className="flex min-h-0 flex-1 flex-col gap-4">
+            <DialogBody className="grid grid-cols-1 gap-4 py-1 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label>Employee Profile (optional autofill)</Label>
               <Select
                 value={entryForm.employeeId?.toString() ?? ""}
@@ -604,7 +606,7 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 grid grid-cols-7 gap-2">
+            <div className="sm:col-span-2 grid grid-cols-7 gap-2">
               {DAYS.map((d) => (
                 <div key={d.key} className="space-y-1">
                   <Label className="text-xs">{d.short}</Label>
@@ -642,7 +644,7 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
                 }
               />
             </div>
-            <div className="col-span-2 space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label>Notes</Label>
               <Input
                 value={entryForm.notes ?? ""}
@@ -651,7 +653,8 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
                 }
               />
             </div>
-            <div className="col-span-2 flex justify-end pt-2">
+            </DialogBody>
+            <div className="flex shrink-0 justify-end border-t pt-4">
               <Button
                 type="submit"
                 disabled={createEntry.isPending || updateEntry.isPending}

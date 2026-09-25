@@ -142,6 +142,42 @@ describe("importWorkPlansFromProcas", () => {
     expect(p1.agreementNo).toBe("6M8213"); // nor a hand-corrected agreement no
   });
 
+  it("imports BART's last-Friday billing cycle, and corrects plans stuck on whole-month", async () => {
+    // Every contract here bills Sat→Fri through the last Friday of the month.
+    // New imports get that cycle outright.
+    const [fresh] = await db.select().from(workPlansTable).where(eq(workPlansTable.code, "90001"));
+    expect(fresh.billingCycle).toBe("last_friday");
+
+    // Plans imported before that was the default sit on "whole_month" — a value
+    // no biller chose. It pre-filled 9/1-9/30 on an AECOM package whose period
+    // should have ended Friday 9/25. A refresh corrects them and says how many.
+    await db
+      .update(workPlansTable)
+      .set({ billingCycle: "whole_month" })
+      .where(eq(workPlansTable.code, "90001"));
+
+    const result = await importWorkPlansFromProcas(creds);
+    expect(result.cyclesCorrected).toBe(1);
+    const [corrected] = await db
+      .select()
+      .from(workPlansTable)
+      .where(eq(workPlansTable.code, "90001"));
+    expect(corrected.billingCycle).toBe("last_friday");
+
+    // A plan the biller owns is never touched, whatever its cycle.
+    await db
+      .update(workPlansTable)
+      .set({ billingCycle: "whole_month" })
+      .where(eq(workPlansTable.id, manualPlanId));
+    const after = await importWorkPlansFromProcas(creds);
+    expect(after.cyclesCorrected).toBe(0);
+    const [manual] = await db
+      .select()
+      .from(workPlansTable)
+      .where(eq(workPlansTable.id, manualPlanId));
+    expect(manual.billingCycle).toBe("whole_month");
+  });
+
   it("leaves manually-owned plans alone even when linked to a Procas project", async () => {
     // A biller edit flips ownership to manual — imports must stop touching it.
     await db
