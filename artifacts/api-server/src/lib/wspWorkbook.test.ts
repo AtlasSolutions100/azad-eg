@@ -446,7 +446,7 @@ describe("buildWspWorkbook — no reference-workbook leftovers", () => {
     const { wb } = await buildWspWorkbook(makeCtx());
     // The template ships A1:Q59 / A1:U31, which reach the scratch beside each
     // form and stretch the page past 19in.
-    expect(wb.getWorksheet("Sub Calc _revised")!.pageSetup.printArea).toBe("$A$1:$K$52");
-    expect(wb.getWorksheet("Sub Labor")!.pageSetup.printArea).toBe("$A$1:$H$29");
+    expect(wb.getWorksheet("Sub Calc _revised")!.pageSetup.printArea).toBe("A1:K52");
+    expect(wb.getWorksheet("Sub Labor")!.pageSetup.printArea).toBe("A1:H29");
   });
 });

@@ -7,6 +7,8 @@ import {
   type InsertBilledLineItem,
 } from "@workspace/db";
 
+import { allocateAcrossPoLines, allocateCurrent, knownPoSchedule } from "./poSchedule";
+
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -155,4 +157,57 @@ export async function replaceBilledLineItems(
     }));
     return tx.insert(billedLineItemsTable).values(values).returning();
   });
+}
+
+/**
+ * The Billed Line Items a package should SHOW — on screen and on the invoice.
+ *
+ * Stored rows are only ever typed in or carried forward from the last approved
+ * package, with Current Invoiced reset to 0 for the biller to fill by hand.
+ * Two cases left the cover's table empty or half-empty:
+ *
+ *  - no rows at all (a work plan with no approved package yet) — the table
+ *    printed blank, with dashes for its total;
+ *  - carried-forward rows nobody had typed a current amount into — the table
+ *    printed last month's figures and a Current Invoiced column of zeros.
+ *
+ * The split is arithmetic on Julie's side (see poSchedule.ts), so it is
+ * computed here rather than asked for. Rows a biller has edited are never
+ * touched: once a row is "manual" the stored figures are the figures.
+ */
+export function effectiveBilledLineItems(
+  rows: BilledLineItemRow[],
+  opts: {
+    packageId: number;
+    scheduleKeys: Array<string | null | undefined>;
+    previouslyBilled: number;
+    totalThisPeriod: number;
+  },
+): BilledLineItemRow[] {
+  if (rows.length === 0) {
+    const schedule = knownPoSchedule(...opts.scheduleKeys);
+    if (!schedule) return rows;
+    return allocateAcrossPoLines(schedule, opts.previouslyBilled, opts.totalThisPeriod).map(
+      (line, i) => ({
+        // Negative ids mark rows that exist only as a computation; saving the
+        // table from the editor replaces them with real ones.
+        id: -(i + 1),
+        packageId: opts.packageId,
+        workScopeNo: line.workScopeNo,
+        poNo: line.poNo,
+        lineNo: line.lineNo,
+        bartProjectNo: line.bartProjectNo,
+        poAmount: line.poAmount,
+        previousInvoiced: line.previousInvoiced,
+        currentInvoiced: line.currentInvoiced,
+        sortOrder: i,
+        source: "po_schedule",
+      }),
+    );
+  }
+  const untouched =
+    rows.every((r) => r.source === "carry_forward") && rows.every((r) => r.currentInvoiced === 0);
+  if (!untouched || opts.totalThisPeriod <= 0) return rows;
+  const current = allocateCurrent(rows, opts.totalThisPeriod);
+  return rows.map((r, i) => ({ ...r, currentInvoiced: current[i] }));
 }

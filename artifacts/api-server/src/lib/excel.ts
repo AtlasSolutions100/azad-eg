@@ -270,8 +270,11 @@ const HIGHLIGHT_ARGB = /^(FF)?(FFFF00|FFFF33|FFFF66|FFFF99|FFFFCC|FFF2CC|FFE699|
  */
 export function scrubInternalMarks(wb: ExcelJS.Workbook): void {
   for (const ws of wb.worksheets) {
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
+    // includeEmpty: a highlighted cell with nothing in it is still a yellow
+    // cell on the client's page — the Sat/Sun cells of each timesheet's labor
+    // row printed yellow ("we don't want the yellow highlight here").
+    ws.eachRow({ includeEmpty: true }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => {
         // `cell.model` is rebuilt on each access, so mutate the backing field.
         const backing = cell as unknown as { _comment?: unknown };
         if (backing._comment) backing._comment = undefined;
@@ -565,6 +568,56 @@ function contentWidthInches(ws: ExcelJS.Worksheet, firstCol: number, lastCol: nu
   return units * EXCEL_WIDTH_UNIT_INCHES;
 }
 
+type RangeBounds = { firstCol: number; lastCol: number; firstRow: number; lastRow: number };
+
+/**
+ * Makes a print area hold for LibreOffice, which builds the PDF and ignores
+ * print areas: it paginates and scales by the sheet's used extent instead.
+ *
+ * That is why the AECOM cover still printed at under half size with blank page
+ * above and below it after it was turned portrait — the form ends at column Y,
+ * but styled, empty helper columns run on to the right of it, and the whole
+ * phantom width was being fitted to the page. LibreOffice does skip hidden
+ * rows and columns, so everything past the print area is hidden.
+ *
+ * First the area is grown to take in any picture anchored at its foot: the
+ * timesheets' signatures hang below the last populated row, and hiding the
+ * rows under them would squash them flat.
+ */
+function confinePrintArea(
+  ws: ExcelJS.Worksheet,
+  bounds: RangeBounds | null,
+  usedLastRow: number,
+  usedLastCol: number,
+): RangeBounds | null {
+  if (!bounds) return null;
+  let lastRow = bounds.lastRow;
+  for (const img of ws.getImages()) {
+    const range = img.range as unknown as {
+      tl?: { nativeRow?: number; nativeCol?: number };
+      br?: { nativeRow?: number };
+      ext?: { height?: number };
+    };
+    const top = range.tl?.nativeRow;
+    const col = range.tl?.nativeCol;
+    if (top == null || col == null) continue;
+    // Only pictures that start inside the area's columns and at or above its
+    // foot belong to the form; a picture further down is not ours to chase.
+    if (col + 1 > bounds.lastCol || top + 1 > bounds.lastRow + 1) continue;
+    const bottom =
+      range.br?.nativeRow != null
+        ? range.br.nativeRow + 1
+        : top + 1 + Math.ceil((range.ext?.height ?? 0) / 20);
+    lastRow = Math.max(lastRow, Math.min(bottom, bounds.lastRow + 12));
+  }
+  const out = { ...bounds, lastRow };
+  const maxCol = Math.max(ws.columnCount, usedLastCol);
+  for (let c = out.lastCol + 1; c <= maxCol; c++) ws.getColumn(c).hidden = true;
+  const maxRow = Math.max(ws.rowCount, usedLastRow);
+  for (let r = out.lastRow + 1; r <= maxRow; r++) ws.getRow(r).hidden = true;
+  return out;
+}
+
 /** Excel's default row height, in points (1pt = 1/72in). */
 const DEFAULT_ROW_HEIGHT_PT = 15;
 
@@ -671,11 +724,16 @@ export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
     // form, which a naive "everything that has a value" scan would drag in —
     // widening the page to ~15in and shrinking the type to 4pt. Only derive a
     // range when the template didn't define one.
-    const printArea =
+    let printArea =
       ws.pageSetup?.printArea ?? `A1:${ws.getColumn(lastCol).letter}${lastRow}`;
 
     const onePage = isSinglePageForm(ws.name);
-    const bounds = parseRangeBounds(printArea);
+    const bounds = confinePrintArea(ws, parseRangeBounds(printArea), lastRow, lastCol);
+    if (bounds) {
+      printArea = `${ws.getColumn(bounds.firstCol).letter}${bounds.firstRow}:${
+        ws.getColumn(bounds.lastCol).letter
+      }${bounds.lastRow}`;
+    }
     const width = bounds ? contentWidthInches(ws, bounds.firstCol, bounds.lastCol) : 0;
     const height = bounds ? contentHeightInches(ws, bounds.firstRow, bounds.lastRow) : 0;
 

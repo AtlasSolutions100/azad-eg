@@ -7,6 +7,7 @@ import { reencryptProcasConnectionIfNeeded, autoConnectProcasFromEnv } from "./l
 import { backfillTimesheetEmployeeIds } from "./lib/employeeResolve";
 import { pruneGeneratedFiles } from "./lib/generatedCleanup";
 import { checkSchemaAtStartup } from "./lib/schemaDrift";
+import { applyKnownInvoiceHeaders } from "./lib/applyKnownInvoiceHeaders";
 
 const rawPort = process.env["PORT"];
 
@@ -37,6 +38,15 @@ app.listen(port, async (err) => {
     await seedDatabase();
   } catch (seedErr) {
     logger.error({ err: seedErr }, "Database seed failed");
+  }
+
+  try {
+    // Work plans whose real invoices we hold get their blank cover fields
+    // (Send To, contact, PO, project numbers) filled from that invoice.
+    const filled = await applyKnownInvoiceHeaders();
+    if (filled > 0) logger.info({ filled }, "Filled invoice header fields from reference invoices");
+  } catch (headerErr) {
+    logger.error({ err: headerErr }, "Could not apply known invoice header defaults");
   }
 
   try {

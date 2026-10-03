@@ -61,7 +61,9 @@ describe("print setup for exported workbooks", () => {
 
     fitSheetsToOnePage(wb);
 
-    expect(ws.pageSetup.printArea).toBe("'Sub Calc'!$A$1:$K$52");
+    // Rewritten in plain A1 form once parsed: the area is re-stated after
+    // being grown to cover any pictures at its foot (see confinePrintArea).
+    expect(ws.pageSetup.printArea).toBe("A1:K52");
     // 11 cols x 9 units x 0.0791in ≈ 7.8in — still fits portrait.
     expect(ws.pageSetup.orientation).toBe("portrait");
   });

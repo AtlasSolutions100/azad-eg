@@ -71,9 +71,14 @@ describe("master workbook PDF", () => {
       console.warn("pdftotext unavailable — skipping PDF text assertions (set PDFTOTEXT_BIN to a working poppler build to enable)");
       return;
     }
-    const iInvoice = text.indexOf("REMIT TO");
+    const iInvoice = text.indexOf("Professional Services Agreement Invoice");
     const iOverview = text.indexOf("Invoice Prep");
     expect(iInvoice).toBeGreaterThanOrEqual(0);
+    // The cover ends at the signature. The template's remit-to block is a strip
+    // of unfilled placeholders ("Company Name / Bank Name / Account Number:")
+    // that Julie's own invoices never print.
+    expect(text).not.toContain("REMIT TO");
+    expect(text).not.toContain("Bank Name");
     expect(iOverview).toBe(-1); // Overview hidden -> not in PDF
     console.log("PDF text length", text.length);
   }, 120000);

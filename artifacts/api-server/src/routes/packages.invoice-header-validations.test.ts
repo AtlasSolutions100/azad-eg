@@ -15,8 +15,14 @@ vi.mock("@clerk/express", () => ({
 
 const request = (await import("supertest")).default;
 const app = (await import("../app")).default;
-const { db, packagesTable, workPlansTable, packageWeeksTable, timesheetEntriesTable } =
-  await import("@workspace/db");
+const {
+  db,
+  packagesTable,
+  workPlansTable,
+  packageWeeksTable,
+  timesheetEntriesTable,
+  packageProgressReportsTable,
+} = await import("@workspace/db");
 
 const createdPackageIds: number[] = [];
 const createdWorkPlanIds: number[] = [];
@@ -46,7 +52,7 @@ async function seed(overrides: Record<string, unknown> = {}): Promise<number> {
       totalBudget: 1_000_000,
       fixedFeeRate: 8,
       ...(() => {
-        const { __invoiceNumber: _ignored, ...rest } = overrides;
+        const { __invoiceNumber: _ignored, __noNarrative: _alsoIgnored, ...rest } = overrides;
         return rest;
       })(),
     })
@@ -91,6 +97,12 @@ async function seed(overrides: Record<string, unknown> = {}): Promise<number> {
     hoursFri: 8,
     rate: 92.5,
   });
+  if (!("__noNarrative" in overrides)) {
+    await db.insert(packageProgressReportsTable).values({
+      packageId: pkg.id,
+      workPerformed: "Performed routine reporting and participated in associated meetings.",
+    });
+  }
   return pkg.id;
 }
 
@@ -105,7 +117,6 @@ describe("GET /packages/:id/validations — invoice header readiness", () => {
     expect(flag, "expected a work-plan header warning").toBeTruthy();
     for (const label of [
       "Purchase Order No.",
-      "Supplier ID",
       "AECOM Project No.",
       "Send To company",
       "Client Contact Person",
@@ -290,5 +301,25 @@ describe("GET /packages/:id/validations — billing rate drift", () => {
     expect(
       res.body.flags.filter((f: { message: string }) => f.message.includes("changed sharply")),
     ).toEqual([]);
+  });
+});
+
+describe("GET /packages/:id/validations — progress narrative", () => {
+  it("warns that an empty Work Performed section prints as a blank box", async () => {
+    const id = await seed({ __noNarrative: true });
+    const res = await request(app).get(`/api/packages/${id}/validations`);
+    const flag = res.body.flags.find((f: { field: string }) => f.field === "progress");
+    expect(flag, "expected a progress-narrative warning").toBeTruthy();
+    expect(flag.message).toContain("Work Performed");
+    expect(flag.message).toContain("Progress tab");
+    // A question for the biller, not a blocked export.
+    expect(flag.severity).toBe("warning");
+  });
+
+  it("does not list Supplier ID as missing — her invoices print it as \"--\"", async () => {
+    const id = await seed();
+    const res = await request(app).get(`/api/packages/${id}/validations`);
+    const flag = res.body.flags.find((f: { field: string }) => f.field === "workPlan");
+    expect(flag.message).not.toContain("Supplier ID");
   });
 });

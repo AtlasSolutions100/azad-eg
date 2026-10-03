@@ -12,6 +12,7 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
 } from "./excel";
+import { agreementLine, agreementNumber } from "./knownInvoiceHeaders";
 import { buildPackageRollup, contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -288,6 +289,17 @@ const WEEK_TOTAL_ROW = 15;
  *
  * Returns the per-row weekly totals so the Overview can be written as values.
  */
+/**
+ * The work scope this invoice bills, e.g. "B.50-03" — the scope of the Billed
+ * Line Items carrying a current amount. Falls back to the work plan code when
+ * the package has no line items to say.
+ */
+function activeScopeLabel(ctx: PackageDocContext): string {
+  const billing = ctx.billedLineItems.filter((it) => it.currentInvoiced > 0);
+  const scopes = [...new Set(billing.map((it) => (it.workScopeNo || "").trim()).filter(Boolean))];
+  return scopes.length > 0 ? scopes.join(" / ") : ctx.workPlan.code;
+}
+
 function fillWeekTab(
   ws: ExcelJS.Worksheet,
   week: PackageWeekRow,
@@ -318,10 +330,27 @@ function fillWeekTab(
   for (let r = 9; r <= 14; r++) {
     for (const col of [...DAY_COLS, "B", "D", "O"]) clearCell(ws, `${col}${r}`);
   }
-  setVal(ws, "B9", `${ctx.workPlan.agreementNo || ctx.workPlan.jobNumber} / ${ctx.workPlan.code}`);
+  // Her timesheets read "6M8142 / B.50-03": the agreement's number, then the
+  // work scope this invoice bills. Ours read "10007 / 10007" — the Procas job
+  // number twice — because the agreement was blank and the scope was never
+  // looked up.
+  setVal(
+    ws,
+    "B9",
+    `${agreementNumber(ctx.workPlan.agreementNo) || ctx.workPlan.jobNumber} / ${activeScopeLabel(ctx)}`,
+  );
   setVal(ws, "D9", person.classification);
   setVal(ws, "B11", "Holiday");
   setVal(ws, "B12", "PTO (Sick/Vacation)");
+  // Below the "Submitted by / Approved by" line (row 18) the reference tabs
+  // carry odd leftovers — a lone "S" in M23 printed under the signatures on
+  // the third week. Only the signature images belong down there.
+  for (let r = 19; r <= 40; r++) {
+    for (let c = 1; c <= 20; c++) {
+      const cell = ws.getCell(r, c);
+      if (cell.value != null) cell.value = null;
+    }
+  }
 
   // Day columns: H=Sat, I=Sun, J=Mon, K=Tue, L=Wed, M=Thu, N=Fri.
   const acc = new Map<number, Record<string, number>>();
@@ -537,7 +566,12 @@ export async function buildMasterWorkbook(
   const contactLabelName = (wp.client || wp.sendToCompany || "Client").trim();
   setVal(cover, "B13", `${contactLabelName} Contact Person: `);
   setVal(cover, "H13", wp.contactPerson || "");
-  setVal(cover, "F17", ` ${wp.title}`);
+  // "Work Plan Title" on her invoice is the work scope being billed
+  // ("B.50-03"), not the Procas project description. When the line items say
+  // which scope that is, print it; otherwise fall back to the title we have.
+  const billedScope = activeScopeLabel(ctx);
+  const workPlanTitle = billedScope !== wp.code ? billedScope : wp.title;
+  setVal(cover, "F17", ` ${workPlanTitle}`);
   setVal(cover, "R17", wp.bartProjectNumbers || "");
   if (wp.terms) setVal(cover, "T18", wp.terms);
   if (wp.clientProjectNo) setVal(cover, "U11", `${wp.client} Project No. `);
@@ -581,8 +615,7 @@ export async function buildMasterWorkbook(
   // repeated row 17 ("Work Plan Title") verbatim, so the cover printed the same
   // sentence twice under two different labels. The label asks for the agreement
   // number, so that is what goes there.
-  const agreementLine = wp.agreementNo || "";
-  setVal(cover, "F16", agreementLine);
+  setVal(cover, "F16", agreementLine(wp.agreementNo));
   setVal(
     cover,
     "F18",
@@ -716,7 +749,10 @@ export async function buildMasterWorkbook(
     return codes.length ? codes.join(" / ") : fallback;
   };
   const ownLabel = scopeLabel(ownItems, wp.code);
-  const otherLabel = scopeLabel(otherItems, "");
+  const otherScopes = [
+    ...new Set(otherItems.map((it) => (it.workScopeNo || "").trim()).filter(Boolean)),
+  ];
+  const otherLabel = otherScopes.length > 0 ? otherScopes[otherScopes.length - 1] : "";
   setVal(cost, "A13", `Field ${ownLabel}`);
   setVal(cost, "A14", `${ownLabel}_Field OH`);
   setVal(cost, "A39", ownLabel);
@@ -848,7 +884,22 @@ export async function buildMasterWorkbook(
     .filter((p) => p.name)
     .map((p) => `${p.name}, ${p.classification}`)
     .join("; ");
-  setVal(labor, "A17", `${wp.code} - Project ${wp.bartProjectNumbers || ""}`.trim());
+  // Her heading is "B.50.03 - Project 15NL004, 15TC002, 15TC012, 15CQ002,
+  // 15QN004": the scope being billed and the BART projects on ITS PO lines —
+  // not the Procas job number followed by every project on the work plan.
+  const activeProjects = [
+    ...new Set(
+      ctx.billedLineItems
+        .filter((it) => it.currentInvoiced > 0)
+        .map((it) => (it.bartProjectNo ?? "").split("/")[0].trim())
+        .filter(Boolean),
+    ),
+  ].join(", ");
+  setVal(
+    labor,
+    "A17",
+    `${billedScope} - Project ${activeProjects || wp.bartProjectNumbers || ""}`.trim(),
+  );
   setVal(labor, "A18", laborNames);
   const totalBillableHours = round2(
     weekSheets.reduce((sum, wsx) => sum + wsx.billableHours, 0),
@@ -896,7 +947,7 @@ export async function buildMasterWorkbook(
   for (let lr = 34; lr <= 37; lr++) {
     for (const col of ["A", "B", "C", "D", "E", "F"]) clearCell(labor, `${col}${lr}`);
   }
-  setVal(labor, "A22", `${wp.code} - Subtotal `);
+  setVal(labor, "A22", `${billedScope} - Subtotal `);
   // Overtime premium block (rows 26-31) and the grand total below it.
   for (const lr of [26, 27, 28, 29]) {
     setVal(labor, `C${lr}`, 0);
@@ -937,7 +988,7 @@ export async function buildMasterWorkbook(
   // Overview "Total Billing to This Period" (hours / cost).
   setVal(master, "D20", totalBillableHours);
   setVal(master, "E20", rollup.totalThisPeriod);
-  for (const col of ["D", "E", "F"]) setVal(master, `${col}16`, agreementLine);
+  for (const col of ["D", "E", "F"]) setVal(master, `${col}16`, agreementLine(wp.agreementNo));
 
   // Sub Calc header.
   if (invDate) for (const a of ["J5", "K5"]) setVal(cost, a, invDate);
@@ -959,8 +1010,10 @@ export async function buildMasterWorkbook(
   // plan's own code fills in when a plan carries no project numbers, rather
   // than leaving the field blank.
   for (const a of ["D8", "E8"]) setVal(report, a, wp.bartProjectNumbers || wp.code || "");
-  setVal(report, "H8", wp.agreementNo || "");
-  for (const a of ["D9", "E9"]) setVal(report, a, wp.title || "");
+  setVal(report, "H8", agreementNumber(wp.agreementNo));
+  for (const a of ["D9", "E9"]) setVal(report, a, workPlanTitle || "");
+  // The template (and so every invoice sent from it) reads "Approaved by".
+  setVal(report, "B81", "Approved by : ");
   setVal(report, "H9", periodStr);
   setVal(report, "E69", gTotal);
   setVal(report, "E70", jTotal);
@@ -1013,6 +1066,11 @@ export async function buildMasterWorkbook(
   freezeUnstableFormulas(wb, deadRefTokens);
   dropDeadDefinedNames(wb, deadRefTokens, "master");
   stripBrokenDefinedNames(wb);
+  // The cover ends at the signature and date (row 49). Rows 51-58 are the
+  // template's unfilled remit-to block — "Company Name / Bank Name / Address 1
+  // / Account Number:" — which her invoices never print, and which ours was
+  // printing as a strip of placeholders under the signature.
+  cover.pageSetup = { ...cover.pageSetup, printArea: "A1:Y49" };
   fitSheetsToOnePage(wb);
   wb.calcProperties.fullCalcOnLoad = true;
   return { wb, weekSheets };

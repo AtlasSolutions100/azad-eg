@@ -57,6 +57,7 @@ import {
   seedBilledLineItemsFromLastApproved,
   toApiBilledLineItem,
   computeBillingSummary,
+  effectiveBilledLineItems,
 } from "../lib/billedLineItems";
 import {
   toApiPackageSummary,
@@ -87,6 +88,7 @@ import { deriveBillingPeriod, type BillingCycle } from "../lib/billingPeriod";
 import { computePtoFill, totalDayHours } from "../lib/ptoFill";
 import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
+import { toDisplayName } from "../lib/displayName";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
 import { canDeletePackages } from "../lib/packageDeletePermission";
@@ -139,8 +141,15 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
   // rates without each re-implementing it. (The on-screen rollup caps too.)
   const cappedEntries = entries.map((e) => ({
     ...e,
+    // Names go on the client's paperwork the way they are said ("Travis
+    // Johnson"), not the way Procas files them ("Johnson, Travis").
+    employeeName: toDisplayName(e.employeeName),
     rate: cappedBillRate(e.rate, view.maxBillRate),
   }));
+  const docRollup = buildPackageRollup(cappedEntries, view, {
+    previouslyBilled: pkg.previouslyBilled,
+    otherDirectCosts: pkg.otherDirectCosts,
+  });
 
   return {
     // `pkg` is the full packages row, so it carries `prime` (e.g. "WSP",
@@ -148,14 +157,19 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     // generateMergedPdf) read `ctx.pkg.prime` to pick the WSP vs AECOM engine,
     // so it must flow through here unchanged.
     pkg,
-    employee: emp ? { name: emp.name, classification: emp.classification } : null,
+    employee: emp ? { name: toDisplayName(emp.name), classification: emp.classification } : null,
     workPlan: view,
     weeks,
     entries: cappedEntries,
     progress: progressRows[0] ?? null,
     overrides,
     signatureImagePath,
-    billedLineItems,
+    billedLineItems: effectiveBilledLineItems(billedLineItems, {
+      packageId: pkg.id,
+      scheduleKeys: [view.procasProject, view.jobNumber],
+      previouslyBilled: pkg.previouslyBilled,
+      totalThisPeriod: docRollup.totalThisPeriod,
+    }),
   };
 }
 
@@ -557,11 +571,20 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
     otherDirectCosts: pkg.otherDirectCosts,
   });
 
+  // The Billed Line Items as the invoice will print them — the stored rows, or
+  // the computed PO split when there are none to show (see billedLineItems.ts).
+  const shownItems = effectiveBilledLineItems(billedItems, {
+    packageId: pkg.id,
+    scheduleKeys: [view.procasProject, view.jobNumber],
+    previouslyBilled: pkg.previouslyBilled,
+    totalThisPeriod: rollup.totalThisPeriod,
+  });
+
   res.json(
     GetPackageResponse.parse({
       package: toApiPackageSummary(pkg, emp, view, weeks.length, entries),
-      billedLineItems: billedItems.map(toApiBilledLineItem),
-      billingSummary: computeBillingSummary(billedItems),
+      billedLineItems: shownItems.map(toApiBilledLineItem),
+      billingSummary: computeBillingSummary(shownItems),
       weeks: weeks.map(toApiWeek),
       entries: entries.map(toApiTimesheetEntry),
       progressReport: progress ? toApiProgressReport(progress) : null,
@@ -790,7 +813,37 @@ router.post("/packages/:id/procas-hours", async (req, res): Promise<void> => {
     res.status(409).json({ error: "Procas is not connected. Connect it from the header indicator first." });
     return;
   }
+  // A package keeps the Previously Billed and Previous Hours it was CREATED
+  // with. Packages made before those were read correctly from Procas — or
+  // before previous hours existed at all — kept printing "--" and a blank
+  // however many times they were re-exported, which is what an August package
+  // was still doing in October. Pulling hours is the biller saying "bring this
+  // package up to date with Procas", so both are refreshed alongside it. A
+  // figure she typed herself, or one carried from an approved invoice, is hers
+  // and is left alone.
+  const billingJob = (wp ? wp.jobNumber : (pkg.procasProject ?? "")).trim();
+  const refreshBilled =
+    pkg.previouslyBilledSource == null || pkg.previouslyBilledSource === "procas";
+  const history: Promise<readonly [number | null, number | null]> = billingJob
+    ? Promise.all([
+        refreshBilled
+          ? fetchPreviouslyBilledFromProcas(creds, billingJob).catch(() => null)
+          : Promise.resolve(null),
+        fetchPreviousHoursFromProcas(creds, billingJob, pkg.payPeriodStart).catch(() => null),
+      ])
+    : Promise.resolve([null, null] as const);
+
   const result = await pullPackageHoursFromProcas(pkg, effectiveWorkPlan(pkg, wp), creds);
+  const [billedNow, hoursNow] = await history;
+  const refreshed: Partial<typeof packagesTable.$inferInsert> = {};
+  if (billedNow != null && billedNow !== pkg.previouslyBilled) {
+    refreshed.previouslyBilled = billedNow;
+    refreshed.previouslyBilledSource = "procas";
+  }
+  if (hoursNow != null && hoursNow !== pkg.previousHours) refreshed.previousHours = hoursNow;
+  if (Object.keys(refreshed).length > 0) {
+    await db.update(packagesTable).set(refreshed).where(eq(packagesTable.id, id));
+  }
   if (!result.ok) {
     res.status(422).json({ error: result.error ?? "Procas pull failed." });
     return;
@@ -1386,6 +1439,25 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
   if (!pkg.invoiceDate) {
     flags.push({ severity: "warning", field: "invoiceDate", message: "Invoice date is not set." });
   }
+  // The progress report's "Work Performed During this Period" is a page of
+  // bullets on Julie's invoices, written by the project manager each month and
+  // pasted in from their own notes — there is nothing in Procas to pull it
+  // from. Left empty it prints as a large blank box in the middle of the
+  // report, and nothing said so before the export.
+  const [progressRow] = await db
+    .select()
+    .from(packageProgressReportsTable)
+    .where(eq(packageProgressReportsTable.packageId, id));
+  if (!String(progressRow?.workPerformed ?? "").trim()) {
+    flags.push({
+      severity: "warning",
+      field: "progress",
+      message:
+        "The progress report has no \"Work Performed During this Period\" text, so that " +
+        "section will print as an empty box. Add this month's bullets on the Progress tab, " +
+        "then re-export.",
+    });
+  }
   if (weeks.length === 0) {
     flags.push({ severity: "error", field: "weeks", message: "Package has no weeks." });
   }
@@ -1462,7 +1534,6 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
   if (wp) {
     const headerFields: Array<[string | null | undefined, string]> = [
       [wp.poNumber, "Purchase Order No."],
-      [wp.supplierId, "Supplier ID"],
       [wp.clientProjectNo, `${wp.client || "Client"} Project No.`],
       [wp.sendToCompany, "Send To company"],
       [wp.sendToAddress1, "Send To address"],
@@ -1595,7 +1666,23 @@ router.get("/packages/:id/billed-line-items", async (req, res): Promise<void> =>
     res.status(404).json({ error: "Package not found" });
     return;
   }
-  const rows = await listBilledLineItems(id);
+  const [stored, entries, wp] = await Promise.all([
+    listBilledLineItems(id),
+    db.select().from(timesheetEntriesTable).where(eq(timesheetEntriesTable.packageId, id)),
+    pkg.workPlanId != null
+      ? db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : Promise.resolve(null),
+  ]);
+  const view = effectiveWorkPlan(pkg, wp);
+  const rows = effectiveBilledLineItems(stored, {
+    packageId: id,
+    scheduleKeys: [view.procasProject, view.jobNumber],
+    previouslyBilled: pkg.previouslyBilled,
+    totalThisPeriod: buildPackageRollup(entries, view, {
+      previouslyBilled: pkg.previouslyBilled,
+      otherDirectCosts: pkg.otherDirectCosts,
+    }).totalThisPeriod,
+  });
   res.json(
     ListBilledLineItemsResponse.parse({
       items: rows.map(toApiBilledLineItem),

@@ -499,6 +499,6 @@ describe("buildParsonsWorkbook — no reference-workbook leftovers", () => {
     const { wb } = await buildParsonsWorkbook(makeCtx());
     // A7:K59 ran six rows into the Line 1.2 mirror, so the client's page ended
     // on a stranded "P.O. Line 1.2" header with nothing under it.
-    expect(wb.getWorksheet("Invoice Calc")!.pageSetup.printArea).toBe("$A$7:$K$52");
+    expect(wb.getWorksheet("Invoice Calc")!.pageSetup.printArea).toBe("A7:K52");
   });
 });
