@@ -7,6 +7,7 @@ import { convertToPdf, stripBrokenDefinedNames } from "./excel";
 import { buildPackageRollup, contributorKey } from "./packageMappers";
 import { pruneGeneratedFiles } from "./generatedCleanup";
 import { logger } from "./logger";
+import { clientFileBase } from "./invoiceRegister";
 import type {
   PackageRow,
   PackageWeekRow,
@@ -907,7 +908,15 @@ export interface PackageExportResult {
 
 /** Client-facing name for the two combined export files. */
 export function packageExportFileName(ctx: PackageDocContext, format: "xlsx" | "pdf"): string {
-  return `${docFileBase(ctx)}_InvoicePackage.${format}`;
+  // The name the invoice is actually sent under, when Julie's register gives
+  // one — "08-2026-BART6M8142-AECOM-B.50-01 Invoice_AZAD-32" — so the export
+  // is ready to attach rather than "Johnson, Travis_10007_InvoicePackage".
+  const sentAs = clientFileBase(
+    [ctx.workPlan.procasProject, ctx.workPlan.jobNumber],
+    ctx.pkg.payPeriodEnd,
+    ctx.pkg.invoiceNumber,
+  );
+  return `${sentAs ?? `${docFileBase(ctx)}_InvoicePackage`}.${format}`;
 }
 
 /**

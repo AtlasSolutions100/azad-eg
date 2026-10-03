@@ -16,6 +16,7 @@ import {
   projectScopeFilter,
   type ProcasCreds,
 } from "./procas";
+import { knownBillingCycle } from "./invoiceRegister";
 import type { ParsedLine } from "./timeimport";
 import { linesToLineItems, clearAutoImportedLineItems } from "./lineMapping";
 import { loadRateChanges } from "./employeeRates";
@@ -206,7 +207,7 @@ export interface WorkPlanImportResult {
   created: number;
   updated: number;
   total: number;
-  /** Procas-sourced plans moved off the old `whole_month` column default. */
+  /** Procas-owned plans whose billing cycle was set to what the invoice register says. */
   cyclesCorrected: number;
 }
 
@@ -279,14 +280,17 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       if (!String(linked.agreementNo ?? "").trim() && contractNumber) {
         changes.agreementNo = contractNumber;
       }
-      // Correct the billing cycle on plans imported before `last_friday` became
-      // the default. These rows were never chosen by a biller — they landed on
-      // the old column default and pre-filled whole-calendar-month periods on
-      // BART invoices that bill Sat→Fri through the last Friday. Only ever
-      // applied to Procas-sourced plans, and still switchable per plan and per
-      // package; the count is reported so the correction is not silent.
-      if (linked.billingCycle === "whole_month") {
-        changes.billingCycle = "last_friday";
+      // The billing cycle comes from Julie's invoice register (see
+      // invoiceRegister.ts): last-Friday for AECOM, Parsons and WSP, the last
+      // day of the month for T.Y. Lin, and the calendar-month default for
+      // every work plan the register does not name. A Procas-owned plan is
+      // never one a biller chose a cycle for — choosing flips it to manual —
+      // so this both applies the register and UNDOES the Sep 25 change that
+      // moved every imported plan to last-Friday, T.Y. Lin included. The count
+      // is reported so the correction is not silent.
+      const cycle = knownBillingCycle(linked.procasProject, linked.jobNumber, code) ?? "whole_month";
+      if (linked.billingCycle !== cycle) {
+        changes.billingCycle = cycle;
         cyclesCorrected += 1;
       }
       if (Object.keys(changes).length > 0) {
@@ -330,13 +334,11 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
         totalBudget: budget,
         agreementNo: contractNumber || null,
         procasProject: code,
-        // Every contract in this system is a BART work plan, and BART bills on
-        // the Sat→Fri cycle that ENDS on the last Friday of the month (June
-        // excepted). Imported plans used to land on the column default of
-        // `whole_month`, which pre-filled 9/1-9/30 on an AECOM package whose
-        // period should have ended Friday 9/25 — "billing period is wrong,
-        // should be the last Friday". Still switchable per plan and per package.
-        billingCycle: "last_friday",
+        // From Julie's invoice register: last-Friday for AECOM, Parsons and
+        // WSP ("billing period is wrong, should be the last Friday" on the
+        // AECOM package), last day of the month for T.Y. Lin, and the
+        // calendar-month default for anything the register does not name.
+        billingCycle: knownBillingCycle(code) ?? "whole_month",
         status,
         source: "procas",
         ...rates,

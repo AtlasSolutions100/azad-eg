@@ -89,6 +89,7 @@ import { computePtoFill, totalDayHours } from "../lib/ptoFill";
 import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { toDisplayName } from "../lib/displayName";
+import { seededInvoiceNumber } from "../lib/invoiceRegister";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
 import { canDeletePackages } from "../lib/packageDeletePermission";
@@ -309,6 +310,15 @@ router.post("/packages", async (req, res): Promise<void> => {
       .orderBy(desc(packagesTable.createdAt))
       .limit(1);
     invoiceNumber = bumpInvoiceNumber(prev?.n) ?? invoiceNumber;
+  }
+  // No numbered package on this work plan yet: start the series from the
+  // invoice register. Julie had listed July's number for every BART invoice
+  // ("I've given the naming structure… I assume the system will calculate the
+  // correct number") and was still being asked to type the first one in.
+  if (!invoiceNumber) {
+    invoiceNumber =
+      seededInvoiceNumber([wp?.procasProject, wp?.jobNumber, procasProject], payPeriodEnd) ??
+      invoiceNumber;
   }
 
   const conn = await getProcasConnection().catch(() => null);

@@ -46,10 +46,11 @@ export const workPlansTable = pgTable("work_plans", {
   // Procas project code (or prefix) this work plan maps to, e.g. "10007".
   // Used to pull labor hours from the Procas OData feed; null = not mapped.
   procasProject: text("procas_project"),
-  // BART bills Sat→Fri, on a period ending the last Friday of the month (June
-  // excepted) — see lib/billingPeriod.ts. That is the right default for every
-  // contract here; `whole_month` is the exception, not the rule.
-  billingCycle: text("billing_cycle").notNull().default("last_friday"),
+  // "whole_month" (1st → last day) or "last_friday" (BART's Sat→Fri cycle —
+  // see lib/billingPeriod.ts). Which one a work plan uses is a fact about the
+  // contract, recorded per project in the invoice register; the default is the
+  // calendar month, and the Procas import applies the register over it.
+  billingCycle: text("billing_cycle").notNull().default("whole_month"),
   status: text("status").notNull().default("active"),
   // "manual" = created/edited by a biller (Procas import never touches its
   // display fields); "procas" = imported from the Procas project library and

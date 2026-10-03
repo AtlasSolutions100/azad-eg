@@ -142,32 +142,31 @@ describe("importWorkPlansFromProcas", () => {
     expect(p1.agreementNo).toBe("6M8213"); // nor a hand-corrected agreement no
   });
 
-  it("imports BART's last-Friday billing cycle, and corrects plans stuck on whole-month", async () => {
-    // Every contract here bills Sat→Fri through the last Friday of the month.
-    // New imports get that cycle outright.
+  it("takes the billing cycle from the invoice register, and undoes the blanket last-Friday", async () => {
+    // 90001 is not in Julie's register, so it bills by calendar month — the
+    // default every work plan had before last-Friday was (wrongly) made the
+    // default for all of them.
     const [fresh] = await db.select().from(workPlansTable).where(eq(workPlansTable.code, "90001"));
-    expect(fresh.billingCycle).toBe("last_friday");
+    expect(fresh.billingCycle).toBe("whole_month");
 
-    // Plans imported before that was the default sit on "whole_month" — a value
-    // no biller chose. It pre-filled 9/1-9/30 on an AECOM package whose period
-    // should have ended Friday 9/25. A refresh corrects them and says how many.
+    // What the Sep 25 change did to it on a refresh. The next refresh puts it
+    // back, and says how many it corrected.
     await db
       .update(workPlansTable)
-      .set({ billingCycle: "whole_month" })
+      .set({ billingCycle: "last_friday" })
       .where(eq(workPlansTable.code, "90001"));
-
     const result = await importWorkPlansFromProcas(creds);
     expect(result.cyclesCorrected).toBe(1);
-    const [corrected] = await db
+    const [restored] = await db
       .select()
       .from(workPlansTable)
       .where(eq(workPlansTable.code, "90001"));
-    expect(corrected.billingCycle).toBe("last_friday");
+    expect(restored.billingCycle).toBe("whole_month");
 
     // A plan the biller owns is never touched, whatever its cycle.
     await db
       .update(workPlansTable)
-      .set({ billingCycle: "whole_month" })
+      .set({ billingCycle: "last_friday" })
       .where(eq(workPlansTable.id, manualPlanId));
     const after = await importWorkPlansFromProcas(creds);
     expect(after.cyclesCorrected).toBe(0);
@@ -175,7 +174,7 @@ describe("importWorkPlansFromProcas", () => {
       .select()
       .from(workPlansTable)
       .where(eq(workPlansTable.id, manualPlanId));
-    expect(manual.billingCycle).toBe("whole_month");
+    expect(manual.billingCycle).toBe("last_friday");
   });
 
   it("leaves manually-owned plans alone even when linked to a Procas project", async () => {
