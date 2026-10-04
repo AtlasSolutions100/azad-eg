@@ -12,7 +12,9 @@ import {
   reviveModelDates,
   scrubInternalMarks,
   stripBrokenDefinedNames,
+  settleTimesheetSignature,
 } from "./excel";
+import { agreementLine } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -73,6 +75,9 @@ import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/d
  * is frozen to its cached value so the client file never opens with an error or
  * a "repair" prompt.
  */
+
+/** Whose signature the template's timesheet tabs carry. */
+const TEMPLATE_SIGNER = "Hashmatullah Ahmadzai";
 
 const TEMPLATE_FILE = "parsons-invoice-template.xlsm";
 
@@ -483,7 +488,18 @@ function fillTimesheet(
     }
     setVal(ws, `O${r}`, round2(rowTotal));
     grandTotal += rowTotal;
+    // Rows 9-11 are HIDDEN in the reference timesheet — that invoice kept its
+    // hours on row 12 and tucked the three contract lines above it away. We
+    // write straight time, overtime and doubletime onto exactly those three,
+    // so every Parsons timesheet printed its totals with the hours row
+    // invisible, and the reference's own highlighted row blank in its place.
+    // Straight time always shows; the premium rows show when they carry hours.
+    if (r <= 11) ws.getRow(r).hidden = r === 9 ? false : rowTotal <= 0;
   }
+  // Row 12 was the reference invoice's labor line (highlighted, with weekend
+  // cells shaded in a theme colour the PDF renderer paints black). Nothing is
+  // written to it, so it is hidden rather than printed as an empty bar.
+  ws.getRow(12).hidden = true;
 
   // TOTAL HOURS row (16): column sums + grand total.
   for (const col of DAY_COLS) setVal(ws, `${col}16`, round2(colTotals[col]));
@@ -787,7 +803,8 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   if (invoiceDate) setVal(invoice, "L7", invoiceDate);
   else clearCell(invoice, "L7");
   setVal(invoice, "L9", wp.poNumber || "N/A");
-  setVal(invoice, "E18", wp.agreementNo || "");
+  // Hers reads "6M8146 – Scheduling Support for Capital Projects".
+  setVal(invoice, "E18", agreementLine(wp.agreementNo, wp.procasProject));
   setVal(invoice, "E19", wp.code || "");
   setVal(invoice, "G23", periodStr);
   setVal(invoice, "L24", wp.terms || "");
@@ -965,6 +982,9 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
       ws.name = name;
       ws.state = "visible";
       fillTimesheet(ws, week, ctx, person);
+      // The template's timesheets carry Hashmatullah Ahmadzai's signature; only that
+      // person's own timesheet may keep it.
+      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
       timesheetTabs.push(name);
     }
   });

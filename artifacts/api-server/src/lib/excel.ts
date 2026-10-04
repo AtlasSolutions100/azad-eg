@@ -488,18 +488,6 @@ function usedRange(ws: ExcelJS.Worksheet): { lastRow: number; lastCol: number; f
   return { lastRow, lastCol, firstCol: firstCol === Number.MAX_SAFE_INTEGER ? 1 : firstCol };
 }
 
-/**
- * Printable width of a sheet's populated columns, in inches.
- *
- * Excel stores column width in "characters" of the default font, where the
- * 8.43 default is 64px ≈ 0.667in — so one width unit ≈ 0.0791in. Columns with
- * no explicit width fall back to that default.
- */
-const EXCEL_WIDTH_UNIT_INCHES = 0.0791;
-const DEFAULT_COL_WIDTH = 8.43;
-/** US Letter (8.5in) less the 0.3in side margins set below. */
-const PORTRAIT_PRINTABLE_INCHES = 8.5 - 0.6;
-
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
 /**
@@ -515,7 +503,15 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
  */
 export function reviveModelDates(model: {
   rows?: Array<{ cells?: Array<Record<string, unknown>> }>;
+  merges?: string[];
+  mergeCells?: string[];
 }): void {
+  // exceljs writes a sheet's merged ranges out as `model.merges` but reads them
+  // back from `model.mergeCells`, so a cloned sheet arrived with every merge
+  // gone. On the timesheets that left "Contract / Workplan" — centred across
+  // two columns in the template — centred in one narrow column and running off
+  // the left edge of the page ("Weekly Timesheet" printed as "y Timesheet").
+  if (Array.isArray(model.merges) && !model.mergeCells) model.mergeCells = model.merges;
   for (const row of model.rows ?? []) {
     for (const cell of row.cells ?? []) {
       if (!cell) continue;
@@ -558,17 +554,197 @@ function parseRangeBounds(
   };
 }
 
-function contentWidthInches(ws: ExcelJS.Worksheet, firstCol: number, lastCol: number): number {
-  let units = 0;
-  for (let c = firstCol; c <= lastCol; c++) {
-    const col = ws.getColumn(c);
-    if (col.hidden) continue;
-    units += col.width ?? DEFAULT_COL_WIDTH;
-  }
-  return units * EXCEL_WIDTH_UNIT_INCHES;
+type RangeBounds = { firstCol: number; lastCol: number; firstRow: number; lastRow: number };
+
+/** A person's name reduced to comparable tokens ("Johnson, Travis" = "Travis Johnson"). */
+export function personKey(name: string | null | undefined): string {
+  return (name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
 }
 
-type RangeBounds = { firstCol: number; lastCol: number; firstRow: number; lastRow: number };
+/**
+ * Makes a timesheet's "Submitted by" signature belong to the person it is for.
+ *
+ * Each template is one real employee's invoice, and its timesheet tabs carry
+ * that employee's signature as a picture. Every timesheet generated from the
+ * template inherited it: Imani Lawson's was signed "Jordy Peralta", Sarah
+ * Boyd's "Ryan Harper". A timesheet is a certified record of one person's
+ * hours; another person's signature on it is not a formatting problem.
+ *
+ * The employee's picture is the one beside "Submitted by" and left of
+ * "Approved by". It stays only when the timesheet is the template signer's
+ * own. Otherwise it is replaced with that employee's signature from the
+ * Signatures page (matched by name) when one has been uploaded, and removed —
+ * leaving the line blank to be signed — when one has not. The approver's
+ * signature and the logo are not touched.
+ */
+export function settleTimesheetSignature(
+  ws: ExcelJS.Worksheet,
+  employeeName: string,
+  templateSigner: string,
+  signatures?: Record<string, string>,
+): void {
+  if (personKey(employeeName) === personKey(templateSigner)) return;
+  let submitted: { row: number; col: number } | null = null;
+  let approvedCol = Number.MAX_SAFE_INTEGER;
+  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const text = typeof cell.value === "string" ? cell.value : "";
+      if (/submitted\s*by/i.test(text) && !submitted) submitted = { row: rowNumber, col: colNumber };
+      if (/approved\s*by/i.test(text)) approvedCol = Math.min(approvedCol, colNumber);
+    });
+  });
+  const at = submitted as { row: number; col: number } | null;
+  if (!at) return;
+
+  const sheet = ws as unknown as {
+    _media?: Array<{
+      type?: string;
+      imageId?: number | string;
+      range?: { tl?: { nativeRow?: number; nativeCol?: number } };
+    }>;
+  };
+  if (!Array.isArray(sheet._media)) return;
+  const isEmployeeSignature = (m: NonNullable<typeof sheet._media>[number]) => {
+    if (m.type !== "image") return false;
+    const row = m.range?.tl?.nativeRow;
+    const col = m.range?.tl?.nativeCol;
+    if (row == null || col == null) return false;
+    return Math.abs(row + 1 - at.row) <= 3 && col + 1 >= at.col && col + 1 < approvedCol;
+  };
+
+  const own = signatures?.[personKey(employeeName)];
+  if (own && fs.existsSync(own)) {
+    try {
+      const ext = path.extname(own).replace(".", "").toLowerCase();
+      const extension: "png" | "jpeg" | "gif" =
+        ext === "jpg" || ext === "jpeg" ? "jpeg" : ext === "gif" ? "gif" : "png";
+      const buffer = fs.readFileSync(own) as unknown as ExcelJS.Buffer;
+      const imageId = ws.workbook.addImage({ buffer, extension });
+      for (const m of sheet._media) if (isEmployeeSignature(m)) m.imageId = imageId;
+      return;
+    } catch (err) {
+      logger.warn({ err }, "Could not place the employee's own signature on a timesheet");
+    }
+  }
+  sheet._media = sheet._media.filter((m) => !isEmployeeSignature(m));
+}
+
+/**
+ * Removes pictures anchored outside the printed form.
+ *
+ * Hiding the rows and columns past a print area does nothing about a picture
+ * floating over them — it still prints, and the page is scaled down to make
+ * room for it. The WSP reference workbook has one: a pasted screenshot of a
+ * labor summary ("Peralta, Jordy … Total $312,618.98") sitting to the right of
+ * the Sub Calc. It printed beside every WSP invoice's detail page, showing
+ * another employee's figures, and shrank the real form into a corner. Being an
+ * image, no text check could see it. The logo and signatures sit inside the
+ * form and are untouched.
+ */
+function dropPicturesOutside(ws: ExcelJS.Worksheet, bounds: RangeBounds): void {
+  const sheet = ws as unknown as {
+    _media?: Array<{ type?: string; range?: { tl?: { nativeRow?: number; nativeCol?: number } } }>;
+  };
+  if (!Array.isArray(sheet._media)) return;
+  sheet._media = sheet._media.filter((m) => {
+    if (m.type !== "image") return true;
+    const row = m.range?.tl?.nativeRow;
+    const col = m.range?.tl?.nativeCol;
+    if (row == null || col == null) return true;
+    return col + 1 <= bounds.lastCol && row + 1 <= bounds.lastRow;
+  });
+}
+
+/**
+ * How many characters a number or date will take once its format is applied.
+ *
+ * Not a renderer — a deliberately generous estimate of the text a cell will
+ * show: the digits, thousands separators, decimals, a currency symbol and its
+ * padding, a percent sign, and any literal the format appends (" Hrs.").
+ */
+export function formattedLength(value: number | Date, numFmt: string | undefined): number {
+  const fmt = (numFmt || "General").split(";")[0];
+  if (value instanceof Date) {
+    if (/mmmm/i.test(fmt)) return 18; // "September 25, 2026"
+    if (/mmm/i.test(fmt)) return 11; // "25-Sep-2026"
+    return 10; // "12/25/2026"
+  }
+  const literals = [...fmt.matchAll(/"([^"]*)"/g)].reduce((n, m) => n + m[1].length, 0);
+  const bare = fmt.replace(/"[^"]*"/g, "");
+  const percent = bare.includes("%");
+  const shown = Math.abs(percent ? value * 100 : value);
+  const decimalsMatch = /\.(0+)/.exec(bare);
+  const general = /general/i.test(bare) || bare.trim() === "";
+  const decimals = decimalsMatch
+    ? decimalsMatch[1].length
+    : general
+      ? Math.min(2, (String(shown).split(".")[1] ?? "").length)
+      : 0;
+  const whole = Math.trunc(Number(shown.toFixed(decimals))).toString().length;
+  const separators = bare.includes(",") ? Math.floor((whole - 1) / 3) : 0;
+  let length = whole + separators + (decimals > 0 ? decimals + 1 : 0) + literals;
+  if (percent) length += 1;
+  if (/[$€£]/.test(bare)) length += 2; // the symbol and the gap accounting formats leave
+  if (/_\(|_\)/.test(bare) || value < 0) length += 2; // sign or parentheses
+  return length;
+}
+
+/**
+ * Widens any column too narrow for a number or date it holds.
+ *
+ * A value that does not fit its cell prints as `###`. Julie reported that on
+ * the T.Y. Lin Sub Calc and timesheets, and each time it was fixed for the one
+ * cell she named. It kept coming back because the templates are sized for the
+ * figures on the reference invoices: a work plan with $240,317.93 previously
+ * billed, a $1.38M budget or 3,424 hours to date overflows cells that held the
+ * reference's smaller numbers comfortably — on the WSP, T.Y. Lin and Parsons
+ * forms alike. Rather than chase cells, every number and date in the printed
+ * area is measured against the columns it sits in.
+ *
+ * Text is left alone: it spills into the next cell or wraps, and is never
+ * replaced by hashes. A merged cell is measured against its whole span, and
+ * only its last column grows.
+ */
+function widenColumnsToFitValues(ws: ExcelJS.Worksheet, bounds: RangeBounds): void {
+  const spans = new Map<string, { first: number; last: number }>();
+  const merges = (ws.model as unknown as { merges?: string[] }).merges ?? [];
+  for (const range of merges) {
+    const b = parseRangeBounds(range);
+    if (!b) continue;
+    spans.set(`${ws.getColumn(b.firstCol).letter}${b.firstRow}`, { first: b.firstCol, last: b.lastCol });
+  }
+  const widthOf = (c: number) => ws.getColumn(c).width ?? 8.43;
+  for (let r = bounds.firstRow; r <= bounds.lastRow; r++) {
+    const row = ws.getRow(r);
+    if (row.hidden) continue;
+    for (let c = bounds.firstCol; c <= bounds.lastCol; c++) {
+      const cell = row.getCell(c);
+      const value = cell.value;
+      if (!(typeof value === "number" || value instanceof Date)) continue;
+      if (cell.isMerged && cell.master.address !== cell.address) continue;
+      const span = spans.get(cell.address) ?? { first: c, last: c };
+      let available = 0;
+      for (let k = span.first; k <= span.last; k++) {
+        if (!ws.getColumn(k).hidden) available += widthOf(k);
+      }
+      // Column widths are counted in characters of the 11pt default font; a
+      // larger or bold face needs proportionally more, plus cell padding.
+      const size = cell.font?.size ?? 11;
+      const needed =
+        formattedLength(value, cell.numFmt) * (size / 11) * (cell.font?.bold ? 1.1 : 1) * 1.12 + 1.6;
+      if (needed > available) {
+        const last = ws.getColumn(span.last);
+        last.width = Math.round((widthOf(span.last) + (needed - available)) * 100) / 100;
+      }
+    }
+  }
+}
 
 /**
  * Makes a print area hold for LibreOffice, which builds the PDF and ignores
@@ -611,6 +787,7 @@ function confinePrintArea(
     lastRow = Math.max(lastRow, Math.min(bottom, bounds.lastRow + 12));
   }
   const out = { ...bounds, lastRow };
+  dropPicturesOutside(ws, out);
   const maxCol = Math.max(ws.columnCount, usedLastCol);
   for (let c = out.lastCol + 1; c <= maxCol; c++) ws.getColumn(c).hidden = true;
   const maxRow = Math.max(ws.rowCount, usedLastRow);
@@ -618,41 +795,6 @@ function confinePrintArea(
   return out;
 }
 
-/** Excel's default row height, in points (1pt = 1/72in). */
-const DEFAULT_ROW_HEIGHT_PT = 15;
-
-/** Printable height of a row band, in inches, skipping hidden rows. */
-function contentHeightInches(ws: ExcelJS.Worksheet, firstRow: number, lastRow: number): number {
-  let points = 0;
-  for (let r = firstRow; r <= lastRow; r++) {
-    const row = ws.getRow(r);
-    if (row.hidden) continue;
-    points += row.height ?? DEFAULT_ROW_HEIGHT_PT;
-  }
-  return points / 72;
-}
-
-/** US Letter less the margins set in `fitSheetsToOnePage`, both ways round. */
-const PORTRAIT_PAGE = { w: 8.5 - 0.6, h: 11 - 0.7 };
-const LANDSCAPE_PAGE = { w: 11 - 0.7, h: 8.5 - 0.6 };
-
-/**
- * The orientation that prints a one-page form LARGEST.
- *
- * The old rule turned any form wider than a portrait page sideways. That is
- * right for a wide, short sheet and wrong for a wide, TALL one: the AECOM
- * cover is 11.0in × 12.7in, so landscape fits it by height at 62% and leaves
- * ~3.5in of empty page either side — Julie's "still big blank space when
- * printing". Portrait fits it by width at 72%, edge to edge. The Progress
- * Report (11.3 × 13.3in) is the same shape and was also going sideways.
- *
- * Fit-to-page scales down only, so each candidate's scale is capped at 1.
- */
-function bestOrientation(width: number, height: number): "portrait" | "landscape" {
-  const scale = (page: { w: number; h: number }) =>
-    Math.min(1, page.w / width, page.h / height);
-  return scale(LANDSCAPE_PAGE) > scale(PORTRAIT_PAGE) ? "landscape" : "portrait";
-}
 
 /**
  * Sets a sane print layout on every visible sheet so the client PDF is legible
@@ -729,25 +871,19 @@ export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
 
     const onePage = isSinglePageForm(ws.name);
     const bounds = confinePrintArea(ws, parseRangeBounds(printArea), lastRow, lastCol);
+    if (bounds) widenColumnsToFitValues(ws, bounds);
     if (bounds) {
       printArea = `${ws.getColumn(bounds.firstCol).letter}${bounds.firstRow}:${
         ws.getColumn(bounds.lastCol).letter
       }${bounds.lastRow}`;
     }
-    const width = bounds ? contentWidthInches(ws, bounds.firstCol, bounds.lastCol) : 0;
-    const height = bounds ? contentHeightInches(ws, bounds.firstRow, bounds.lastRow) : 0;
 
-    // Orientation follows what we are actually printing. A one-page form goes
-    // whichever way prints it largest (see `bestOrientation`); a sheet that
-    // flows down pages only cares about width, so it turns sideways just when
-    // it is wider than a portrait page.
-    let orientation: "portrait" | "landscape";
-    if (bounds && onePage) {
-      orientation = bestOrientation(width, height);
-    } else {
-      orientation =
-        width > PORTRAIT_PRINTABLE_INCHES ? "landscape" : (ws.pageSetup?.orientation ?? "portrait");
-    }
+    // Every page is portrait. Mahsa's original brief for the PDF was "must
+    // print correctly on 8.5 x 11… pages must not rotate", and every page of
+    // every invoice Julie sends is upright. Turning the wide sheets sideways
+    // did print them larger, but it produced a packet that changes direction
+    // from page to page, which is not what the prime receives today.
+    const orientation = "portrait" as const;
 
     ws.pageSetup = {
       ...ws.pageSetup,

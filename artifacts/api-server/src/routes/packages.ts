@@ -75,7 +75,7 @@ import {
   type PackageDocKind,
   type PackageDocContext,
 } from "../lib/packageDocs";
-import { resolveSignaturePath } from "../lib/excel";
+import { resolveSignaturePath, personKey } from "../lib/excel";
 import { evaluateBudgetStatus } from "../lib/financials";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import {
@@ -90,6 +90,7 @@ import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { toDisplayName } from "../lib/displayName";
 import { seededInvoiceNumber } from "../lib/invoiceRegister";
+import { docWorkPlan } from "../lib/knownInvoiceHeaders";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
 import { canDeletePackages } from "../lib/packageDeletePermission";
@@ -134,6 +135,13 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     const [sig] = await db.select().from(signaturesTable).where(eq(signaturesTable.id, pkg.signatureId));
     if (sig) signatureImagePath = resolveSignaturePath(sig.imageUrl);
   }
+  // Every uploaded signature, by person, so an employee's own can be placed on
+  // their timesheets (see settleTimesheetSignature).
+  const employeeSignatures: Record<string, string> = {};
+  for (const sig of await db.select().from(signaturesTable)) {
+    const file = resolveSignaturePath(sig.imageUrl);
+    if (file) employeeSignatures[personKey(sig.name)] = file;
+  }
 
   // Packages may not have a work plan yet — documents then render with the
   // package-level billing profile and blank contract fields.
@@ -159,7 +167,9 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     // so it must flow through here unchanged.
     pkg,
     employee: emp ? { name: toDisplayName(emp.name), classification: emp.classification } : null,
-    workPlan: view,
+    // The work plan as the client's paperwork names it ("A.02-01", job number
+    // "T4567") rather than as Procas files it ("10014"). See docWorkPlan.
+    workPlan: docWorkPlan(view),
     weeks,
     entries: cappedEntries,
     progress: progressRows[0] ?? null,
@@ -171,6 +181,7 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
       previouslyBilled: pkg.previouslyBilled,
       totalThisPeriod: docRollup.totalThisPeriod,
     }),
+    employeeSignatures,
   };
 }
 

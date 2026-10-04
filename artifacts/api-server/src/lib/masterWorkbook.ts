@@ -11,6 +11,7 @@ import {
   reviveModelDates,
   scrubInternalMarks,
   stripBrokenDefinedNames,
+  settleTimesheetSignature,
 } from "./excel";
 import { agreementLine, agreementNumber } from "./knownInvoiceHeaders";
 import { buildPackageRollup, contributorKey } from "./packageMappers";
@@ -52,6 +53,9 @@ import type { PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
  * engines). The engine already overwrites the cells that matter with
  * authoritative literals, so this only ever catches incidental cells.
  */
+
+/** Whose signature the template's timesheet tabs carry. */
+const TEMPLATE_SIGNER = "Travis Johnson";
 
 const TEMPLATE_FILE = "package-master-template.xlsx";
 
@@ -482,6 +486,9 @@ export async function buildMasterWorkbook(
       }
       templateIdx += 1;
       const rowTotals = fillWeekTab(ws, week, ctx, person);
+      // The template's timesheets carry Travis Johnson's signature; only that
+      // person's own timesheet may keep it.
+      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
       billableHours = round2(billableHours + (rowTotals[9] ?? 0));
       tabNames.push(name);
     }

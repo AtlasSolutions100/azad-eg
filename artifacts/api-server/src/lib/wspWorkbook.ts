@@ -10,7 +10,9 @@ import {
   reviveModelDates,
   scrubInternalMarks,
   stripBrokenDefinedNames,
+  settleTimesheetSignature,
 } from "./excel";
+import { knownHeader } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -64,6 +66,9 @@ import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/d
  * formula that still referenced them is frozen to its cached value so the
  * client file never opens with #REF! or an Excel "repair" prompt.
  */
+
+/** Whose signature the template's timesheet tabs carry. */
+const TEMPLATE_SIGNER = "Jordy Peralta";
 
 const TEMPLATE_FILE = "wsp-invoice-template.xlsm";
 
@@ -558,6 +563,14 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   setVal(invoice, "L8", wp.poNumber || "");
   setVal(invoice, "L10", invoiceNo);
   setVal(invoice, "L11", `WSP Project No.: ${wp.wspProjectNo ?? ""}`.trim());
+  // The box is sized for this line in Excel, but the PDF renderer lays the form
+  // out a little narrower and "WSP Project No.: 30900569.4687" lost both ends.
+  // Let it shrink to the box rather than be cut.
+  {
+    const projectNo = invoice.getCell("L11");
+    projectNo.alignment = { ...projectNo.alignment, shrinkToFit: true, wrapText: false };
+    projectNo.font = { ...projectNo.font, size: 8 };
+  }
   setVal(invoice, "E21", wp.agreementNo || "");
   setVal(invoice, "E22", wp.title || "");
   setVal(invoice, "L22", wp.bartProjectNumbers || "");
@@ -565,7 +578,17 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   setVal(invoice, "D12", wp.sendToCompany || "");
   setVal(invoice, "D13", wp.sendToAddress1 || "");
   setVal(invoice, "D14", wp.sendToAddress2 || "");
-  clearCell(invoice, "D15"); // template carried a hardcoded contact email
+  // The line under the address is the prime's AP contact email. It is the
+  // reference invoice's own, so it is only kept for a work plan whose real
+  // invoice carries one; otherwise it is cleared rather than left hardcoded.
+  const sendToExtra = knownHeader(wp.procasProject, wp.jobNumber)?.sendToExtra;
+  if (sendToExtra) setVal(invoice, "D15", sendToExtra);
+  else clearCell(invoice, "D15");
+  // The signature line is split across two cells in the template ("Mahsa
+  // Azad," in B46 and ",President" in D46), which Excel lets run together and
+  // the PDF renderer does not: it printed "Mahsa Az,President".
+  setVal(invoice, "B46", pkg.approvedBy || "Mahsa Azad, President");
+  clearCell(invoice, "D46");
   setVal(invoice, "E19", wp.contactPerson || "");
   setVal(invoice, "B24", toDate(pkg.payPeriodStart));
   setVal(invoice, "H24", toDate(pkg.payPeriodEnd));
@@ -910,6 +933,9 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
       ws.name = name;
       ws.state = "visible";
       fillTimesheet(ws, week, ctx, person);
+      // The template's timesheets carry Jordy Peralta's signature; only that
+      // person's own timesheet may keep it.
+      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
       timesheetTabs.push(name);
     }
   });

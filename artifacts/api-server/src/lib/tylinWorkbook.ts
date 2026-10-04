@@ -12,7 +12,9 @@ import {
   reviveModelDates,
   scrubInternalMarks,
   stripBrokenDefinedNames,
+  settleTimesheetSignature,
 } from "./excel";
+import { agreementLine } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -60,6 +62,9 @@ import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/d
  * (or an unsupported Google-Sheets `DUMMYFUNCTION`) is frozen to its cached
  * value so the client file never opens with #REF!/#NAME! or a repair prompt.
  */
+
+/** Whose signature the template's timesheet tabs carry. */
+const TEMPLATE_SIGNER = "Ryan Harper";
 
 const TEMPLATE_FILE = "tylin-invoice-template.xlsm";
 
@@ -657,7 +662,8 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   setVal(invoice, "L12", wp.jobNumber || "");
   if (wp.sendToCompany) setVal(invoice, "D14", wp.sendToCompany);
   if (wp.sendToAddress1) setVal(invoice, "D15", wp.sendToAddress1);
-  setVal(invoice, "E22", wp.agreementNo || "");
+  // Hers reads "6M8213 General Engineering Services", not the bare number.
+  setVal(invoice, "E22", agreementLine(wp.agreementNo, wp.procasProject));
   setVal(invoice, "L22", wp.bartProjectNumbers || wp.clientProjectNo || "");
   setVal(invoice, "E23", wp.title || "");
   setVal(invoice, "G24", periodStr);
@@ -973,6 +979,9 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
       ws.name = name;
       ws.state = "visible";
       fillTimesheet(ws, week, ctx, person);
+      // The template's timesheets carry Ryan Harper's signature; only that
+      // person's own timesheet may keep it.
+      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
       timesheetTabs.push(name);
     }
   });

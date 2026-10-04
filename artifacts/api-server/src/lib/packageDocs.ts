@@ -39,6 +39,12 @@ export interface PackageDocContext {
   signatureImagePath: string | null;
   /** Invoice cover Billed Line Items (against PO line schedule). */
   billedLineItems: BilledLineItemRow[];
+  /**
+   * Uploaded signature images by person (key: `personKey(name)`), so an
+   * employee's own signature can go on their timesheets. Optional: without it
+   * a timesheet that is not the template signer's is left to be signed.
+   */
+  employeeSignatures?: Record<string, string>;
 }
 
 const TEMPLATES: Record<PackageDocKind, string> = {

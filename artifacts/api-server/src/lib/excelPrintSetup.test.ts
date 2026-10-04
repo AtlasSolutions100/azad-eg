@@ -68,20 +68,21 @@ describe("print setup for exported workbooks", () => {
     expect(ws.pageSetup.orientation).toBe("portrait");
   });
 
-  it("turns a wide sheet landscape so its type isn't crushed", () => {
+  it("keeps even a wide sheet upright — no page of the packet is rotated", () => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Invoice");
-    // ~15in of columns, the width of the real reference Invoice tab, which the
-    // template nonetheless saved as portrait.
+    // ~15in of columns. Mahsa's brief for the PDF: "must print correctly on
+    // 8.5 x 11… pages must not rotate" — and every page Julie sends is upright.
     for (let c = 1; c <= 30; c++) {
       ws.getColumn(c).width = 6.3;
       ws.getCell(1, c).value = `h${c}`;
     }
-    ws.pageSetup = { ...ws.pageSetup, orientation: "portrait" };
+    ws.pageSetup = { ...ws.pageSetup, orientation: "landscape" };
 
     fitSheetsToOnePage(wb);
 
-    expect(ws.pageSetup.orientation).toBe("landscape");
+    expect(ws.pageSetup.orientation).toBe("portrait");
+    expect(ws.pageSetup.fitToWidth).toBe(1);
   });
 
   it("keeps a narrow sheet portrait", () => {
@@ -149,10 +150,11 @@ describe("one-page forms: orientation and centering", () => {
     expect(ws.pageSetup.fitToHeight).toBe(1);
   });
 
-  it("still prints a wide, short form in landscape", () => {
-    // The Sub Calc: ~12.9in wide, ~9.2in tall.
+  it("prints a wide, short form upright too", () => {
+    // The Sub Calc: ~12.9in wide, ~9.2in tall. It printed larger sideways, but
+    // her own invoices keep it upright with the rest of the packet.
     const ws = form("Sub Calc", 14, 44);
-    expect(ws.pageSetup.orientation).toBe("landscape");
+    expect(ws.pageSetup.orientation).toBe("portrait");
   });
 
   it("pins every engine's progress report to one page, matched by prefix", () => {
