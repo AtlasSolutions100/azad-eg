@@ -49,6 +49,22 @@ export interface KnownInvoiceHeader {
   agreementLine?: string;
   /** A further line under the Send To address (WSP: the AP contact email). */
   sendToExtra?: string;
+  /**
+   * Where every hour on this work plan is billed, when her invoice has it all
+   * in one block. Procas does not record home vs field.
+   */
+  laborLocation?: "home" | "field";
+  /**
+   * The work plan is charged to several BART projects and her paperwork keeps
+   * them apart: as "lines" on one invoice (WSP A.03.01), or as one invoice
+   * each ("invoices" — Parsons, from July 2026: "B.40-02-11 (20CE002)").
+   * Procas books the time to a leaf project per BART project; with this set,
+   * the pull keeps that project on each timesheet entry (its Task No.).
+   */
+  billsByBartProject?: "lines" | "invoices";
+  // --- stored on the work plan, only while its budget is unset ---
+  /** The work plan budget printed on her invoice. */
+  totalBudget?: number;
 }
 
 const WSP_SEND_TO = {
@@ -83,6 +99,8 @@ const TYLIN: KnownInvoiceHeader = {
   // Procas's 10014.
   jobNumber: "T4567",
   agreementLine: "6M8213 General Engineering Services",
+  laborLocation: "field",
+  totalBudget: 2588054.11,
 };
 
 export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
@@ -104,6 +122,8 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
     ...PARSONS_SEND_TO,
     workPlanNo: "B.40-02-001",
     title: "Provide Project Management and Support for Mechanical, Train Control, & Communication Projects",
+    totalBudget: 363069.55,
+    billsByBartProject: "invoices",
     agreementLine: "6M8146 PM Support for Electrical &Train Control Projects",
   },
   // BART / Parsons — Hashmatullah Ahmadzai, work plan B.55.
@@ -111,6 +131,8 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
     ...PARSONS_SEND_TO,
     workPlanNo: "B.55",
     title: "Scheduling Support for Capital Projects",
+    totalBudget: 294815.33,
+    billsByBartProject: "invoices",
     agreementLine: "6M8146 – Scheduling Support for Capital Projects",
   },
   // BART / WSP — De'Andre Rashad, work plan A.03.01.
@@ -122,6 +144,9 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
     bartProjectNumbers: "15EJRRC, 15EJRRK, 49GH006",
     workPlanNo: "A.03.01",
     title: "Material Procurement & Warehouse Management Support",
+    // Three PO lines: 452,143.97 + 452,143.97 + 301,429.30.
+    totalBudget: 1205717.24,
+    billsByBartProject: "lines",
   },
   // BART / WSP — Imani Lawson, work plan A.05-01.
   "10013.TO02": {
@@ -132,6 +157,7 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
     bartProjectNumbers: "60C004",
     workPlanNo: "A.05-01",
     title: "MOCC & LMA HVAC",
+    totalBudget: 448277.84,
   },
   // BART / WSP — Jordy Peralta, work plan A.04-02.
   "10013.TO03": {
@@ -142,6 +168,7 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
     bartProjectNumbers: "47CJ016, 20LT008",
     workPlanNo: "A.04-02",
     title: "Assistant Resident Engineer / Inspector for Train Control and Communication Projects",
+    totalBudget: 156185.34,
   },
   // BART / T.Y. Lin — Procas carries it as both 10014 and 10014.01.
   "10014": TYLIN,

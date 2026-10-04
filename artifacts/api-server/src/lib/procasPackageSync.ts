@@ -14,6 +14,7 @@ import { resolveEmployeeIdByName } from "./employeeResolve";
 import { effectiveRate, loadRateChanges } from "./employeeRates";
 import { recordAudit } from "./audit";
 import { markProcasSynced } from "./procas";
+import { knownHeader } from "./knownInvoiceHeaders";
 
 export interface PullHoursResult {
   ok: boolean;
@@ -143,7 +144,76 @@ function buildRateLookup(
   return rates;
 }
 
+/**
+ * Above this, a Procas billing rate is taken to be a LOADED rate.
+ *
+ * Procas's Billing Setup holds two different kinds of number under the same
+ * column. For some projects it is the direct rate the employee is paid
+ * (10013.TO01 Warehouse Specialist, $74.00). For others it is what the prime is
+ * charged per hour with fringe, overhead and fee already rolled in (10014 Field
+ * Inspector, $197.73 — which is $83.00 x 2.2058 x 1.08). BART invoices always
+ * show the direct rate and add the burden on the page (Julie, Aug 26: "for
+ * BART, we always show them as the direct rate that we're actually paying the
+ * employee"), so a loaded rate has to be unwound or the invoice burdens it a
+ * second time: the August T.Y. Lin package came out at $348,167.93 against a
+ * real figure around $150,000.
+ *
+ * Nothing in the feed says which kind a rate is, so it is told apart by size.
+ * The highest direct rate on any invoice she has sent us is $140.00 and the
+ * lowest loaded rate in Procas is $146.72. If a rate ever lands on the wrong
+ * side of this line, this is the one number to move.
+ */
+export const LOADED_RATE_FLOOR = 145;
+
+type BurdenRates = Partial<
+  Pick<WorkPlan, "fringeRate" | "overheadRate" | "fixedFeeRate" | "fccmRate">
+>;
+
+/**
+ * What one dollar of direct labor becomes on the invoice: labor plus fringe and
+ * overhead, the fixed fee on all of that, and FCCM on the labor alone.
+ * T.Y. Lin: 2.2058 x 1.08 = 2.3823. WSP: 2.2058 x 1.08 + 0.0039 = 2.3862.
+ */
+export function burdenMultiplier(wp: BurdenRates): number {
+  const pct = (v: number | null | undefined) => (Number.isFinite(v) ? Number(v) / 100 : 0);
+  return (
+    (1 + pct(wp.fringeRate) + pct(wp.overheadRate)) * (1 + pct(wp.fixedFeeRate)) + pct(wp.fccmRate)
+  );
+}
+
+/**
+ * The direct pay rate behind a Procas billing rate, or the rate itself when it
+ * is already a direct rate (or the work plan has no burden to unwind).
+ */
+export function directRate(billingRate: number, wp: BurdenRates): number {
+  const multiplier = burdenMultiplier(wp);
+  if (billingRate < LOADED_RATE_FLOOR || multiplier <= 1.5) return billingRate;
+  return Math.round((billingRate / multiplier + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * The straight-time labor category an overtime one belongs to: "FI-O" → "FI",
+ * "RE1-O" → "RE1", "INSP-D" → "INSP". Procas prices overtime as its own
+ * category (the loaded base plus the unburdened premium); the invoice bills the
+ * hours at the base rate and the premium as a separate line.
+ */
+export function baseLcItem(lcItem: string): string {
+  return lcItem.replace(/-(O|OT|D|DT|NO|ND)$/i, (m) => (/^-N/i.test(m) ? "-N" : ""));
+}
+
+/**
+ * The BART project a Procas leaf project is for, read from its description:
+ * "WSP CM Services for BART 15EJRRC" → 15EJRRC, "20LN003 Parsons BART TO
+ * B.40-02-001 LNP" → 20LN003. Empty for a leaf that is not project-specific
+ * ("Parsons BART TO B.55-01"). BART project numbers are two digits, two
+ * letters and three more characters; an agreement number (6M8146) is not one.
+ */
+export function bartProjectOf(projectDesc: string): string {
+  return /\b(\d{2}[A-Z]{2}[A-Z0-9]{3})\b/.exec(projectDesc.toUpperCase())?.[1] ?? "";
+}
+
 interface AggEntry {
+  bartProject: string;
   weekStart: string;
   weekEnd: string;
   employeeName: string;
@@ -170,7 +240,7 @@ interface AggEntry {
  */
 export async function pullPackageHoursFromProcas(
   pkg: PackageRow,
-  workPlan: Pick<WorkPlan, "procasProject">,
+  workPlan: Pick<WorkPlan, "procasProject"> & BurdenRates,
   creds: ProcasCreds,
 ): Promise<PullHoursResult> {
   const warnings: string[] = [];
@@ -214,6 +284,9 @@ export async function pullPackageHoursFromProcas(
   }
 
   const rateByLc = buildRateLookup(billingItems, pkg.payPeriodStart);
+  // Work plans whose paperwork is kept per BART project get one entry per
+  // project, so the invoice can bill each on its own line (or its own invoice).
+  const byBartProject = !!knownHeader(project)?.billsByBartProject;
 
   // Aggregate daily rows into one entry per Procas week + employee + labor
   // category + pay category, with hours in the right weekday column.
@@ -235,10 +308,12 @@ export async function pullPackageHoursFromProcas(
       toStr(r.PayCodeDesc) || toStr(r.PayCode),
       toStr(r.AccountDesc),
     );
-    const key = `${weekStart}|${name.toLowerCase()}|${lcItem}|${category}`;
+    const bartProject = byBartProject ? bartProjectOf(toStr(r.ProjectDesc)) : "";
+    const key = `${weekStart}|${name.toLowerCase()}|${lcItem}|${category}|${bartProject}`;
     let entry = agg.get(key);
     if (!entry) {
       entry = {
+        bartProject,
         weekStart, weekEnd,
         employeeName: name,
         lcItem,
@@ -296,6 +371,9 @@ export async function pullPackageHoursFromProcas(
   const empByName = new Map(employees.map((e) => [e.name.trim().toLowerCase(), e]));
   const rateChanges = await loadRateChanges(employees.map((e) => e.id));
   const missingRates = new Set<string>();
+  const unloaded = new Map<string, string>();
+  const lcDesc = new Map<string, string>();
+  for (const e of entries) if (e.category === "regular") lcDesc.set(e.lcItem, e.classification);
   const toInsert: InsertTimesheetEntry[] = [];
   // Running tally of pulled hours whose Procas status is not yet finalized, so
   // the package API can surface a durable "N hours not yet approved" signal.
@@ -305,7 +383,23 @@ export async function pullPackageHoursFromProcas(
     if (!week) continue;
     const emp = empByName.get(e.employeeName.trim().toLowerCase());
     const employeeId = emp?.id ?? (await resolveEmployeeIdByName(e.employeeName));
-    let rate = rateByLc.get(e.lcItem) ?? 0;
+    // Overtime and doubletime bill at the straight-time rate of the same
+    // labor category; the premium is the invoice's own separate line.
+    const premium = e.category === "ot" || e.category === "dt";
+    const baseLc = premium ? baseLcItem(e.lcItem) : e.lcItem;
+    const rateLc = premium && rateByLc.has(baseLc) ? baseLc : e.lcItem;
+    if (premium && lcDesc.has(baseLc)) e.classification = lcDesc.get(baseLc)!;
+    let rate = rateByLc.get(rateLc) ?? 0;
+    if (rate > 0) {
+      const direct = directRate(rate, workPlan);
+      if (direct !== rate) {
+        unloaded.set(
+          `${e.classification}|${rate}`,
+          `${e.classification} $${rate.toFixed(2)} → $${direct.toFixed(2)}`,
+        );
+        rate = direct;
+      }
+    }
     if (rate <= 0) {
       const empRow = emp ?? employees.find((x) => x.id === employeeId);
       if (empRow) {
@@ -329,10 +423,16 @@ export async function pullPackageHoursFromProcas(
       rate,
       source: "procas",
       approved,
+      taskNo: e.bartProject || null,
       notes: e.lcItem ? `Procas LC ${e.lcItem}` : null,
     });
   }
   unapprovedHours = Math.round((unapprovedHours + Number.EPSILON) * 100) / 100;
+  if (unloaded.size > 0) {
+    warnings.push(
+      `Procas lists loaded billing rates for this project. The invoice shows the direct pay rate and adds the burden itself, so each was divided by this work plan's multiplier (${burdenMultiplier(workPlan).toFixed(4)}): ${[...unloaded.values()].join("; ")}. If a rate is wrong, change it on the timesheet entry.`,
+    );
+  }
   if (missingRates.size > 0) {
     warnings.push(
       `No billing rate found for: ${[...missingRates].join(", ")} — the rate was left at $0. Set it on the entry or the employee.`,

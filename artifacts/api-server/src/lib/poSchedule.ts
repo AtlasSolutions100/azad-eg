@@ -24,6 +24,15 @@ export interface PoLine {
   lineNo: number | null;
   bartProjectNo: string | null;
   poAmount: number;
+  /**
+   * What her last invoice we hold shows billed to date on this line, part by
+   * part. A line's history cannot be worked out from the work plan's total
+   * alone (the three A.03.01 lines are not billed in proportion to their
+   * budgets), so the split starts from the last one she printed.
+   */
+  anchor?: { total: number; hours: number; labor: number; fringe: number; fee: number; fccm: number };
+  /** How her Invoice Detail splits this line's budget. */
+  budgetSplit?: { labor: number; fringe: number };
 }
 
 export interface AllocatedPoLine extends PoLine {
@@ -54,6 +63,27 @@ export const KNOWN_PO_SCHEDULES: Record<string, PoLine[]> = {
     { workScopeNo: "B.50-03", poNo: "1638681", lineNo: 3, bartProjectNo: "15TC012/PJMGT", poAmount: 76862.21 },
     { workScopeNo: "B.50-03", poNo: "1638681", lineNo: 4, bartProjectNo: "15CQ002/PJMGT", poAmount: 42701.23 },
     { workScopeNo: "B.50-03", poNo: "1638681", lineNo: 5, bartProjectNo: "15QN004/PJMGT", poAmount: 42701.23 },
+  ],
+  // 10013.TO01 — WSP, PO 66869, work plan A.03.01 (De'Andre Rashad), from
+  // invoice A.03.01-23 (period ending 6/30/2026). Three lines, one per BART
+  // project, 37.5% / 37.5% / 25% of the 1,205,717.24 budget. The anchors are
+  // that invoice's "Amount To Date" column.
+  "10013.TO01": [
+    {
+      workScopeNo: "A.03.01", poNo: "66869", lineNo: 1, bartProjectNo: "15EJRRC", poAmount: 452143.97,
+      anchor: { total: 313358.75, hours: 1844.5, labor: 137962.6, fringe: 152129.79, fee: 23207.4, fccm: 58.96 },
+      budgetSplit: { labor: 200311.88, fringe: 218339.95 },
+    },
+    {
+      workScopeNo: "A.03.01", poNo: "66869", lineNo: 2, bartProjectNo: "15EJRRK", poAmount: 452143.97,
+      anchor: { total: 309865.65, hours: 1848, labor: 136467, fringe: 150394.32, fee: 22948.92, fccm: 55.41 },
+      budgetSplit: { labor: 200311.88, fringe: 218339.95 },
+    },
+    {
+      workScopeNo: "A.03.01", poNo: "66869", lineNo: 3, bartProjectNo: "49GH006", poAmount: 301429.3,
+      anchor: { total: 181803.33, hours: 1118, labor: 79461.2, fringe: 88806.8, fee: 13461.44, fccm: 73.89 },
+      budgetSplit: { labor: 133541.25, fringe: 145559.96 },
+    },
   ],
 };
 
@@ -127,8 +157,19 @@ export function allocateAcrossPoLines(
     if (!foundActive) {
       foundActive = true;
       active = group;
-      const parts = splitProRata(remaining, group.indexes.map((i) => lines[i].poAmount));
-      group.indexes.forEach((i, n) => (out[i].previousInvoiced = parts[n]));
+      // Lines whose last printed to-date figures we hold start from those;
+      // only what has been billed since is shared out.
+      const anchors = group.indexes.map((i) => lines[i].anchor?.total ?? 0);
+      const anchored = round2(anchors.reduce((s, a) => s + a, 0));
+      const useAnchors =
+        group.indexes.every((i) => lines[i].anchor != null) && remaining >= anchored - 0.005;
+      const parts = splitProRata(
+        useAnchors ? round2(remaining - anchored) : remaining,
+        group.indexes.map((i) => lines[i].poAmount),
+      );
+      group.indexes.forEach(
+        (i, n) => (out[i].previousInvoiced = round2(parts[n] + (useAnchors ? anchors[n] : 0))),
+      );
       remaining = 0;
     }
   }

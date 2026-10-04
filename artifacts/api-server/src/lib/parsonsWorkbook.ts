@@ -428,7 +428,14 @@ function fillTimesheet(
   person: ParsonsContributor,
 ): void {
   const wp = ctx.workPlan;
-  const contractLabel = `${wp.agreementNo ?? wp.jobNumber ?? ""}-${wp.code}`.replace(/^-|-$/g, "").trim();
+  // Hers reads "6M8146-B.40-01 20LK001" — the BART project after the work
+  // plan — when the invoice is for one project.
+  const contractLabel = [
+    `${wp.agreementNo ?? wp.jobNumber ?? ""}-${wp.code}`.replace(/^-|-$/g, "").trim(),
+    ctx.bartProject ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const saturday = saturdayOnOrBefore(toDate(week.weekStart));
 
   setVal(ws, "D6", person.name);
@@ -477,7 +484,12 @@ function fillTimesheet(
   let grandTotal = 0;
   for (const r of [9, 10, 11, 13, 14]) {
     const a = acc.get(r);
-    if (r <= 11) setVal(ws, `B${r}`, contractLabel);
+    if (r <= 11) {
+      setVal(ws, `B${r}`, contractLabel);
+      // With a BART project on the end the label outgrows its cell.
+      const label = ws.getCell(`B${r}`);
+      label.alignment = { ...label.alignment, wrapText: false, shrinkToFit: true };
+    }
     setVal(ws, `D${r}`, rowLabel[r]);
     let rowTotal = 0;
     for (const col of DAY_COLS) {
@@ -817,6 +829,12 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   if (wp.contactPerson) setVal(invoice, "E16", wp.contactPerson);
   // Billing summary (sample keeps this-period / previous as negatives so the
   // running SUM yields the remaining balance).
+  // The summary's first line is headed by the work plan number, typed into the
+  // reference invoice as "B.55" — which every other Parsons work plan then
+  // printed above its own budget.
+  setVal(invoice, "C33", wp.code || "");
+  // An invoice for one BART project names it in the Project No. box.
+  if (ctx.bartProject) setVal(invoice, "L19", ctx.bartProject);
   setVal(invoice, "J33", budget);
   setVal(invoice, "J34", -totalThisPeriod);
   setVal(invoice, "J35", -previouslyBilled);

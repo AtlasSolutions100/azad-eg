@@ -14,7 +14,7 @@ import {
   stripBrokenDefinedNames,
   settleTimesheetSignature,
 } from "./excel";
-import { agreementLine } from "./knownInvoiceHeaders";
+import { agreementLine, knownHeader } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -197,7 +197,9 @@ interface TylinLaborRow {
   classification: string;
   location: "home" | "field";
   rate: number;
-  hours: number; // billable hours (regular + night + OT + DT), billed at base
+  /** "" for straight time; OT/DT hours get their own "<name>-OT" line. */
+  premium: "" | "ot" | "dt";
+  hours: number; // billable hours at the base rate
   amount: number; // round2(hours × rate) — direct labor at base rate
 }
 
@@ -218,6 +220,8 @@ export interface TylinPremiumRow {
   kind: "ot" | "dt";
   hours: number;
   amount: number;
+  /** Premium per hour (0.5 or 1.0 x the base rate), for the build-up label. */
+  perHour: number;
 }
 
 export interface TylinFinancials {
@@ -241,6 +245,19 @@ export interface TylinFinancials {
   overheadFrac: number;
   feeFrac: number;
   fccmFrac: number;
+}
+
+/**
+ * "Field Inspector-Overtime" / "Resident Engineer1- Ov" → the classification
+ * the straight time carries. Procas keeps overtime under its own labor
+ * category; her labor attachment lists it under the person's normal one.
+ */
+export function baseClassification(classification: string): string {
+  return (
+    classification
+      .replace(/\s*[-–]\s*(overtime|over\s*time|double\s*time|doubletime|ov|ot|dt)\b.*$/i, "")
+      .trim() || classification
+  );
 }
 
 function isBillable(category: string): boolean {
@@ -267,6 +284,15 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
   const feeFrac = (wp.fixedFeeRate ?? 0) / 100;
   const fccmFrac = (wp.fccmRate ?? 0) / 100;
 
+  // Her T.Y. Lin invoice bills every hour under Field (the staff sit at the
+  // BART Police HQ site), and Procas does not say where an hour was worked, so
+  // a pulled timesheet arrived as Home and the whole invoice printed in the
+  // wrong block. A work plan whose reference invoice is all one location says
+  // so in its known header.
+  const forcedLocation =
+    knownHeader((wp as { procasProject?: string | null }).procasProject, wp.jobNumber)
+      ?.laborLocation ?? null;
+
   // One labor row per (employee, location, rate). All billable hours
   // (straight + night + OT + DT) bill at the base rate; the OT/DT *premium* is
   // computed separately below and added unburdened.
@@ -274,9 +300,10 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
   const premiumMap = new Map<string, TylinPremiumRow>();
   const addPremium = (name: string, kind: "ot" | "dt", hrs: number, amount: number) => {
     const k = `${name.toLowerCase()}|${kind}`;
-    const row = premiumMap.get(k) ?? { employeeName: name, kind, hours: 0, amount: 0 };
+    const row = premiumMap.get(k) ?? { employeeName: name, kind, hours: 0, amount: 0, perHour: 0 };
     row.hours = round2(row.hours + hrs);
     row.amount = round2(row.amount + amount);
+    row.perHour = row.hours > 0 ? round2(row.amount / row.hours) : 0;
     premiumMap.set(k, row);
   };
   let otPremiumRaw = 0;
@@ -284,17 +311,23 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
   for (const e of ctx.entries) {
     const hrs = entryHours(e);
     if (hrs <= 0) continue;
-    const location: "home" | "field" = e.location === "field" ? "field" : "home";
+    const location: "home" | "field" =
+      forcedLocation ?? (e.location === "field" ? "field" : "home");
     if (isBillable(e.category)) {
-      const key = `${contributorKey(e)}|${location}|${e.rate}`;
+      // Overtime prints as its own line, "Ryan Harper-OT", under the same
+      // classification and at the same base rate as the straight time; the
+      // premium half is billed separately (see premiumRows).
+      const premium: "" | "ot" | "dt" = e.category === "ot" ? "ot" : e.category === "dt" ? "dt" : "";
+      const key = `${contributorKey(e)}|${location}|${e.rate}|${premium}`;
       const row =
         rowMap.get(key) ??
         ({
           key,
-          employeeName: e.employeeName,
-          classification: e.classification,
+          employeeName: premium ? `${e.employeeName}-${premium.toUpperCase()}` : e.employeeName,
+          classification: baseClassification(e.classification),
           location,
           rate: e.rate,
+          premium,
           hours: 0,
           amount: 0,
         } as TylinLaborRow);
@@ -316,7 +349,8 @@ export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials 
   laborRows.sort(
     (a, b) =>
       (a.location === b.location ? 0 : a.location === "home" ? -1 : 1) ||
-      a.employeeName.localeCompare(b.employeeName) ||
+      a.employeeName.replace(/-(OT|DT)$/, "").localeCompare(b.employeeName.replace(/-(OT|DT)$/, "")) ||
+      a.premium.localeCompare(b.premium) ||
       b.amount - a.amount,
   );
 
@@ -571,17 +605,34 @@ export interface TylinBuildResult {
  */
 const LABOR_COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const;
 
+const LABOR_STYLE_COLS = ["A", "B", "C", "D", "E"] as const;
+/** A reference labor line whose look (10pt, $ formats) every line takes. */
+const LABOR_STYLE_ROW = 18;
+
 /** Writes one Sub1 Labor location block (rows start..end) and its subtotal. */
 function writeLaborBlock(
   ws: ExcelJS.Worksheet,
   fin: TylinFinancials,
   location: "home" | "field",
   block: { start: number; end: number; hoursSubtotal: string; amountSubtotal: string },
+  look: Array<Partial<ExcelJS.Style>>,
 ): void {
+  // The reference rows are a patchwork: some are hidden (staff who had left by
+  // the time Julie sent it), and their fonts run 10, 11 and 12 point. Lines
+  // written into them inherited both — Sarah Boyd's overtime landed on a
+  // hidden row, so it was in the subtotal but not on the page, and the visible
+  // lines printed in three sizes. Every line now takes one row's look and is
+  // shown; rows with nothing on them are hidden, bar one for breathing room.
   for (let r = block.start; r <= block.end; r++) {
     for (const col of LABOR_COLS) clearCell(ws, `${col}${r}`);
   }
   const rows = fin.laborRows.filter((r) => r.location === location);
+  for (let r = block.start; r <= block.end; r++) {
+    LABOR_STYLE_COLS.forEach((col, i) => {
+      ws.getCell(`${col}${r}`).style = JSON.parse(JSON.stringify(look[i]));
+    });
+    ws.getRow(r).hidden = r - block.start > Math.max(rows.length, 1);
+  }
   const cap = block.end - block.start + 1;
   let hours = 0;
   let amount = 0;
@@ -753,12 +804,28 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   }
   const otHrs = round2(otHours(ctx));
   const dtHrs = round2(dtHours(ctx));
-  setVal(subinv, "C29", "OT Premium (0.5 x base rate)");
-  setVal(subinv, "F29", otHrs);
-  setVal(subinv, "H29", fin.otPremium);
-  setVal(subinv, "C30", "DT Premium (1.0 x base rate)");
-  setVal(subinv, "F30", dtHrs);
-  setVal(subinv, "H30", fin.dtPremium);
+  // Hers names each person: "SS OT Premium(Ryan) 41.50/HR HRS   24   996.00".
+  // There are four rows; more people than that fall back to one line per kind.
+  const premiumLines = fin.premiumRows.filter((r) => r.amount > 0);
+  if (premiumLines.length > 0 && premiumLines.length <= 4) {
+    premiumLines.forEach((p, i) => {
+      const r = 29 + i;
+      setVal(
+        subinv,
+        `C${r}`,
+        `SS ${p.kind.toUpperCase()} Premium(${firstNameOf(p.employeeName)}) ${p.perHour.toFixed(2)}/HR HRS`,
+      );
+      setVal(subinv, `F${r}`, p.hours);
+      setVal(subinv, `H${r}`, p.amount);
+    });
+  } else {
+    setVal(subinv, "C29", "OT Premium (0.5 x base rate)");
+    setVal(subinv, "F29", otHrs);
+    setVal(subinv, "H29", fin.otPremium);
+    setVal(subinv, "C30", "DT Premium (1.0 x base rate)");
+    setVal(subinv, "F30", dtHrs);
+    setVal(subinv, "H30", fin.dtPremium);
+  }
   setVal(subinv, "H33", round2(fin.otPremium + fin.dtPremium));
   // Fixed Fee (rows 34-39). E35 = fee fraction; H35 = ROUND(fee).
   setVal(subinv, "E35", fin.feeFrac);
@@ -777,7 +844,8 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   // The last three template formulas on the build-up: two hour/rate subtotals
   // and the subconsultant fee leaf, all reading empty cells.
   setVal(subinv, "D10", 0);
-  setVal(subinv, "D14", round2(fin.fringeFrac + fin.overheadFrac));
+  // Not rounded: 1.2058 rounded to the cent printed as "121.00%".
+  setVal(subinv, "D14", fin.fringeFrac + fin.overheadFrac);
   setVal(subinv, "H36", 0);
 
   // Previously-billed column I decomposition. We only carry a scalar forward,
@@ -803,18 +871,24 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   // -- 3. Sub1 Labor (per-employee lines). Clear both blocks, then write rows.
   setVal(sublabor, "E1", invoiceDate ?? "");
   setVal(sublabor, "E2", invoiceNo);
-  writeLaborBlock(sublabor, fin, "home", {
-    start: 6,
-    end: 12,
-    hoursSubtotal: "C13",
-    amountSubtotal: "E13",
-  });
-  writeLaborBlock(sublabor, fin, "field", {
-    start: 16,
-    end: 34,
-    hoursSubtotal: "C35",
-    amountSubtotal: "E35",
-  });
+  const laborLook = LABOR_STYLE_COLS.map((col) =>
+    JSON.parse(JSON.stringify(sublabor.getCell(`${col}${LABOR_STYLE_ROW}`).style)),
+  );
+  // Row 6 is the "Home" heading (as row 14 is "Field"); the lines start under it.
+  writeLaborBlock(
+    sublabor,
+    fin,
+    "home",
+    { start: 7, end: 12, hoursSubtotal: "C13", amountSubtotal: "E13" },
+    laborLook,
+  );
+  writeLaborBlock(
+    sublabor,
+    fin,
+    "field",
+    { start: 16, end: 34, hoursSubtotal: "C35", amountSubtotal: "E35" },
+    laborLook,
+  );
   // TOTAL LABOR (row 38).
   const totalLaborHours = round2(fin.laborRows.reduce((s, r) => s + r.hours, 0));
   const totalLaborAmount = round2(fin.home.directLabor + fin.field.directLabor);
@@ -850,8 +924,21 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
     for (let r = ODC_FIRST_ROW; r <= ODC_LAST_ROW; r++) {
       for (const col of ["A", "B", "C", "D", "E", "F", "G"]) clearCell(odcs, `${col}${r}`);
     }
-    const vendor = wp.client || wp.sendToCompany || "";
+    // Her table names BART as the vendor on every overtime line.
+    const vendor = "BART";
     const premiums = fin.premiumRows.filter((r) => r.amount > 0);
+    // Eight of the ten detail rows are hidden in the reference workbook (it
+    // shows only the two people who had overtime that month). The lines were
+    // written into rows 7 and 8, both hidden, so the table printed empty above
+    // a grand total — which is what Julie's "is this meant to be blank?" was.
+    const odcCols = ["A", "B", "C", "D", "E", "F", "G"];
+    const odcLook = odcCols.map((col) => JSON.parse(JSON.stringify(odcs.getCell(`${col}9`).style)));
+    for (let r = ODC_FIRST_ROW; r <= ODC_LAST_ROW; r++) {
+      odcCols.forEach((col, i) => {
+        odcs.getCell(`${col}${r}`).style = JSON.parse(JSON.stringify(odcLook[i]));
+      });
+      odcs.getRow(r).hidden = r - ODC_FIRST_ROW >= premiums.length;
+    }
     premiums.slice(0, ODC_LAST_ROW - ODC_FIRST_ROW + 1).forEach((row, i) => {
       const r = ODC_FIRST_ROW + i;
       setVal(odcs, `A${r}`, i + 1);
@@ -918,12 +1005,19 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
       `Cost Forecast Completion: Current approved budget is ${money(budget)}. ` +
       `Through this invoice, ${money(totalToDate)} ` +
       `(${budget > 0 ? ((totalToDate / budget) * 100).toFixed(1) : "0.0"}%) has been billed. `;
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        const v = cell.value as { formula?: string } | null;
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        const v = cell.value as { formula?: string } | string | null;
         if (v && typeof v === "object" && typeof v.formula === "string" &&
             v.formula.includes("Cost Forecast Completion")) {
           setVal(ws, cell.address, forecast);
+          // Two lines of text in a one-line row cut the sentence off mid-word.
+          row.height = 30;
+        }
+        // The signature block's date sits above its "Date" caption and was a
+        // typed 7/8/2026 from the reference invoice.
+        if (v === "Date" && rowNumber > 20 && reportDate) {
+          setVal(ws, ws.getCell(rowNumber - 1, colNumber).address, reportDate);
         }
       });
     });

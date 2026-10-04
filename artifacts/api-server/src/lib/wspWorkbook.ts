@@ -13,6 +13,7 @@ import {
   settleTimesheetSignature,
 } from "./excel";
 import { knownHeader } from "./knownInvoiceHeaders";
+import { buildWspLinesWorkbook, isWspLinesForm } from "./wspLinesWorkbook";
 import { contributorKey } from "./packageMappers";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
@@ -1053,6 +1054,14 @@ function writeLaborBlock(
   setVal(ws, `H${block.subtotal}`, round2(billed));
 }
 
+/**
+ * WSP has two forms: the single-line one built here, and the one for a work
+ * plan billed against several PO lines (see wspLinesWorkbook).
+ */
+function buildForForm(ctx: PackageDocContext): Promise<{ wb: ExcelJS.Workbook }> {
+  return isWspLinesForm(ctx) ? buildWspLinesWorkbook(ctx) : buildWspWorkbook(ctx);
+}
+
 function safeSlug(ctx: PackageDocContext): string {
   const num = ctx.pkg.invoiceNumber || `PKG-${ctx.pkg.id}`;
   return num.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -1061,7 +1070,7 @@ function safeSlug(ctx: PackageDocContext): string {
 /** Writes the client-ready WSP Excel workbook (Invoice as the first tab). */
 export async function generateWspWorkbookFile(ctx: PackageDocContext): Promise<string> {
   ensureDirs();
-  const { wb } = await buildWspWorkbook(ctx);
+  const { wb } = await buildForForm(ctx);
   const outPath = path.resolve(generatedDir, `InvoicePackage_${safeSlug(ctx)}_${Date.now()}.xlsx`);
   await wb.xlsx.writeFile(outPath);
   return outPath;
@@ -1075,7 +1084,7 @@ export async function generateWspWorkbookFile(ctx: PackageDocContext): Promise<s
  */
 export async function generateWspPdfSource(ctx: PackageDocContext): Promise<string> {
   ensureDirs();
-  const { wb } = await buildWspWorkbook(ctx);
+  const { wb } = await buildForForm(ctx);
   const outPath = path.resolve(
     generatedDir,
     `InvoicePackagePdfSrc_${safeSlug(ctx)}_${Date.now()}.xlsx`,

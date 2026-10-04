@@ -22,11 +22,17 @@ export async function applyKnownInvoiceHeaders(): Promise<number> {
         const known = header[field];
         if (known && !String(plan[field] ?? "").trim()) changes[field] = known;
       }
-      if (Object.keys(changes).length === 0) continue;
-      await db.update(workPlansTable).set(changes).where(eq(workPlansTable.id, plan.id));
+      // The budget is on her invoice too. A Procas import leaves it at 0, and
+      // every "% expended" and "amount remaining" then printed as 0 / negative.
+      const budget = header.totalBudget && !(plan.totalBudget > 0) ? header.totalBudget : null;
+      if (Object.keys(changes).length === 0 && budget == null) continue;
+      await db
+        .update(workPlansTable)
+        .set(budget == null ? changes : { ...changes, totalBudget: budget })
+        .where(eq(workPlansTable.id, plan.id));
       touched += 1;
       logger.info(
-        { workPlan: plan.code, filled: Object.keys(changes) },
+        { workPlan: plan.code, filled: [...Object.keys(changes), ...(budget == null ? [] : ["totalBudget"])] },
         "Filled blank invoice header fields from the work plan's reference invoice",
       );
     }

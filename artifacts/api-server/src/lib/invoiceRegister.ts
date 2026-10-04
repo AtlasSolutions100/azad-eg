@@ -45,9 +45,17 @@ export const INVOICE_REGISTER: Record<string, RegisterEntry> = {
   },
   // BART / Parsons — Narmadha Gopalasamy. Her sheet lists one file per BART
   // project (20CE002, 20LN003, …) under this number, so no single file name.
-  "10009.02": { billingCycle: "last_friday", julyInvoiceNumber: "B.40-02-11" },
+  "10009.02": {
+    billingCycle: "last_friday",
+    julyInvoiceNumber: "B.40-02-11",
+    fileNameTemplate: "{MM}-{YYYY}-BART 6M8146-Parsons-B.40-02-001 Invoice_AZAD-{N}",
+  },
   // BART / Parsons — Hashmatullah Ahmadzai (likewise one file per project).
-  "10009.03": { billingCycle: "last_friday", julyInvoiceNumber: "B.55-10" },
+  "10009.03": {
+    billingCycle: "last_friday",
+    julyInvoiceNumber: "B.55-10",
+    fileNameTemplate: "{MM}-{YYYY}-BART 6M8146-Parsons-B55 Invoice_AZAD-{N}",
+  },
   // BART / WSP — De'Andre Rashad
   "10013.TO01": {
     billingCycle: "last_friday",

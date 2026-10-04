@@ -214,7 +214,12 @@ describe("buildTylinWorkbook", () => {
     expect(num(sc, "H12")).toBeCloseTo(79560.70974, 4);
     expect(num(sc, "H35")).toBeCloseTo(11643.39, 2);
     expect(num(sc, "D12")).toBeCloseTo(1.2058, 6);
-    expect(num(sc, "H29")).toBeCloseTo(1366.8, 2); // aggregate OT premium
+    // One premium line per person, as on her page: Ryan 996.00, Shane 370.80.
+    expect(sc.getCell("C29").value).toBe("SS OT Premium(Ryan) 41.50/HR HRS");
+    expect(num(sc, "H29")).toBeCloseTo(996, 2);
+    expect(sc.getCell("C30").value).toBe("SS OT Premium(Shane) 46.35/HR HRS");
+    expect(num(sc, "H30")).toBeCloseTo(370.8, 2);
+    expect(num(sc, "H33")).toBeCloseTo(1366.8, 2); // Total Subconsultants
   });
 
   it("writes per-employee labor lines on Sub1 Labor with the field subtotal", () => {

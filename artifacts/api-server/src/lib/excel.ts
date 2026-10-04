@@ -845,7 +845,12 @@ const SINGLE_PAGE_FORMS = new Set(
  */
 function isSinglePageForm(sheetName: string): boolean {
   const name = sheetName.toLowerCase();
-  return SINGLE_PAGE_FORMS.has(name) || name.startsWith("progress report");
+  return (
+    SINGLE_PAGE_FORMS.has(name) ||
+    name.startsWith("progress report") ||
+    // The multi-line WSP form: "Prime Calc 1-1", "Prime Labor 2-1", "Prime Overall Inv".
+    name.startsWith("prime ")
+  );
 }
 
 export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
@@ -976,6 +981,15 @@ function userInstallationUrl(): string {
 }
 
 async function convertToPdfOnce(xlsxPath: string): Promise<string> {
+  return (await convertBatchOnce([xlsxPath]))[0];
+}
+
+/**
+ * Converts several workbooks in ONE LibreOffice run. Starting the program is
+ * most of what a conversion costs, so a package that exports as eleven
+ * invoices takes about as long as one that exports as two.
+ */
+async function convertBatchOnce(xlsxPaths: string[]): Promise<string[]> {
   ensureDirs();
   const bin = resolveSoffice();
   try {
@@ -993,12 +1007,12 @@ async function convertToPdfOnce(xlsxPath: string): Promise<string> {
         "pdf:calc_pdf_Export",
         "--outdir",
         generatedDir,
-        xlsxPath,
+        ...xlsxPaths,
       ],
       {
         // Generous timeout: the very first conversion warms the profile and can
         // take ~40s; subsequent ones are fast.
-        timeout: 180000,
+        timeout: 180000 + 20000 * xlsxPaths.length,
         maxBuffer: 1024 * 1024 * 32,
       },
     );
@@ -1007,11 +1021,27 @@ async function convertToPdfOnce(xlsxPath: string): Promise<string> {
     throw new Error("PDF conversion failed");
   }
 
-  const pdfPath = path.resolve(generatedDir, path.basename(xlsxPath).replace(/\.xlsx$/i, ".pdf"));
-  if (!fs.existsSync(pdfPath)) {
-    throw new Error("PDF conversion produced no output");
-  }
-  return pdfPath;
+  return xlsxPaths.map((xlsxPath) => {
+    const pdfPath = path.resolve(generatedDir, path.basename(xlsxPath).replace(/\.xlsx$/i, ".pdf"));
+    if (!fs.existsSync(pdfPath)) {
+      throw new Error("PDF conversion produced no output");
+    }
+    return pdfPath;
+  });
+}
+
+/** `convertToPdf` for several workbooks at once; same queue, same caveats. */
+export async function convertManyToPdf(xlsxPaths: string[]): Promise<string[]> {
+  if (xlsxPaths.length === 0) return [];
+  const task = pdfQueue.then(
+    () => convertBatchOnce(xlsxPaths),
+    () => convertBatchOnce(xlsxPaths),
+  );
+  pdfQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
 }
 
 /**

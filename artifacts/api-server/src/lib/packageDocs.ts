@@ -3,7 +3,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { ZipArchive } from "archiver";
 import { templatesDir, generatedDir, ensureDirs } from "./paths";
-import { convertToPdf, stripBrokenDefinedNames } from "./excel";
+import { convertManyToPdf, convertToPdf, stripBrokenDefinedNames } from "./excel";
+import { knownHeader } from "./knownInvoiceHeaders";
 import { buildPackageRollup, contributorKey } from "./packageMappers";
 import { pruneGeneratedFiles } from "./generatedCleanup";
 import { logger } from "./logger";
@@ -45,6 +46,11 @@ export interface PackageDocContext {
    * a timesheet that is not the template signer's is left to be signed.
    */
   employeeSignatures?: Record<string, string>;
+  /**
+   * Set when this context is one BART project's share of a package that
+   * exports as an invoice per project (see `invoiceParts`).
+   */
+  bartProject?: string;
 }
 
 const TEMPLATES: Record<PackageDocKind, string> = {
@@ -925,6 +931,51 @@ export function packageExportFileName(ctx: PackageDocContext, format: "xlsx" | "
   return `${sentAs ?? `${docFileBase(ctx)}_InvoicePackage`}.${format}`;
 }
 
+const projectKey = (v: string | null | undefined) =>
+  (v ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+
+/**
+ * The invoices a package exports as.
+ *
+ * One, for almost every work plan. Parsons is the exception: from July 2026
+ * Julie's register numbers a separate invoice for each BART project the work
+ * plan was charged to — "B.40-02-11 (20CE002)", "B.40-02-11 (20LN003)" — each
+ * its own file. The pull keeps the BART project on every timesheet entry (its
+ * Task No.), so the package is split along it: one invoice per project, each
+ * carrying only that project's hours, numbered and named her way. Hours booked
+ * to the work plan in general (no project) go on an invoice of their own under
+ * the plain number.
+ *
+ * A package whose entries carry no project at all — typed by hand, or pulled
+ * before the pull kept it — exports as the single invoice it always did.
+ *
+ * The budget and previously-billed figures on each are the work plan's: Procas
+ * holds what was billed per work plan, not per BART project.
+ */
+export function invoiceParts(ctx: PackageDocContext): PackageDocContext[] {
+  const header = knownHeader(ctx.workPlan.procasProject, ctx.workPlan.jobNumber);
+  if (header?.billsByBartProject !== "invoices") return [ctx];
+  const billable = ctx.entries.filter((e) => e.category !== "pto" && e.category !== "holiday");
+  const projects = [...new Set(billable.map((e) => projectKey(e.taskNo)))].sort();
+  if (projects.every((p) => p === "")) return [ctx];
+  return projects.map((project, i) => ({
+    ...ctx,
+    bartProject: project || undefined,
+    pkg: {
+      ...ctx.pkg,
+      invoiceNumber:
+        project && ctx.pkg.invoiceNumber ? `${ctx.pkg.invoiceNumber} (${project})` : ctx.pkg.invoiceNumber,
+    },
+    workPlan: project
+      ? { ...ctx.workPlan, clientProjectNo: project, bartProjectNumbers: project }
+      : ctx.workPlan,
+    // Leave and holiday rows belong to no project; they ride with the first.
+    entries: ctx.entries.filter((e) =>
+      e.category === "pto" || e.category === "holiday" ? i === 0 : projectKey(e.taskNo) === project,
+    ),
+  }));
+}
+
 /**
  * Produces the client-ready two-file export: one multi-tab Excel workbook and
  * one merged multi-page PDF, bundled into a ZIP containing exactly those two
@@ -937,10 +988,28 @@ export async function generatePackageZip(ctx: PackageDocContext): Promise<Packag
   const files: { path: string; name: string; format: "xlsx" | "pdf" }[] = [];
 
   try {
-    const xlsx = await generateCombinedWorkbook(ctx);
-    files.push({ path: xlsx, name: packageExportFileName(ctx, "xlsx"), format: "xlsx" });
-    const pdf = await generateMergedPdf(ctx);
-    files.push({ path: pdf, name: packageExportFileName(ctx, "pdf"), format: "pdf" });
+    const parts = invoiceParts(ctx);
+    if (parts.length > 1) {
+      // One workbook per BART project, converted together. Each workbook is
+      // its own PDF source (the Parsons deliverable has no hidden pages).
+      const workbooks: string[] = [];
+      for (const part of parts) {
+        const xlsx = await generateCombinedWorkbook(part);
+        workbooks.push(xlsx);
+        const stem = packageExportFileName(ctx, "xlsx").replace(/\.xlsx$/, "");
+        const name = part.bartProject ? `${stem} ${part.bartProject}` : stem;
+        files.push({ path: xlsx, name: `${name}.xlsx`, format: "xlsx" });
+      }
+      const pdfs = await convertManyToPdf(workbooks);
+      pdfs.forEach((pdf, i) => {
+        files.push({ path: pdf, name: files[i].name.replace(/\.xlsx$/, ".pdf"), format: "pdf" });
+      });
+    } else {
+      const xlsx = await generateCombinedWorkbook(ctx);
+      files.push({ path: xlsx, name: packageExportFileName(ctx, "xlsx"), format: "xlsx" });
+      const pdf = await generateMergedPdf(ctx);
+      files.push({ path: pdf, name: packageExportFileName(ctx, "pdf"), format: "pdf" });
+    }
 
     await new Promise<void>((resolve, reject) => {
       const output = fs.createWriteStream(zipPath);
