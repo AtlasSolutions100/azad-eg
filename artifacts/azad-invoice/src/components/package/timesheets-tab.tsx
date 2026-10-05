@@ -1,3 +1,4 @@
+import { parseDay } from "@/lib/utils";
 import { useState } from "react";
 import {
   useCreatePackageWeek,
@@ -59,7 +60,7 @@ const CATEGORIES: TimesheetCategory[] = ["regular", "ot", "dt", "night", "holida
 
 function weekDateRange(start: string, end: string): string {
   try {
-    return `${format(new Date(start), "MMM d")} – ${format(new Date(end), "MMM d, yyyy")}`;
+    return `${format(parseDay(start), "MMM d")} – ${format(parseDay(end), "MMM d, yyyy")}`;
   } catch {
     return `${start} – ${end}`;
   }
@@ -457,7 +458,20 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
                           )}
                           {entry.employeeName}
                         </TableCell>
-                        <TableCell>{entry.classification}</TableCell>
+                        <TableCell>
+                          {entry.classification}
+                          {/* The BART project the hours were booked to. A work plan
+                              billed per project (WSP A.03.01, Parsons) gets one row
+                              per project, and without this they look identical. */}
+                          {entry.taskNo && (
+                            <span
+                              className="block text-xs text-muted-foreground"
+                              data-testid={`text-entry-project-${entry.id}`}
+                            >
+                              {entry.taskNo}
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="uppercase">{entry.category}</TableCell>
                         <TableCell className="capitalize">{entry.location}</TableCell>
                         {DAYS.map((d) => (
@@ -664,7 +678,7 @@ export default function TimesheetsTab({ detail }: { detail: PackageDetail }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Task No.</Label>
+              <Label>BART Project / Task No.</Label>
               <Input
                 value={entryForm.taskNo ?? ""}
                 onChange={(e) =>

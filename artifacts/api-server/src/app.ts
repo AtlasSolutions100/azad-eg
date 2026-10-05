@@ -1,3 +1,4 @@
+import { ExportBlockedError } from "./lib/excel";
 import { DB_PUSH_COMMAND, describeDrift, knownSchemaDrift } from "./lib/schemaDrift";
 import express, { type Express } from "express";
 import type { ErrorRequestHandler } from "express";
@@ -75,6 +76,10 @@ export const apiErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
             `deploy was skipped — on the deployment run \`${DB_PUSH_COMMAND}\`, then restart the server.`,
       code: "schema_out_of_date",
     });
+    return;
+  }
+  if (err instanceof ExportBlockedError) {
+    res.status(422).json({ error: err.message, issues: [err.message] });
     return;
   }
   res.status(500).json({ error: "Internal server error" });

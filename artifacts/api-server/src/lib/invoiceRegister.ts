@@ -64,7 +64,12 @@ export const INVOICE_REGISTER: Record<string, RegisterEntry> = {
   },
   // BART / WSP — Imani Lawson. The sheet leaves her period type blank; every
   // other WSP row is last-Friday and Julie described the rule as "by prime".
-  "10013.TO02": { billingCycle: "last_friday", julyInvoiceNumber: "A.05.01-17" },
+  // File name from her June invoice ("06-2026- BART6M8178-WSP-A.05.01-Invoice_AZAD-16").
+  "10013.TO02": {
+    billingCycle: "last_friday",
+    julyInvoiceNumber: "A.05.01-17",
+    fileNameTemplate: "{MM}-{YYYY}-BART6M8178-WSP-A.05.01-Invoice_AZAD-{N}",
+  },
   // BART / WSP — Jordy Peralta
   "10013.TO03": {
     billingCycle: "last_friday",
@@ -72,7 +77,13 @@ export const INVOICE_REGISTER: Record<string, RegisterEntry> = {
     fileNameTemplate: "{MM}-{YYYY}-BART6M8178-WSP-A.04-01-Invoice_AZAD-{N}",
   },
   // BART / T.Y. Lin — "Last day of the month", NOT last Friday.
-  "10014": { billingCycle: "whole_month", julyInvoiceNumber: "6M8213 A.02-01-21" },
+  // The register gives no file name; this is the one her June invoice went
+  // out under ("06-2026-BART6M8213-T.Y.Lin-A.02-01_02-Invoice_AZAD-20").
+  "10014": {
+    billingCycle: "whole_month",
+    julyInvoiceNumber: "6M8213 A.02-01-21",
+    fileNameTemplate: "{MM}-{YYYY}-BART6M8213-T.Y.Lin-A.02-01_02-Invoice_AZAD-{N}",
+  },
 };
 
 /**

@@ -51,7 +51,10 @@ export interface KnownInvoiceHeader {
   sendToExtra?: string;
   /**
    * Where every hour on this work plan is billed, when her invoice has it all
-   * in one block. Procas does not record home vs field.
+   * in one block. Procas does not record home vs field, so a pulled timesheet
+   * arrives as Home — and every BART invoice she sends bills its labor under
+   * Field. On the Parsons form that printed "Field 0.0 Hrs. $0.00" above an
+   * overhead figure, with the hours on a Home line her invoice does not have.
    */
   laborLocation?: "home" | "field";
   /**
@@ -62,12 +65,42 @@ export interface KnownInvoiceHeader {
    * the pull keeps that project on each timesheet entry (its Task No.).
    */
   billsByBartProject?: "lines" | "invoices";
+  /**
+   * The prime this work plan bills through, which decides the invoice form.
+   * The package's own "Prime" is free text a biller may leave blank or word
+   * differently; for a work plan whose invoice we hold, the form is not a
+   * matter of what was typed.
+   */
+  prime?: KnownPrime;
+  /** The agency the work is for. */
+  owner?: string;
+  /**
+   * The indirect burden her invoice applies, in whole percents. Procas holds
+   * none for a project whose billing rates are already loaded (see
+   * LOADED_RATE_FLOOR), so this is what the work plan gets there; elsewhere it
+   * is what a package is checked against.
+   */
+  burden?: Burden;
   // --- stored on the work plan, only while its budget is unset ---
   /** The work plan budget printed on her invoice. */
   totalBudget?: number;
 }
 
+export type KnownPrime = "AECOM" | "WSP" | "Parsons" | "T.Y. Lin";
+
+export interface Burden {
+  fringeRate: number;
+  overheadRate: number;
+  fixedFeeRate: number;
+  fccmRate: number;
+}
+
 const WSP_SEND_TO = {
+  prime: "WSP",
+  owner: "BART",
+  laborLocation: "field",
+  // "Fringe Benefits 120.58%", "Fixed Fee 8.00%", "FCCM Field (0.39% x Direct labor)".
+  burden: { fringeRate: 120.58, overheadRate: 0, fixedFeeRate: 8, fccmRate: 0.39 },
   sendToCompany: "WSP USA INC",
   sendToAddress1: "3260 Lone Tree Way, Suite 104",
   sendToAddress2: "Antioch, CA 94509",
@@ -77,6 +110,11 @@ const WSP_SEND_TO = {
 } as const;
 
 const PARSONS_SEND_TO = {
+  prime: "Parsons",
+  owner: "BART",
+  laborLocation: "field",
+  // "H&B Overhead Pool on Labor 120.58%", fee 8%, FCCM 0.39%.
+  burden: { fringeRate: 0, overheadRate: 120.58, fixedFeeRate: 8, fccmRate: 0.39 },
   sendToCompany: "Parsons Transport Group, Inc",
   sendToAddress1: "555 12th Street, Suite 2130",
   sendToAddress2: "Oakland, CA  94607",
@@ -88,6 +126,10 @@ const PARSONS_SEND_TO = {
 } as const;
 
 const TYLIN: KnownInvoiceHeader = {
+  prime: "T.Y. Lin",
+  owner: "BART",
+  // "Fringe Benefits 120.58%", fee 8%, and no FCCM line.
+  burden: { fringeRate: 120.58, overheadRate: 0, fixedFeeRate: 8, fccmRate: 0 },
   sendToCompany: "T.Y. Lin International + TSE, JV",
   sendToAddress1: "Accounts Payable Department",
   poNumber: "BARTD-0000069210",
@@ -108,6 +150,11 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
   // invoice prints "--" there. The work scope ("B.50-03") comes from the PO
   // schedule rather than from here.
   "10007": {
+    prime: "AECOM",
+    owner: "BART",
+  laborLocation: "field",
+    // "Field OH 120.58%", fee 8%, FCCM 0.39% (invoice B.50-01-30, June 2026).
+    burden: { fringeRate: 0, overheadRate: 120.58, fixedFeeRate: 8, fccmRate: 0.39 },
     sendToCompany: "AECOM",
     sendToAddress1: "300 Lakeside Drive, Suite 400",
     sendToAddress2: "Oakland, CA 94612",
@@ -248,6 +295,37 @@ export function agreementLine(
  */
 export function agreementNumber(agreementNo: string | null | undefined): string {
   return (agreementNo ?? "").trim().split(/\s+/)[0] ?? "";
+}
+
+/**
+ * The prime a package's documents are built for.
+ *
+ * Which invoice form is produced hangs on this, and it used to be read from
+ * the package's free-text "Prime" alone. Left blank — it is optional, and the
+ * first package on a work plan has nothing to suggest it from — every package
+ * fell through to the AECOM form: a T.Y. Lin package then failed to export at
+ * all ("at most 2 billing rates"), and a Parsons or WSP one exported on the
+ * wrong prime's paperwork without a word.
+ *
+ * A work plan whose invoice we hold bills through the prime on that invoice.
+ * Otherwise what the biller typed stands, and failing that the client's name
+ * is read for one of the four primes.
+ */
+export function formPrime(opts: {
+  typed?: string | null;
+  keys: Array<string | null | undefined>;
+  client?: string | null;
+}): string | null {
+  const known = knownHeader(...opts.keys)?.prime;
+  if (known) return known;
+  const typed = (opts.typed ?? "").trim();
+  if (typed) return typed;
+  const client = opts.client ?? "";
+  if (/\bwsp\b/i.test(client)) return "WSP";
+  if (/t\.?\s*y\.?\s*lin|tylin/i.test(client)) return "T.Y. Lin";
+  if (/parsons/i.test(client)) return "Parsons";
+  if (/aecom/i.test(client)) return "AECOM";
+  return null;
 }
 
 /** The fields `applyKnownInvoiceHeaders` may write onto a work plan. */

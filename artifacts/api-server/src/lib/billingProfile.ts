@@ -10,6 +10,27 @@ import type { PackageRow, WorkPlan } from "@workspace/db";
  * The result is shaped like a WorkPlan so rollups, summaries, and document
  * generators keep working unchanged whether or not a real work plan exists.
  */
+/**
+ * The burden as the WSP and T.Y. Lin forms print it.
+ *
+ * Those forms carry the whole indirect burden on their "Fringe Benefits" line
+ * (120.58%) and leave "Overhead Pool" at 0.00%. Procas files the very same
+ * percentage under OverheadPercent, so a work plan synced from Procas printed
+ * "Fringe Benefits 0.00% / Field Overhead Pool 120.58%" — the right total under
+ * the wrong labels. When a work plan has no fringe of its own, its overhead is
+ * the fringe line.
+ */
+export function burdenOnFringeLine(wp: {
+  fringeRate?: number | null;
+  overheadRate?: number | null;
+}): { fringeFrac: number; overheadFrac: number } {
+  const fringe = (wp.fringeRate ?? 0) / 100;
+  const overhead = (wp.overheadRate ?? 0) / 100;
+  return fringe === 0 && overhead > 0
+    ? { fringeFrac: overhead, overheadFrac: 0 }
+    : { fringeFrac: fringe, overheadFrac: overhead };
+}
+
 export type EffectiveWorkPlan = Pick<
   WorkPlan,
   | "code"

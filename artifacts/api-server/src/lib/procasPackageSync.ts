@@ -287,6 +287,8 @@ export async function pullPackageHoursFromProcas(
   // Work plans whose paperwork is kept per BART project get one entry per
   // project, so the invoice can bill each on its own line (or its own invoice).
   const byBartProject = !!knownHeader(project)?.billsByBartProject;
+  // Procas does not say where an hour was worked; her invoice does.
+  const location = knownHeader(project)?.laborLocation ?? "home";
 
   // Aggregate daily rows into one entry per Procas week + employee + labor
   // category + pay category, with hours in the right weekday column.
@@ -418,7 +420,7 @@ export async function pullPackageHoursFromProcas(
       employeeName: e.employeeName,
       classification: e.classification,
       category: e.category,
-      location: "home",
+      location,
       ...e.days,
       rate,
       source: "procas",

@@ -12,6 +12,7 @@ import {
 import { agreementNumber, knownHeader } from "./knownInvoiceHeaders";
 import { knownPoSchedule, splitProRata, type PoLine } from "./poSchedule";
 import { contributorKey } from "./packageMappers";
+import { burdenOnFringeLine } from "./billingProfile";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
 import type { PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
@@ -88,14 +89,22 @@ function clearCell(ws: ExcelJS.Worksheet, address: string): void {
 }
 
 /**
- * Lets a label shrink to its cell instead of being cut off. The renderer's
- * fonts run wider than the ones the workbook was drawn with, so a label that
- * just fitted ("TOTAL AMOUNT DUE", "6M8178 A.03.01 15EJRRC") loses its end.
+ * Lets a timesheet's contract label shrink to its cell instead of being cut
+ * off ("6M8178 A.03.01 15EJRRC" loses its project number otherwise).
+ *
+ * Only for cells whose text must fit the cell itself. A label that is meant
+ * to run on into the empty cells beside it ("Home & Branch (H&B)", "Fixed Fee
+ * on Labor & Overhead", "TOTAL AMOUNT DUE") is shrunk to a few points by this,
+ * and so is every other cell sharing its style — the style is replaced here,
+ * never edited in place, because exceljs hands the same object to all of them.
  */
 function shrink(ws: ExcelJS.Worksheet, ...addresses: string[]): void {
   for (const a of addresses) {
     const cell = ws.getCell(a);
-    cell.alignment = { ...cell.alignment, wrapText: false, shrinkToFit: true };
+    cell.style = {
+      ...cell.style,
+      alignment: { ...cell.style.alignment, wrapText: false, shrinkToFit: true },
+    };
   }
 }
 
@@ -266,8 +275,8 @@ function hoursByLine(
 export function computeWspLinesFinancials(ctx: PackageDocContext): WspLinesFinancials {
   const wp = ctx.workPlan as PackageDocContext["workPlan"] & { procasProject?: string | null };
   const rates: Rates = {
-    fringeFrac: (wp.fringeRate ?? 0) / 100,
-    poolFrac: (wp.overheadRate ?? 0) / 100,
+    fringeFrac: burdenOnFringeLine(wp).fringeFrac,
+    poolFrac: burdenOnFringeLine(wp).overheadFrac,
     feeFrac: (wp.fixedFeeRate ?? 0) / 100,
     fccmFrac: (wp.fccmRate ?? 0) / 100,
   };
@@ -449,7 +458,6 @@ function writeDetail(
   // error cell is still an error cell when the workbook is opened.
   setVal(ws, "K36", 0);
   setVal(ws, "G47", round2(cols.budget.total - cols.toDate.total));
-  shrink(ws, "A7", "B38", "B44");
   const expended = ws.getColumn("K");
   expended.width = Math.max(expended.width ?? 0, 11);
   ws.pageSetup = { ...ws.pageSetup, printArea: "A1:K47" };
@@ -681,7 +689,6 @@ export async function buildWspLinesWorkbook(ctx: PackageDocContext): Promise<Wsp
   setVal(invoice, "J33", fin.totalToDate);
   setVal(invoice, "L33", fin.budget);
   setVal(invoice, "N33", round2(fin.budget - fin.totalToDate));
-  shrink(invoice, "B27", "C27", "B33");
   invoice.pageSetup = { ...invoice.pageSetup, printArea: "A1:O46" };
 
   // -- 2. One Invoice Detail + Labor Attachment per line.

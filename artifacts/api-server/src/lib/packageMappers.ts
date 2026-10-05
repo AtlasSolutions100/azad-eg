@@ -1,3 +1,4 @@
+import { formPrime } from "./knownInvoiceHeaders";
 import type {
   PackageRow,
   PackageWeekRow,
@@ -351,7 +352,13 @@ export function toApiPackageSummary(
     procasProject: pkg.procasProject,
     clientName: pkg.clientName,
     owner: pkg.owner,
-    prime: pkg.prime,
+    // The prime the documents will be built for (see formPrime), so a package
+    // whose Prime was left blank still shows which form it is on.
+    prime: formPrime({
+      typed: pkg.prime,
+      keys: [(workPlan as { procasProject?: string | null }).procasProject, workPlan.jobNumber],
+      client: workPlan.client,
+    }),
     totalBudget: pkg.totalBudget,
     fringeRate: pkg.fringeRate,
     overheadRate: pkg.overheadRate,

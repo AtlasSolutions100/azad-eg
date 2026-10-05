@@ -1,3 +1,4 @@
+import { parseDay } from "@/lib/utils";
 import { useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
@@ -68,8 +69,8 @@ import {
 
 function periodLabel(start: string, end: string): string {
   try {
-    const s = new Date(start);
-    const e = new Date(end);
+    const s = parseDay(start);
+    const e = parseDay(end);
     const sameMonth = s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
     return sameMonth
       ? `${format(s, "MMM d")} – ${format(e, "d, yyyy")}`

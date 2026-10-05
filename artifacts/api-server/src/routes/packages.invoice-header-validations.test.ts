@@ -50,7 +50,12 @@ async function seed(overrides: Record<string, unknown> = {}): Promise<number> {
       client: "AECOM",
       jobNumber: "10007",
       totalBudget: 1_000_000,
+      // AECOM's burden as her invoices carry it, so the rates check (a work
+      // plan that has drifted from them) has nothing to say here.
+      fringeRate: 0,
+      overheadRate: 120.58,
       fixedFeeRate: 8,
+      fccmRate: 0.39,
       ...(() => {
         const { __invoiceNumber: _ignored, __noNarrative: _alsoIgnored, ...rest } = overrides;
         return rest;

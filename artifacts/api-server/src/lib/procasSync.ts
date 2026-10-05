@@ -17,6 +17,7 @@ import {
   type ProcasCreds,
 } from "./procas";
 import { knownBillingCycle } from "./invoiceRegister";
+import { knownHeader, type Burden } from "./knownInvoiceHeaders";
 import type { ParsedLine } from "./timeimport";
 import { linesToLineItems, clearAutoImportedLineItems } from "./lineMapping";
 import { loadRateChanges } from "./employeeRates";
@@ -113,22 +114,46 @@ function buildRateLookup(
 
 // --- Previously Billed from BillingHistory ---
 
-// Sums the non-voided amounts Procas has already invoiced for a project before
-// the given date. Used to default "Previously Billed" on invoices and packages.
+/**
+ * True when a billing-history row is for a period that ended before
+ * `periodStart` (YYYY-MM-DD). Every row carries the period it bills
+ * (CurrentPeriodBegDate / CurrentPeriodEndDate); a row without one is old
+ * history and counts as earlier.
+ */
+export function billedBeforePeriod(row: Record<string, unknown>, periodStart: string): boolean {
+  const end = toStr(row.CurrentPeriodEndDate).slice(0, 10);
+  return !end || end < periodStart;
+}
+
+/**
+ * What Procas has invoiced for a project for the periods BEFORE `periodStart`:
+ * the "Previously Billed" of the invoice for the period starting then.
+ *
+ * This used to be the sum of every non-voided row, on the reasoning that the
+ * current invoice is not in Procas yet. That holds only until Procas posts it.
+ * An August package opened in October — which is exactly how these invoices
+ * were being reviewed — had August's own invoice counted as "previous":
+ * AECOM showed 1,230,254.44 where the August invoice says 1,202,002.26, out by
+ * the whole month's billing. The rows say which period they bill, so only the
+ * earlier ones are summed. Checked against the invoices Julie sent for June
+ * 2026: AECOM 1,135,877.45 (hers 1,135,877.49), WSP A.03.01 775,362.91
+ * (775,362.94), Parsons B.55 167,259.31 (167,259.32), B.40-02 197,846.40
+ * (197,846.42).
+ *
+ * Do not filter on InvoiceDate instead: BART invoices are dated a month or two
+ * after the period they bill, and an earlier version that did so dropped the
+ * most recent ones. Without `periodStart` every non-voided row is summed.
+ */
 export async function fetchPreviouslyBilledFromProcas(
   creds: ProcasCreds,
   jobNumber: string,
+  periodStart?: string | null,
 ): Promise<number> {
-  // Previously Billed = everything Procas has already invoiced for this project:
-  // the sum of TotalBillingAmount across all non-voided BillingHistory rows (per
-  // Julie's data map — pivot the project, add up the amounts). The current
-  // invoice isn't in Procas yet, so it isn't counted. (An earlier version
-  // filtered by InvoiceDate < period-start, which wrongly dropped recent
-  // invoices — BART invoices are dated ~2 months after their service period.)
   const rows = await fetchProcasTable(creds, "BillingHistory", {
     filter: `${projectScopeFilter(jobNumber)} and IsVoided eq false`,
   });
-  const sum = rows.reduce((s, r) => s + toNum(r.TotalBillingAmount), 0);
+  const earlier = periodStart ? rows.filter((r) => billedBeforePeriod(r, periodStart)) : rows;
+  const sum = earlier.reduce((s, r) => s + toNum(r.TotalBillingAmount), 0);
   return Math.round((sum + Number.EPSILON) * 100) / 100;
 }
 
@@ -155,6 +180,80 @@ export async function fetchPreviousHoursFromProcas(
   return Math.round((sum + Number.EPSILON) * 100) / 100;
 }
 
+// --- Billing Setup accounts ---
+
+type ProcasRow = Record<string, unknown>;
+
+/**
+ * The Billing Setup account in force on a date.
+ *
+ * Procas keeps one account row per date range, and a project collects several
+ * over its life: 10007 has six, running from "Overhead 109%, Fee 8%" in 2024
+ * to "Overhead 120.58%, Fee 8%, Facilities 0.39%" from November 2025 on. The
+ * sync took the FIRST row it met — the oldest — so the AECOM work plan billed
+ * 109% overhead and no FCCM while Julie's invoices, and Procas's own billing
+ * history, used 120.58% and 0.39%: every invoice total about 5% short.
+ *
+ * The labor account ("Direct Time …", not the unbillable or subcontract ones)
+ * whose range contains the date is the one that applies; failing that, the
+ * most recent one that had started by then.
+ */
+export function effectiveBillingAccount(rows: ProcasRow[], at: Date = new Date()): ProcasRow | undefined {
+  if (rows.length === 0) return undefined;
+  const day = at.toISOString().slice(0, 10);
+  const begins = (r: ProcasRow) => toStr(r.BillingDateBeginning).slice(0, 10) || "0000-01-01";
+  const ends = (r: ProcasRow) => toStr(r.BillingDateEnding).slice(0, 10) || "9999-12-31";
+  const isLabor = (r: ProcasRow) => {
+    const desc = toStr(r.BillingAccountDesc);
+    return /direct\s*time/i.test(desc) && !/unbillable|subcontract/i.test(desc);
+  };
+  const labor = rows.filter(isLabor);
+  const pool = labor.length > 0 ? labor : rows;
+  const latest = (list: ProcasRow[]) => [...list].sort((a, b) => begins(b).localeCompare(begins(a)))[0];
+  const inForce = pool.filter((r) => begins(r) <= day && day <= ends(r));
+  if (inForce.length > 0) return latest(inForce);
+  const started = pool.filter((r) => begins(r) <= day);
+  return latest(started.length > 0 ? started : pool);
+}
+
+/** The account in force today for every project that has one. */
+function currentAccountsByProject(billingAccounts: ProcasRow[]): Map<string, ProcasRow> {
+  const grouped = new Map<string, ProcasRow[]>();
+  for (const ba of billingAccounts) {
+    const proj = toStr(ba.Project);
+    if (!proj) continue;
+    const list = grouped.get(proj);
+    if (list) list.push(ba);
+    else grouped.set(proj, [ba]);
+  }
+  const out = new Map<string, ProcasRow>();
+  for (const [proj, rows] of grouped) {
+    const acct = effectiveBillingAccount(rows);
+    if (acct) out.set(proj, acct);
+  }
+  return out;
+}
+
+/**
+ * A work plan's burden from its Procas account.
+ *
+ * An account with no percentages at all is not "no burden": it is a project
+ * Procas bills at loaded rates (10013.TO02, 10013.TO03, 10014), where the
+ * fringe, fee and FCCM are inside the hourly rate. The invoice still shows the
+ * direct rate and the burden as its own lines, so for those the burden is the
+ * one on the last invoice Julie sent, when we hold it.
+ */
+function burdenFromAccount(acct: ProcasRow, ...keys: Array<string | null | undefined>): Burden {
+  const burden: Burden = {
+    fringeRate: procasPctToPercent(acct.FringePercent),
+    overheadRate: procasPctToPercent(acct.OverheadPercent),
+    fixedFeeRate: procasPctToPercent(acct.FeePercent),
+    fccmRate: procasPctToPercent(acct.FacilitiesPercent),
+  };
+  const none = !burden.fringeRate && !burden.overheadRate && !burden.fixedFeeRate && !burden.fccmRate;
+  return (none && knownHeader(...keys)?.burden) || burden;
+}
+
 // --- Billing Setup rates for one Procas project ---
 
 export interface ProcasBillingRates {
@@ -176,7 +275,7 @@ export async function fetchBillingRatesFromProcas(
     fetchProcasTable(creds, "BillingAccount", { filter: `Project eq ${odataString(project)}` }),
     fetchProcasTable(creds, "Project", { filter: `Project eq ${odataString(project)}` }),
   ]);
-  const acct = accounts[0];
+  const acct = effectiveBillingAccount(accounts as ProcasRow[]);
   const proj = projects[0];
   if (!acct && !proj) return null;
   // Procas returns percentages as fractions (0.08 = 8%); scale to the
@@ -222,11 +321,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
     fetchProcasTable(creds, "Project"),
     fetchProcasTable(creds, "BillingAccount"),
   ]);
-  const acctByProject = new Map<string, Record<string, unknown>>();
-  for (const ba of billingAccounts) {
-    const proj = toStr(ba.Project);
-    if (proj && !acctByProject.has(proj)) acctByProject.set(proj, ba);
-  }
+  const acctByProject = currentAccountsByProject(billingAccounts as ProcasRow[]);
 
   const existing = await db.select().from(workPlansTable);
   // A Procas project is "already represented" when a plan links to it via
@@ -314,14 +409,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
     // (including a 0 fringe) so the real Procas burden — which lives entirely in
     // OverheadPercent for BART — overrides the schema's default fringeRate of
     // 120.58 instead of double-counting on top of it.
-    const rates = acct
-      ? {
-          fringeRate: procasPctToPercent(acct.FringePercent),
-          overheadRate: procasPctToPercent(acct.OverheadPercent),
-          fixedFeeRate: procasPctToPercent(acct.FeePercent),
-          fccmRate: procasPctToPercent(acct.FacilitiesPercent),
-        }
-      : {};
+    const rates = acct ? burdenFromAccount(acct, code) : {};
     // onConflictDoNothing on the partial unique index makes concurrent runs
     // (scheduler cycle vs manual refresh) race-safe.
     const inserted = await db
@@ -438,11 +526,7 @@ export async function syncReferenceFromProcas(creds: ProcasCreds): Promise<Refer
     const codes = [toStr(pr.Project), toStr(pr.ContractNumber)].filter(Boolean);
     for (const c of codes) if (!projByCode.has(c)) projByCode.set(c, pr);
   }
-  const acctByProject = new Map<string, Record<string, unknown>>();
-  for (const ba of billingAccounts) {
-    const proj = toStr(ba.Project);
-    if (proj && !acctByProject.has(proj)) acctByProject.set(proj, ba);
-  }
+  const acctByProject = currentAccountsByProject(billingAccounts as ProcasRow[]);
 
   const workPlans = await db.select().from(workPlansTable);
   let workPlansUpdated = 0;
@@ -461,10 +545,12 @@ export async function syncReferenceFromProcas(creds: ProcasCreds): Promise<Refer
     // four unconditionally (a Procas billing account is authoritative) so a 0
     // fringe overrides the schema's 120.58 default rather than double-counting
     // with OverheadPercent, where BART's real burden lives.
-    const fringe = procasPctToPercent(acct.FringePercent);
-    const overhead = procasPctToPercent(acct.OverheadPercent);
-    const fee = procasPctToPercent(acct.FeePercent);
-    const fccm = procasPctToPercent(acct.FacilitiesPercent);
+    const {
+      fringeRate: fringe,
+      overheadRate: overhead,
+      fixedFeeRate: fee,
+      fccmRate: fccm,
+    } = burdenFromAccount(acct, wp.procasProject, wp.jobNumber);
     if (fringe !== wp.fringeRate) changes.fringeRate = fringe;
     if (overhead !== wp.overheadRate) changes.overheadRate = overhead;
     if (fee !== wp.fixedFeeRate) changes.fixedFeeRate = fee;

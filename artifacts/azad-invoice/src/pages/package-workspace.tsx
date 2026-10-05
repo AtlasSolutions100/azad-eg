@@ -1,3 +1,4 @@
+import { parseDay } from "@/lib/utils";
 import { Link, useLocation, useParams } from "wouter";
 import { useState } from "react";
 import {
@@ -48,7 +49,7 @@ import ProgressTab from "@/components/package/progress-tab";
 
 function payPeriod(start: string, end: string): string {
   try {
-    return `${format(new Date(start), "MMM d")} – ${format(new Date(end), "MMM d, yyyy")}`;
+    return `${format(parseDay(start), "MMM d")} – ${format(parseDay(end), "MMM d, yyyy")}`;
   } catch {
     return `${start} – ${end}`;
   }

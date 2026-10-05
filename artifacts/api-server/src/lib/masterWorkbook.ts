@@ -12,6 +12,7 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
   settleTimesheetSignature,
+  ExportBlockedError,
 } from "./excel";
 import { agreementLine, agreementNumber } from "./knownInvoiceHeaders";
 import { buildPackageRollup, contributorKey } from "./packageMappers";
@@ -132,7 +133,9 @@ function clearCell(ws: ExcelJS.Worksheet, address: string): void {
 /** Excel-safe sheet name, 31 chars, no []:*?/\ characters. */
 function sheetSafe(label: string, fallback: string): string {
   const cleaned = (label || fallback).replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim();
-  return (cleaned || fallback).slice(0, 31);
+  // A sheet name may not begin or end with an apostrophe, and cutting a name
+  // at 31 characters can leave one there ("… - De'" from De'Andre).
+  return (cleaned || fallback).slice(0, 31).replace(/^'+|'+$/g, "").trim() || fallback;
 }
 
 function uniqueName(base: string, used: Set<string>): string {
@@ -524,8 +527,10 @@ export async function buildMasterWorkbook(
   // distinct rates cannot be represented on the reference sheets.
   const segments = rateSegments(ctx);
   if (segments.length > 2) {
-    throw new Error(
-      `The reference workbook supports at most 2 billing rates per period; found ${segments.length} (${segments.map((s) => s.rate).join(", ")})`,
+    throw new ExportBlockedError(
+      `This invoice form shows at most two billing rates in a period, and this package has ${segments.length} ` +
+        `($${segments.map((s) => s.rate).join(", $")}). If the package is not an AECOM invoice, set its Prime ` +
+        `(WSP, Parsons or T.Y. Lin) so the right form is used; otherwise correct the rates on the Timesheets tab.`,
     );
   }
   const rate1 = segments[0]?.rate ?? 0;

@@ -556,6 +556,18 @@ function parseRangeBounds(
 
 type RangeBounds = { firstCol: number; lastCol: number; firstRow: number; lastRow: number };
 
+/**
+ * A package that cannot be put on its form as it stands, for a reason the
+ * biller can act on. The API answers these with the message (422) instead of
+ * "Internal server error".
+ */
+export class ExportBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExportBlockedError";
+  }
+}
+
 /** A person's name reduced to comparable tokens ("Johnson, Travis" = "Travis Johnson"). */
 export function personKey(name: string | null | undefined): string {
   return (name ?? "")

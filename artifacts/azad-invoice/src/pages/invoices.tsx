@@ -1,3 +1,4 @@
+import { parseDay } from "@/lib/utils";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useListInvoices, useCreateInvoice, useListWorkPlans, InvoiceInput } from "@workspace/api-client-react";
@@ -221,7 +222,7 @@ export default function Invoices() {
                   </TableCell>
                   <TableCell>{invoice.workPlanCode}</TableCell>
                   <TableCell>{invoice.client}</TableCell>
-                  <TableCell>{format(new Date(invoice.periodStart), "MMM d")} - {format(new Date(invoice.periodEnd), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{format(parseDay(invoice.periodStart), "MMM d")} - {format(parseDay(invoice.periodEnd), "MMM d, yyyy")}</TableCell>
                   <TableCell className="text-right">${invoice.totalThisPeriod.toLocaleString()}</TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${

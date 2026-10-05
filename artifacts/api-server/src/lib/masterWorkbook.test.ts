@@ -402,7 +402,8 @@ describe("buildMasterWorkbook", () => {
     ctx.entries = ctx.entries.map((e, i) =>
       ({ ...e, rate: i === 0 ? 90.11 : i === 1 ? 91 : 92.5 }) as typeof e,
     );
-    await expect(buildMasterWorkbook(ctx)).rejects.toThrow(/at most 2 billing rates/);
+    // An ExportBlockedError: the API answers it as a 422 with this message.
+    await expect(buildMasterWorkbook(ctx)).rejects.toThrow(/at most two billing rates/);
   });
 
   it("writes billed line items with variance formulas and clears unused rows", () => {

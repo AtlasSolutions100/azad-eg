@@ -1,3 +1,4 @@
+import { parseDay } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import {
   useUpdatePackage,
@@ -15,7 +16,7 @@ import { formatCurrency, formatHours } from "@/lib/package-ui";
 
 function periodRange(start: string, end: string): string {
   try {
-    return `${format(new Date(start), "MMM d")} – ${format(new Date(end), "MMM d, yyyy")}`;
+    return `${format(parseDay(start), "MMM d")} – ${format(parseDay(end), "MMM d, yyyy")}`;
   } catch {
     return `${start} – ${end}`;
   }

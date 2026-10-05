@@ -65,8 +65,18 @@ describe("sent-file name", () => {
     );
   });
 
+  it("names T.Y. Lin's and Imani's the way their June invoices were sent", () => {
+    // The register leaves these two blank; the names are her June files'.
+    expect(clientFileBase(["10014"], "2026-08-31", "6M8213 A.02-01-22")).toBe(
+      "08-2026-BART6M8213-T.Y.Lin-A.02-01_02-Invoice_AZAD-22",
+    );
+    expect(clientFileBase(["10013.TO02"], "2026-08-28", "A.05.01-18")).toBe(
+      "08-2026-BART6M8178-WSP-A.05.01-Invoice_AZAD-18",
+    );
+  });
+
   it("falls back when it has no template or no number to put in it", () => {
-    expect(clientFileBase(["10014"], "2026-08-31", "6M8213 A.02-01-22")).toBeNull();
+    expect(clientFileBase(["10099"], "2026-08-31", "X-22")).toBeNull();
     expect(clientFileBase(["10007"], "2026-08-28", null)).toBeNull();
     expect(clientFileBase(["10007"], "2026-08-28", "TBD")).toBeNull();
   });

@@ -155,7 +155,9 @@ function clearCell(ws: ExcelJS.Worksheet, address: string): void {
 /** Excel-safe sheet name (31 chars, none of []:*?/\). */
 function sheetSafe(label: string, fallback: string): string {
   const cleaned = (label || fallback).replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim();
-  return (cleaned || fallback).slice(0, 31);
+  // A sheet name may not begin or end with an apostrophe, and cutting a name
+  // at 31 characters can leave one there ("… - De'" from De'Andre).
+  return (cleaned || fallback).slice(0, 31).replace(/^'+|'+$/g, "").trim() || fallback;
 }
 
 function uniqueName(base: string, used: Set<string>): string {
@@ -887,7 +889,9 @@ export async function buildParsonsWorkbook(ctx: PackageDocContext): Promise<Pars
   // cell read an empty date cell on the Invoice face, so it printed 12/30/1899.
   setVal(calc, "A10", String(invoice.getCell("B4").value ?? ""));
   setVal(calc, "A11", [wp.code, wp.title].filter(Boolean).join(" "));
+  // Cleared when unset: the reference invoice's own date printed otherwise.
   if (invoiceDate) setVal(calc, "J10", invoiceDate);
+  else clearCell(calc, "J10");
   setVal(calc, "J11", invoiceNo);
   setVal(calc, "J12", wp.clientProjectNo || wp.wspProjectNo || wp.jobNumber || "");
   // The PO-line heading names the reference contract's own line and project ID

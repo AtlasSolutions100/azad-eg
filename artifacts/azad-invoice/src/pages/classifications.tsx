@@ -1,3 +1,4 @@
+import { parseDay } from "@/lib/utils";
 import { useState } from "react";
 import { useListClassifications, useCreateClassification, useUpdateClassification, useDeleteClassification, ClassificationInput, ClassificationUpdate } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -169,7 +170,7 @@ export default function Classifications() {
                   <TableCell className="text-right">${classification.regularRate.toFixed(2)}</TableCell>
                   <TableCell className="text-right">{classification.otRate ? `$${classification.otRate.toFixed(2)}` : '-'}</TableCell>
                   <TableCell className="text-right">{classification.dtRate ? `$${classification.dtRate.toFixed(2)}` : '-'}</TableCell>
-                  <TableCell>{classification.effectiveDate ? format(new Date(classification.effectiveDate), "MMM d, yyyy") : '-'}</TableCell>
+                  <TableCell>{classification.effectiveDate ? format(parseDay(classification.effectiveDate), "MMM d, yyyy") : '-'}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(classification)}>
                       <Edit className="h-4 w-4" />

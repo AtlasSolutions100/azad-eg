@@ -90,7 +90,9 @@ import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { toDisplayName } from "../lib/displayName";
 import { seededInvoiceNumber } from "../lib/invoiceRegister";
-import { docWorkPlan } from "../lib/knownInvoiceHeaders";
+import { docWorkPlan, formPrime, knownHeader } from "../lib/knownInvoiceHeaders";
+import { burdenMultiplier } from "../lib/procasPackageSync";
+import { computeWspLinesFinancials, isWspLinesForm } from "../lib/wspLinesWorkbook";
 import { recordAudit } from "../lib/audit";
 import { resolveEmployeeIdByName } from "../lib/employeeResolve";
 import { canDeletePackages } from "../lib/packageDeletePermission";
@@ -148,8 +150,12 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
   const view = effectiveWorkPlan(pkg, wp);
   // Apply the Max Bill Rate cap once, here, so every export engine bills capped
   // rates without each re-implementing it. (The on-screen rollup caps too.)
+  // Where this work plan's invoice bills its labor (see laborLocation). Applied
+  // here so entries pulled before the pull knew it print in the right block.
+  const billedAt = knownHeader(view.procasProject, view.jobNumber)?.laborLocation;
   const cappedEntries = entries.map((e) => ({
     ...e,
+    location: billedAt ?? e.location,
     // Names go on the client's paperwork the way they are said ("Travis
     // Johnson"), not the way Procas files them ("Johnson, Travis").
     employeeName: toDisplayName(e.employeeName),
@@ -163,9 +169,17 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
   return {
     // `pkg` is the full packages row, so it carries `prime` (e.g. "WSP",
     // "AECOM"). The document generators (generateCombinedWorkbook /
-    // generateMergedPdf) read `ctx.pkg.prime` to pick the WSP vs AECOM engine,
-    // so it must flow through here unchanged.
-    pkg,
+    // generateMergedPdf) read `ctx.pkg.prime` to pick the WSP vs AECOM engine.
+    // It is the prime the work plan bills through, not only what was typed on
+    // the package — see formPrime.
+    pkg: {
+      ...pkg,
+      prime: formPrime({
+        typed: pkg.prime,
+        keys: [view.procasProject, view.jobNumber],
+        client: view.client,
+      }),
+    },
     employee: emp ? { name: toDisplayName(emp.name), classification: emp.classification } : null,
     // The work plan as the client's paperwork names it ("A.02-01", job number
     // "T4567") rather than as Procas files it ("10014"). See docWorkPlan.
@@ -183,6 +197,36 @@ async function buildDocContext(packageId: number): Promise<PackageDocContext | n
     }),
     employeeSignatures,
   };
+}
+
+/**
+ * "This Invoice" per PO line, for a work plan billed as several lines on one
+ * invoice (WSP A.03.01).
+ *
+ * There each line is a BART project and its amount is the hours booked to
+ * that project — which is what the invoice prints (see wspLinesWorkbook). The
+ * general rule, a share of the total by PO amount, put different figures on
+ * the screen than on the PDF. The line amounts come from the timesheets here
+ * whatever the rows' source: it is what will print.
+ */
+function withLineCurrents<T extends { bartProjectNo: string | null; currentInvoiced: number }>(
+  items: T[],
+  pkg: PackageDocContext["pkg"],
+  view: PackageDocContext["workPlan"],
+  entries: PackageDocContext["entries"],
+): T[] {
+  if (items.length === 0 || !isWspLinesForm({ workPlan: view })) return items;
+  const fin = computeWspLinesFinancials({
+    pkg,
+    workPlan: view,
+    entries: entries.map((e) => ({ ...e, rate: cappedBillRate(e.rate, view.maxBillRate) })),
+    billedLineItems: items,
+  } as unknown as PackageDocContext);
+  const byProject = new Map(fin.lines.map((l) => [l.project, l.current.total]));
+  return items.map((r) => ({
+    ...r,
+    currentInvoiced: byProject.get((r.bartProjectNo ?? "").trim()) ?? r.currentInvoiced,
+  }));
 }
 
 const router: IRouter = Router();
@@ -381,7 +425,7 @@ router.post("/packages", async (req, res): Promise<void> => {
   if (creds && billingJob) {
     const [billed, hours] = await Promise.all([
       previouslyBilledSource == null
-        ? fetchPreviouslyBilledFromProcas(creds, billingJob).catch(() => null)
+        ? fetchPreviouslyBilledFromProcas(creds, billingJob, payPeriodStart).catch(() => null)
         : Promise.resolve(null),
       fetchPreviousHoursFromProcas(creds, billingJob, payPeriodStart).catch(() => null),
     ]);
@@ -402,8 +446,19 @@ router.post("/packages", async (req, res): Promise<void> => {
         workPlanId: parsed.data.workPlanId ?? null,
         procasProject,
         clientName,
-        owner: parsed.data.owner?.trim() || null,
-        prime: parsed.data.prime?.trim() || null,
+        // Owner and Prime are optional in the wizard. A work plan whose
+        // invoice we hold says both, so a package started without them is
+        // not left to export on the wrong prime's form.
+        owner:
+          parsed.data.owner?.trim() ||
+          knownHeader(wp?.procasProject, wp?.jobNumber, procasProject)?.owner ||
+          null,
+        prime:
+          parsed.data.prime?.trim() ||
+          formPrime({
+            keys: [wp?.procasProject, wp?.jobNumber, procasProject],
+            client: wp?.client ?? clientName,
+          }),
         totalBudget: parsed.data.totalBudget ?? null,
         fringeRate: fringeRate ?? null,
         overheadRate: overheadRate ?? null,
@@ -594,12 +649,17 @@ router.get("/packages/:id", async (req, res): Promise<void> => {
 
   // The Billed Line Items as the invoice will print them — the stored rows, or
   // the computed PO split when there are none to show (see billedLineItems.ts).
-  const shownItems = effectiveBilledLineItems(billedItems, {
-    packageId: pkg.id,
-    scheduleKeys: [view.procasProject, view.jobNumber],
-    previouslyBilled: pkg.previouslyBilled,
-    totalThisPeriod: rollup.totalThisPeriod,
-  });
+  const shownItems = withLineCurrents(
+    effectiveBilledLineItems(billedItems, {
+      packageId: pkg.id,
+      scheduleKeys: [view.procasProject, view.jobNumber],
+      previouslyBilled: pkg.previouslyBilled,
+      totalThisPeriod: rollup.totalThisPeriod,
+    }),
+    pkg,
+    view,
+    entries,
+  );
 
   res.json(
     GetPackageResponse.parse({
@@ -848,7 +908,7 @@ router.post("/packages/:id/procas-hours", async (req, res): Promise<void> => {
   const history: Promise<readonly [number | null, number | null]> = billingJob
     ? Promise.all([
         refreshBilled
-          ? fetchPreviouslyBilledFromProcas(creds, billingJob).catch(() => null)
+          ? fetchPreviouslyBilledFromProcas(creds, billingJob, pkg.payPeriodStart).catch(() => null)
           : Promise.resolve(null),
         fetchPreviousHoursFromProcas(creds, billingJob, pkg.payPeriodStart).catch(() => null),
       ])
@@ -1059,7 +1119,7 @@ router.post("/packages/:id/procas-tie-out", async (req, res): Promise<void> => {
   }
   let procasBilled: number;
   try {
-    procasBilled = await fetchPreviouslyBilledFromProcas(creds, tieOutJob);
+    procasBilled = await fetchPreviouslyBilledFromProcas(creds, tieOutJob, pkg.payPeriodStart);
   } catch {
     res.status(502).json({ error: "Could not reach Procas billing history. Try again in a moment." });
     return;
@@ -1591,6 +1651,27 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
   }
 
   const view = effectiveWorkPlan(pkg, wp);
+  // The burden on the last invoice Julie sent for this work plan. A work plan
+  // that has drifted from it bills a different total for the same hours — the
+  // AECOM plan sat at 109% overhead and no FCCM, against 120.58% and 0.39% on
+  // her invoices, for as long as nobody compared the two.
+  const hers = knownHeader(view.procasProject, view.jobNumber)?.burden;
+  if (hers) {
+    const now = burdenMultiplier(view);
+    const then = burdenMultiplier(hers);
+    if (Math.abs(now - then) > 0.0005) {
+      const describe = (b: { fringeRate?: number | null; overheadRate?: number | null; fixedFeeRate?: number | null; fccmRate?: number | null }) =>
+        `${((b.fringeRate ?? 0) + (b.overheadRate ?? 0)).toFixed(2)}% burden, ${(b.fixedFeeRate ?? 0).toFixed(2)}% fee, ${(b.fccmRate ?? 0).toFixed(2)}% FCCM`;
+      flags.push({
+        severity: "warning",
+        field: "rates",
+        message:
+          `This work plan is set to ${describe(view)}, but the last invoice sent for it used ${describe(hers)}. ` +
+          `That changes this invoice's total by ${(((now - then) / then) * 100).toFixed(1)}%. ` +
+          `Click "Refresh from Procas" to bring the work plan up to date, or correct its rates on the Work Plan screen.`,
+      });
+    }
+  }
   if (pkg.workPlanId != null && !wp) {
     flags.push({ severity: "error", field: "workPlan", message: "Package references a missing work plan." });
   } else if (view.totalBudget <= 0) {
@@ -1695,15 +1776,20 @@ router.get("/packages/:id/billed-line-items", async (req, res): Promise<void> =>
       : Promise.resolve(null),
   ]);
   const view = effectiveWorkPlan(pkg, wp);
-  const rows = effectiveBilledLineItems(stored, {
-    packageId: id,
-    scheduleKeys: [view.procasProject, view.jobNumber],
-    previouslyBilled: pkg.previouslyBilled,
-    totalThisPeriod: buildPackageRollup(entries, view, {
+  const rows = withLineCurrents(
+    effectiveBilledLineItems(stored, {
+      packageId: id,
+      scheduleKeys: [view.procasProject, view.jobNumber],
       previouslyBilled: pkg.previouslyBilled,
-      otherDirectCosts: pkg.otherDirectCosts,
-    }).totalThisPeriod,
-  });
+      totalThisPeriod: buildPackageRollup(entries, view, {
+        previouslyBilled: pkg.previouslyBilled,
+        otherDirectCosts: pkg.otherDirectCosts,
+      }).totalThisPeriod,
+    }),
+    pkg,
+    view,
+    entries,
+  );
   res.json(
     ListBilledLineItemsResponse.parse({
       items: rows.map(toApiBilledLineItem),

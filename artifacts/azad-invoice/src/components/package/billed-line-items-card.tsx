@@ -183,11 +183,11 @@ export default function BilledLineItemsCard({ packageId }: { packageId: number }
                 <TableRow>
                   <TableHead className="min-w-[110px]">Work Scope</TableHead>
                   <TableHead className="min-w-[100px]">PO No.</TableHead>
-                  <TableHead className="w-16">Line</TableHead>
+                  <TableHead className="min-w-[68px]">Line</TableHead>
                   <TableHead className="min-w-[130px]">BART Project</TableHead>
-                  <TableHead className="min-w-[110px] text-right">PO Amount</TableHead>
-                  <TableHead className="min-w-[110px] text-right">Previous</TableHead>
-                  <TableHead className="min-w-[110px] text-right">This Invoice</TableHead>
+                  <TableHead className="min-w-[132px] text-right">PO Amount</TableHead>
+                  <TableHead className="min-w-[132px] text-right">Previous</TableHead>
+                  <TableHead className="min-w-[132px] text-right">This Invoice</TableHead>
                   <TableHead className="min-w-[100px] text-right">Total</TableHead>
                   <TableHead className="min-w-[100px] text-right">Remaining</TableHead>
                   <TableHead className="w-10" />
@@ -217,7 +217,7 @@ export default function BilledLineItemsCard({ packageId }: { packageId: number }
                       </TableCell>
                       <TableCell className="p-1.5">
                         <Input
-                          className="h-8"
+                          className="h-8 px-2 text-center"
                           type="number"
                           value={r.lineNo}
                           onChange={(e) => edit(i, { lineNo: e.target.value })}

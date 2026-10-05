@@ -15,6 +15,7 @@ import {
 import { knownHeader } from "./knownInvoiceHeaders";
 import { buildWspLinesWorkbook, isWspLinesForm } from "./wspLinesWorkbook";
 import { contributorKey } from "./packageMappers";
+import { burdenOnFringeLine } from "./billingProfile";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
 import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
@@ -170,7 +171,9 @@ function clearCell(ws: ExcelJS.Worksheet, address: string): void {
 /** Excel-safe sheet name (31 chars, none of []:*?/\). */
 function sheetSafe(label: string, fallback: string): string {
   const cleaned = (label || fallback).replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim();
-  return (cleaned || fallback).slice(0, 31);
+  // A sheet name may not begin or end with an apostrophe, and cutting a name
+  // at 31 characters can leave one there ("… - De'" from De'Andre).
+  return (cleaned || fallback).slice(0, 31).replace(/^'+|'+$/g, "").trim() || fallback;
 }
 
 function uniqueName(base: string, used: Set<string>): string {
@@ -260,8 +263,7 @@ function entryHours(e: TimesheetEntryRow): number {
  */
 export function computeWspFinancials(ctx: PackageDocContext): WspFinancials {
   const wp = ctx.workPlan;
-  const fringeFrac = (wp.fringeRate ?? 0) / 100;
-  const overheadFrac = (wp.overheadRate ?? 0) / 100;
+  const { fringeFrac, overheadFrac } = burdenOnFringeLine(wp);
   const feeFrac = (wp.fixedFeeRate ?? 0) / 100;
   const fccmFrac = (wp.fccmRate ?? 0) / 100;
 
@@ -799,6 +801,13 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   // Print only the form (Excel honours this; LibreOffice goes by the used
   // extent, which the clearing above is what fixes).
   subcalc.pageSetup = { ...subcalc.pageSetup, printArea: "$A$1:$K$52" };
+  // The column headings wrap to two lines ("Amount This / Period") in a row
+  // one line tall, so their top half printed cut off, and "% Expended" ran
+  // out of its column.
+  const headings = subcalc.getRow(4);
+  headings.height = Math.max(headings.height ?? 0, 30);
+  const expended = subcalc.getColumn("K");
+  expended.width = Math.max(expended.width ?? 0, 11);
 
   // -- 3. Sub Labor (per-employee lines). Clear both blocks, then write rows.
   //

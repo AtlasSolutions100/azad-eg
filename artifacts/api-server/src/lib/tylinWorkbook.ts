@@ -16,6 +16,7 @@ import {
 } from "./excel";
 import { agreementLine, knownHeader } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
+import { burdenOnFringeLine } from "./billingProfile";
 import { logger } from "./logger";
 import type { PackageDocContext } from "./packageDocs";
 import type { PackageRow, PackageWeekRow, TimesheetEntryRow } from "@workspace/db";
@@ -154,7 +155,9 @@ function clearCell(ws: ExcelJS.Worksheet, address: string): void {
 /** Excel-safe sheet name (31 chars, none of []:*?/\). */
 function sheetSafe(label: string, fallback: string): string {
   const cleaned = (label || fallback).replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim();
-  return (cleaned || fallback).slice(0, 31);
+  // A sheet name may not begin or end with an apostrophe, and cutting a name
+  // at 31 characters can leave one there ("… - De'" from De'Andre).
+  return (cleaned || fallback).slice(0, 31).replace(/^'+|'+$/g, "").trim() || fallback;
 }
 
 function uniqueName(base: string, used: Set<string>): string {
@@ -279,8 +282,7 @@ function entryHours(e: TimesheetEntryRow): number {
  */
 export function computeTylinFinancials(ctx: PackageDocContext): TylinFinancials {
   const wp = ctx.workPlan;
-  const fringeFrac = (wp.fringeRate ?? 0) / 100;
-  const overheadFrac = (wp.overheadRate ?? 0) / 100;
+  const { fringeFrac, overheadFrac } = burdenOnFringeLine(wp);
   const feeFrac = (wp.fixedFeeRate ?? 0) / 100;
   const fccmFrac = (wp.fccmRate ?? 0) / 100;
 
