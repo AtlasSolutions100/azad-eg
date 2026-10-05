@@ -1845,7 +1845,11 @@ components:
         sortOrder: { type: integer }
         source:
           type: string
-          enum: [manual, carry_forward]
+          description: >-
+            Where the row came from: typed by the biller, carried forward from
+            the last approved package, or computed from the work plan's known
+            PO schedule (not stored; saving the table replaces it).
+          enum: [manual, carry_forward, po_schedule]
     BilledLineItemInput:
       type: object
       required: [workScopeNo]

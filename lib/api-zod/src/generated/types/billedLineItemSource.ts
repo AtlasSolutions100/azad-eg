@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Where the row came from: typed by the biller, carried forward from the last approved package, or computed from the work plan's known PO schedule (not stored; saving the table replaces it).
+ */
 export type BilledLineItemSource = typeof BilledLineItemSource[keyof typeof BilledLineItemSource];
 
 
 export const BilledLineItemSource = {
   manual: 'manual',
   carry_forward: 'carry_forward',
+  po_schedule: 'po_schedule',
 } as const;

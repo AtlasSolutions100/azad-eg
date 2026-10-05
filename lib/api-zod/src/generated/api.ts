@@ -2006,7 +2006,7 @@ export const GetPackageResponse = zod.object({
   "totalInvoiced": zod.number().describe('previousInvoiced + currentInvoiced (computed).'),
   "remainingBalance": zod.number().describe('poAmount - totalInvoiced (computed).'),
   "sortOrder": zod.number(),
-  "source": zod.enum(['manual', 'carry_forward'])
+  "source": zod.enum(['manual', 'carry_forward', 'po_schedule']).describe('Where the row came from: typed by the biller, carried forward from the last approved package, or computed from the work plan\'s known PO schedule (not stored; saving the table replaces it).')
 })).optional(),
   "billingSummary": zod.object({
   "poAmountTotal": zod.number(),
@@ -2707,7 +2707,7 @@ export const ListBilledLineItemsResponse = zod.object({
   "totalInvoiced": zod.number().describe('previousInvoiced + currentInvoiced (computed).'),
   "remainingBalance": zod.number().describe('poAmount - totalInvoiced (computed).'),
   "sortOrder": zod.number(),
-  "source": zod.enum(['manual', 'carry_forward'])
+  "source": zod.enum(['manual', 'carry_forward', 'po_schedule']).describe('Where the row came from: typed by the biller, carried forward from the last approved package, or computed from the work plan\'s known PO schedule (not stored; saving the table replaces it).')
 })),
   "summary": zod.object({
   "poAmountTotal": zod.number(),
@@ -2757,7 +2757,7 @@ export const ReplaceBilledLineItemsResponse = zod.object({
   "totalInvoiced": zod.number().describe('previousInvoiced + currentInvoiced (computed).'),
   "remainingBalance": zod.number().describe('poAmount - totalInvoiced (computed).'),
   "sortOrder": zod.number(),
-  "source": zod.enum(['manual', 'carry_forward'])
+  "source": zod.enum(['manual', 'carry_forward', 'po_schedule']).describe('Where the row came from: typed by the biller, carried forward from the last approved package, or computed from the work plan\'s known PO schedule (not stored; saving the table replaces it).')
 })),
   "summary": zod.object({
   "poAmountTotal": zod.number(),

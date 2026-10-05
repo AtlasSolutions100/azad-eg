@@ -248,12 +248,16 @@ export interface WorkPlanUpdate {
   status?: WorkPlanUpdateStatus;
 }
 
+/**
+ * Where the row came from: typed by the biller, carried forward from the last approved package, or computed from the work plan's known PO schedule (not stored; saving the table replaces it).
+ */
 export type BilledLineItemSource = typeof BilledLineItemSource[keyof typeof BilledLineItemSource];
 
 
 export const BilledLineItemSource = {
   manual: 'manual',
   carry_forward: 'carry_forward',
+  po_schedule: 'po_schedule',
 } as const;
 
 export interface BilledLineItem {
@@ -274,6 +278,7 @@ export interface BilledLineItem {
   /** poAmount - totalInvoiced (computed). */
   remainingBalance: number;
   sortOrder: number;
+  /** Where the row came from: typed by the biller, carried forward from the last approved package, or computed from the work plan's known PO schedule (not stored; saving the table replaces it). */
   source: BilledLineItemSource;
 }
 
