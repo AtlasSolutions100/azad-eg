@@ -568,6 +568,20 @@ export class ExportBlockedError extends Error {
   }
 }
 
+/**
+ * Lets one cell's text shrink to fit instead of being cut off by its
+ * neighbour. The style is replaced, not edited: exceljs shares one style
+ * object between every cell that looks alike, and editing it in place shrinks
+ * them all.
+ */
+export function shrinkCellToFit(ws: ExcelJS.Worksheet, address: string): void {
+  const cell = ws.getCell(address);
+  cell.style = {
+    ...cell.style,
+    alignment: { ...cell.style.alignment, wrapText: false, shrinkToFit: true },
+  };
+}
+
 /** A person's name reduced to comparable tokens ("Johnson, Travis" = "Travis Johnson"). */
 export function personKey(name: string | null | undefined): string {
   return (name ?? "")
@@ -600,8 +614,8 @@ export function settleTimesheetSignature(
   employeeName: string,
   templateSigner: string,
   signatures?: Record<string, string>,
-): void {
-  if (personKey(employeeName) === personKey(templateSigner)) return;
+): "kept" | "placed" | "none" {
+  if (personKey(employeeName) === personKey(templateSigner)) return "kept";
   let submitted: { row: number; col: number } | null = null;
   let approvedCol = Number.MAX_SAFE_INTEGER;
   ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
@@ -612,16 +626,20 @@ export function settleTimesheetSignature(
     });
   });
   const at = submitted as { row: number; col: number } | null;
-  if (!at) return;
+  if (!at) return "none";
 
   const sheet = ws as unknown as {
     _media?: Array<{
       type?: string;
       imageId?: number | string;
-      range?: { tl?: { nativeRow?: number; nativeCol?: number } };
+      range?: {
+        tl?: { nativeRow?: number; nativeCol?: number };
+        br?: unknown;
+        ext?: { width?: number; height?: number };
+      };
     }>;
   };
-  if (!Array.isArray(sheet._media)) return;
+  if (!Array.isArray(sheet._media)) return "none";
   const isEmployeeSignature = (m: NonNullable<typeof sheet._media>[number]) => {
     if (m.type !== "image") return false;
     const row = m.range?.tl?.nativeRow;
@@ -630,21 +648,71 @@ export function settleTimesheetSignature(
     return Math.abs(row + 1 - at.row) <= 3 && col + 1 >= at.col && col + 1 < approvedCol;
   };
 
-  const own = signatures?.[personKey(employeeName)];
-  if (own && fs.existsSync(own)) {
+  // An uploaded signature wins; failing that, the one off her own invoices.
+  const key = personKey(employeeName);
+  const own = signatures?.[key] ?? bundledSignatures()[key];
+  if (own && fs.existsSync(own) && sheet._media.some(isEmployeeSignature)) {
     try {
       const ext = path.extname(own).replace(".", "").toLowerCase();
       const extension: "png" | "jpeg" | "gif" =
         ext === "jpg" || ext === "jpeg" ? "jpeg" : ext === "gif" ? "gif" : "png";
-      const buffer = fs.readFileSync(own) as unknown as ExcelJS.Buffer;
-      const imageId = ws.workbook.addImage({ buffer, extension });
-      for (const m of sheet._media) if (isEmployeeSignature(m)) m.imageId = imageId;
-      return;
+      const file = fs.readFileSync(own);
+      const imageId = ws.workbook.addImage({ buffer: file as unknown as ExcelJS.Buffer, extension });
+      const shape = pngSize(file);
+      for (const m of sheet._media) {
+        if (!isEmployeeSignature(m)) continue;
+        m.imageId = imageId;
+        // Keep the picture's own proportions: the slot was drawn for somebody
+        // else's signature, and a wide one squeezed into it reads as a smudge.
+        if (shape && m.range?.ext && !m.range.br) {
+          // …and inside the slot: a long name must stop short of "Approved by".
+          const aspect = shape.width / shape.height;
+          const width = Math.min(Math.round(Math.min(Math.max(m.range.ext.height ?? 30, 26), 36) * aspect), 150);
+          m.range.ext = { width, height: Math.round(width / aspect) };
+        }
+      }
+      return "placed";
     } catch (err) {
       logger.warn({ err }, "Could not place the employee's own signature on a timesheet");
     }
   }
   sheet._media = sheet._media.filter((m) => !isEmployeeSignature(m));
+  return "none";
+}
+
+/** Pixel size of a PNG, read from its header; null for anything else. */
+function pngSize(file: Buffer): { width: number; height: number } | null {
+  if (file.length < 24 || file.readUInt32BE(0) !== 0x89504e47) return null;
+  const width = file.readUInt32BE(16);
+  const height = file.readUInt32BE(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+let bundled: Record<string, string> | null = null;
+
+/**
+ * Employee signatures as they appear on the invoices Julie sends, by person.
+ *
+ * Her timesheets are signed — some with a picture, some with the name in a
+ * script font — and each template workbook carries only its own employee's.
+ * `templates/signatures/<first>-<last>.png` holds the rest, taken from her own
+ * workbooks, so a timesheet is not left unsigned ("missing her signature")
+ * for somebody she has always signed for. A signature uploaded on the
+ * Signatures page under the same name takes precedence.
+ */
+export function bundledSignatures(): Record<string, string> {
+  if (bundled) return bundled;
+  bundled = {};
+  const dir = path.resolve(templatesDir, "signatures");
+  try {
+    for (const file of fs.readdirSync(dir)) {
+      if (!/\.(png|jpe?g|gif)$/i.test(file)) continue;
+      bundled[personKey(file.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "))] = path.resolve(dir, file);
+    }
+  } catch {
+    // No bundled signatures directory: uploaded ones are the only source.
+  }
+  return bundled;
 }
 
 /**
@@ -916,7 +984,9 @@ export function fitSheetsToOnePage(wb: ExcelJS.Workbook): void {
       // fills a little over half the height) used to sit at the top-left with
       // the empty page below it — "not centered on page". Flowing sheets stay
       // top-anchored so a page break never leaves a half-empty page floating.
-      verticalCentered: onePage,
+      // A progress report is a letter, not a form: it starts at the top of
+      // its page however short it is, as hers do.
+      verticalCentered: onePage && !ws.name.toLowerCase().startsWith("progress report"),
       margins: { left: 0.3, right: 0.3, top: 0.35, bottom: 0.35, header: 0.2, footer: 0.2 },
     };
   }

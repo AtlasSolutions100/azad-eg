@@ -13,8 +13,10 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
   settleTimesheetSignature,
+  personKey,
+  shrinkCellToFit,
 } from "./excel";
-import { agreementLine, knownHeader } from "./knownInvoiceHeaders";
+import { agreementLine, knownBurden, knownHeader, type DetailParts } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
 import { burdenOnFringeLine } from "./billingProfile";
 import { logger } from "./logger";
@@ -502,6 +504,8 @@ function fillTimesheet(
   const saturday = saturdayOnOrBefore(toDate(week.weekStart));
 
   setVal(ws, "D5", person.name);
+  // "Amirhossein Hashemiastaneh" is wider than the name box.
+  if (person.name.length > 20) shrinkCellToFit(ws, "D5");
   // Day header dates: H=Sat, I=Sun, J=Mon, K=Tue, L=Wed, M=Thu, N=Fri.
   DAY_COLS.forEach((col, i) => setVal(ws, `${col}6`, addDays(saturday, i)));
   // "Week Ending" = Friday. The template formats J5 as `[$-409]mmmm d, yyyy`
@@ -553,6 +557,9 @@ function fillTimesheet(
     const a = acc.get(r);
     if (r <= 10) setVal(ws, `B${r}`, contractLabel);
     setVal(ws, `D${r}`, rowLabel[r]);
+    // "Assistant Resident Engineer 2-OT" lost its end, and with it the only
+    // thing telling the three rows apart.
+    if ((rowLabel[r] ?? "").length > 26) shrinkCellToFit(ws, `D${r}`);
     let rowTotal = 0;
     for (const col of DAY_COLS) {
       const v = round2(a?.[col] ?? 0);
@@ -588,6 +595,176 @@ function writeHoursToDate(
   if (previous == null) clearCell(ws, `E${row}`);
   else setVal(ws, `E${row}`, previous);
   setVal(ws, `F${row}`, round2(current + (previous ?? 0)));
+}
+
+/**
+ * People in the order her labor attachment lists them (Sarah, Ryan, Amir, …).
+ * Everything that is per person — labor lines, progress reports, timesheets —
+ * follows it; somebody new to the job comes after, alphabetically.
+ */
+function rosterOrder(sublabor: ExcelJS.Worksheet): string[] {
+  const order: string[] = [];
+  for (let r = 6; r <= 34; r++) {
+    const v = sublabor.getCell(`B${r}`).value;
+    if (typeof v !== "string") continue;
+    const key = personKey(v.replace(/-(OT|DT)\s*$/i, "").replace(/,\s*PE\s*$/i, ""));
+    if (key && !order.includes(key)) order.push(key);
+  }
+  return order;
+}
+
+function byRoster(order: string[]): (a: string, b: string) => number {
+  const rank = (name: string) => {
+    const i = order.indexOf(personKey(name.replace(/-(OT|DT)\s*$/i, "")));
+    return i < 0 ? order.length : i;
+  };
+  return (a, b) => rank(a) - rank(b) || a.localeCompare(b);
+}
+
+const NO_PARTS: DetailParts = { labor: 0, fringe: 0, odc: 0, premium: 0, fee: 0, fccm: 0, total: 0 };
+
+/**
+ * Splits a known total into the detail page's rows at the given burden: labor,
+ * fringe on it, the fee on both, FCCM on the labor. Any cent of rounding is
+ * left on the labor so the rows add up to the total.
+ */
+export function splitDetailTotal(
+  total: number,
+  r: { fringeFrac: number; overheadFrac: number; feeFrac: number; fccmFrac: number },
+): DetailParts {
+  const burden = r.fringeFrac + r.overheadFrac;
+  const multiplier = (1 + burden) * (1 + r.feeFrac) + r.fccmFrac;
+  if (!(total > 0) || multiplier <= 0) return { ...NO_PARTS };
+  const labor = round2(total / multiplier);
+  const fringe = round2(labor * burden);
+  const fee = round2((labor + fringe) * r.feeFrac);
+  const fccm = round2(labor * r.fccmFrac);
+  const residue = round2(total - (labor + fringe + fee + fccm));
+  return { labor: round2(labor + residue), fringe, odc: 0, premium: 0, fee, fccm, total: round2(total) };
+}
+
+function addParts(a: DetailParts, b: DetailParts): DetailParts {
+  return {
+    labor: round2(a.labor + b.labor),
+    fringe: round2(a.fringe + b.fringe),
+    odc: round2(a.odc + b.odc),
+    premium: round2(a.premium + b.premium),
+    fee: round2(a.fee + b.fee),
+    fccm: round2(a.fccm + b.fccm),
+    total: round2(a.total + b.total),
+  };
+}
+
+/**
+ * The detail page's Budget and Previously Billed columns, row by row.
+ *
+ * Julie's page fills all four money columns on every row; ours printed only
+ * the totals ("Not seeing any information populated in the Budget, Previously
+ * billed or amount to date field"). Procas knows the totals but not the rows.
+ * In order of preference:
+ *
+ *  - the split typed on the Work Plan screen (Budget / Previously billed by
+ *    cost category), which is exact;
+ *  - her last invoice's own rows, for whatever of the total it accounts for;
+ *  - the remainder split at the burden of the periods it was billed in. That
+ *    part is arithmetic: it puts everything billed since her invoice on the
+ *    labor, fringe and fee rows, and cannot know how much of it was overtime
+ *    premium. The column totals are exact either way.
+ */
+export function tylinDetailColumns(
+  ctx: PackageDocContext,
+  fin: TylinFinancials,
+  pastRates: { fringeFrac: number; overheadFrac: number; feeFrac: number; fccmFrac: number },
+): { budget: DetailParts; previous: DetailParts } {
+  const wp = ctx.workPlan;
+  const anchor = knownHeader((wp as { procasProject?: string | null }).procasProject, wp.jobNumber)
+    ?.detailAnchor;
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
+
+  const prev = round2(fin.previouslyBilled);
+  let previous: DetailParts;
+  if (
+    wp.prevBilledLabor != null ||
+    wp.prevBilledOverhead != null ||
+    wp.prevBilledFixedFee != null ||
+    wp.prevBilledFccm != null
+  ) {
+    previous = {
+      labor: round2(wp.prevBilledLabor ?? 0),
+      fringe: round2(wp.prevBilledOverhead ?? 0),
+      odc: 0,
+      premium: 0,
+      fee: round2(wp.prevBilledFixedFee ?? 0),
+      fccm: round2(wp.prevBilledFccm ?? 0),
+      total: prev,
+    };
+  } else {
+    const from = anchor && prev >= anchor.toDate.total - 0.005 && ctx.pkg.payPeriodStart > anchor.through
+      ? anchor.toDate
+      : NO_PARTS;
+    previous = addParts(from, splitDetailTotal(round2(prev - from.total), pastRates));
+    previous.total = prev;
+  }
+
+  const total = fin.budget;
+  let budget: DetailParts;
+  if (wp.budgetLabor != null || wp.budgetOverhead != null || wp.budgetFixedFee != null || wp.budgetFccm != null) {
+    budget = {
+      labor: round2(wp.budgetLabor ?? 0),
+      fringe: round2(wp.budgetOverhead ?? 0),
+      odc: 0,
+      premium: 0,
+      fee: round2(wp.budgetFixedFee ?? 0),
+      fccm: round2(wp.budgetFccm ?? 0),
+      total,
+    };
+  } else if (anchor && near(total, anchor.budget.total)) {
+    budget = anchor.budget;
+  } else {
+    budget = splitDetailTotal(total, fin);
+  }
+  return { budget, previous };
+}
+
+/**
+ * Fills in a progress report's heading, wherever its cells are.
+ *
+ * Each person's report in her workbook was laid out by hand and no two agree:
+ * Sarah's has "MONTH" in B4 with the month beside it and the year in its own
+ * cell, Ryan's has "MONTH:" in D4 and the year inside the "/ YEAR 2026" label.
+ * Writing to fixed addresses put Ryan's month to the LEFT of its label
+ * ("SeptembMONTH: 2026 / YEAR 2026") and a second work plan number on top of
+ * Jordy's ("Work Pl|A.02-01"). So the labels are found and the values put
+ * beside them. The work plan number and title are hers already and stay.
+ */
+function writeReportHeading(
+  ws: ExcelJS.Worksheet,
+  h: { month: string; year: number; date: Date | null; period: string },
+): void {
+  const text = (c: ExcelJS.Cell) => (typeof c.value === "string" ? c.value : "");
+  for (let r = 3; r <= 8; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= 8; c++) {
+      const cell = row.getCell(c);
+      const label = text(cell).trim();
+      if (!label) continue;
+      const beside = row.getCell(c + 1).address;
+      if (/^month\b/i.test(label)) {
+        setVal(ws, beside, h.month);
+        // "September" is wider than the cell "June" fitted in.
+        shrinkCellToFit(ws, beside);
+      } else if (/^work plan title:\s*\S/i.test(label)) {
+        // Label and title share one cell here, and ran into "Period:" beside it.
+        shrinkCellToFit(ws, cell.address);
+      } else if (/^\/\s*year/i.test(label)) {
+        if (/\d{4}/.test(label)) setVal(ws, cell.address, label.replace(/\d{4}/, String(h.year)));
+        else setVal(ws, beside, h.year);
+      } else if (/^date:?$/i.test(label)) {
+        // No date yet: blank, not the date of the invoice the report came from.
+        setVal(ws, beside, h.date);
+      } else if (/^period:?$/i.test(label)) setVal(ws, beside, h.period);
+    }
+  }
 }
 
 export interface TylinBuildResult {
@@ -642,6 +819,7 @@ function writeLaborBlock(
     const row = block.start + i;
     const amt = round2(r.hours * r.rate);
     setVal(ws, `A${row}`, r.classification);
+    if (r.classification.length > 26) shrinkCellToFit(ws, `A${row}`);
     setVal(ws, `B${row}`, r.employeeName);
     setVal(ws, `C${row}`, r.hours);
     setVal(ws, `D${row}`, r.rate);
@@ -680,6 +858,15 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   const subinv = wb.getWorksheet(SUBINV_SHEET)!;
   const sublabor = wb.getWorksheet(SUBLABOR_SHEET)!;
 
+  // Her order of people, read before the labor attachment is rewritten.
+  const inRosterOrder = byRoster(rosterOrder(sublabor));
+  fin.laborRows.sort(
+    (a, b) =>
+      (a.location === b.location ? 0 : a.location === "home" ? -1 : 1) ||
+      inRosterOrder(a.employeeName, b.employeeName) ||
+      a.premium.localeCompare(b.premium),
+  );
+
   // Capture a pristine week-tab layout before we drop the template's tabs.
   const pristineWeek = JSON.parse(
     JSON.stringify(wb.getWorksheet(PRISTINE_WEEK_SHEET)!.model),
@@ -717,8 +904,15 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   if (wp.sendToAddress1) setVal(invoice, "D15", wp.sendToAddress1);
   // Hers reads "6M8213 General Engineering Services", not the bare number.
   setVal(invoice, "E22", agreementLine(wp.agreementNo, wp.procasProject));
-  setVal(invoice, "L22", wp.bartProjectNumbers || wp.clientProjectNo || "");
+  // L22 is the "Project No:" label; the number, when there is one, goes under
+  // it. Writing the number INTO L22 erased the label on every invoice.
+  setVal(invoice, "L23", wp.bartProjectNumbers || wp.clientProjectNo || "");
   setVal(invoice, "E23", wp.title || "");
+  // The full title has to fit beside the Project No. box ("…& PM Support"),
+  // which it does a size down. Not shrink-to-fit: the text runs on past its
+  // own narrow cell, and shrinking it to that cell leaves a line of specks.
+  const titleCell = invoice.getCell("E23");
+  titleCell.font = { ...titleCell.font, size: Math.max(7, (titleCell.font?.size ?? 9) - 1.5) };
   setVal(invoice, "G24", periodStr);
   setVal(invoice, "L25", wp.terms || "");
   setVal(invoice, "C28", `Work Plan ${wp.code}`);
@@ -833,6 +1027,21 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   setVal(subinv, "E35", fin.feeFrac);
   setVal(subinv, "H35", round2(fin.fixedFee));
   setVal(subinv, "H39", round2(fin.fixedFee));
+  // FCCM, on the line between Total Fixed Fee and Total Amount Due. BART asked
+  // for it on this invoice from September 2026: 0.39% of direct labor only.
+  // The figure was already in the total; the page had no line to show it on.
+  const fccm = round2(fin.home.fccm + fin.field.fccm);
+  if (fin.fccmFrac > 0) {
+    // The label starts in column A: from B it ran into the percentage and lost
+    // its "(FCCM)".
+    for (const [from, to] of [["B35", "A40"], ["E35", "E40"], ["H35", "H40"], ["I35", "I40"], ["J35", "J40"], ["G35", "G40"]]) {
+      subinv.getCell(to).style = JSON.parse(JSON.stringify(subinv.getCell(from).style));
+    }
+    setVal(subinv, "A40", "Facilities Capital Cost of Money (FCCM)");
+    setVal(subinv, "E40", fin.fccmFrac);
+    subinv.getCell("E40").numFmt = "0.00%";
+    setVal(subinv, "H40", fccm);
+  }
   // Authoritative totals (values, not formulas).
   setVal(subinv, "G42", budget);
   setVal(subinv, "H42", totalThisPeriod);
@@ -857,18 +1066,51 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   for (const r of [7, 8, 9, 11, 12, 13, 16, 17, 18, 23, 24, 25, 29, 30, 35, 38, 40]) {
     clearCell(subinv, `I${r}`);
   }
-  const prevSplit =
-    wp.prevBilledLabor != null ||
-    wp.prevBilledOverhead != null ||
-    wp.prevBilledFixedFee != null ||
-    wp.prevBilledFccm != null;
-  if (prevSplit) {
-    setVal(subinv, "I11", round2(wp.prevBilledLabor ?? 0));
-    setVal(subinv, "I12", round2(wp.prevBilledOverhead ?? 0));
-    setVal(subinv, "I35", round2(wp.prevBilledFixedFee ?? 0));
-  } else if (previouslyBilled !== 0) {
-    setVal(subinv, "I11", previouslyBilled);
+  // Budget (G), Previously Billed (I) and Amount To Date (J) on every row, and
+  // % Expended (K) on the section totals — see tylinDetailColumns.
+  const pastRates = {
+    ...burdenOnFringeLine(
+      knownBurden([(wp as { procasProject?: string | null }).procasProject, wp.jobNumber], priorDay(pkg.payPeriodStart)) ?? wp,
+    ),
+    feeFrac: fin.feeFrac,
+    fccmFrac:
+      (knownBurden([(wp as { procasProject?: string | null }).procasProject, wp.jobNumber], priorDay(pkg.payPeriodStart))
+        ?.fccmRate ?? wp.fccmRate ?? 0) / 100,
+  };
+  const cols = tylinDetailColumns(ctx, fin, pastRates);
+  const current: DetailParts = {
+    labor: round2(fin.home.directLabor + fin.field.directLabor),
+    fringe: round2(fin.home.fringe + fin.home.overheadPool + fin.field.fringe + fin.field.overheadPool),
+    odc: fin.otherDirectCosts,
+    premium: round2(fin.otPremium + fin.dtPremium),
+    fee: round2(fin.fixedFee),
+    fccm,
+    total: totalThisPeriod,
+  };
+  const share = (part: number, whole: number) => (whole > 0 ? part / whole : 0);
+  const put = (row: number, b: number, p: number, c: number, pct = false) => {
+    setVal(subinv, `G${row}`, b);
+    setVal(subinv, `I${row}`, p);
+    setVal(subinv, `J${row}`, round2(p + c));
+    if (pct) setVal(subinv, `K${row}`, share(p + c, b));
+  };
+  const { budget: bud, previous: was } = cols;
+  put(11, bud.labor, was.labor, current.labor);
+  put(12, bud.fringe, was.fringe, current.fringe);
+  put(14, round2(bud.labor + bud.fringe), round2(was.labor + was.fringe), round2(current.labor + current.fringe));
+  put(20, round2(bud.labor + bud.fringe), round2(was.labor + was.fringe), round2(current.labor + current.fringe), true);
+  if (bud.odc || was.odc || current.odc) {
+    // Her earlier overtime adjustments sit on this line of the ODC block.
+    if (was.odc) {
+      setVal(subinv, "I25", was.odc);
+      setVal(subinv, "J25", was.odc);
+    }
+    put(27, bud.odc, was.odc, current.odc, true);
   }
+  if (bud.premium || was.premium || current.premium) put(33, bud.premium, was.premium, current.premium);
+  put(35, bud.fee, was.fee, current.fee);
+  put(39, bud.fee, was.fee, current.fee, true);
+  if (fin.fccmFrac > 0 || was.fccm) put(40, bud.fccm, was.fccm, current.fccm);
 
   // -- 3. Sub1 Labor (per-employee lines). Clear both blocks, then write rows.
   setVal(sublabor, "E1", invoiceDate ?? "");
@@ -992,12 +1234,12 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
       continue;
     }
     ws.state = "visible";
-    setVal(ws, "C4", MONTH_NAMES[periodStart.getMonth()]);
-    setVal(ws, "E4", periodStart.getFullYear());
-    setVal(ws, "B6", wp.code || "");
-    if (reportDate) setVal(ws, "F6", reportDate);
-    setVal(ws, "F7", periodStr);
-    setVal(ws, "B7", wp.title || ws.getCell("B7").value);
+    writeReportHeading(ws, {
+      month: MONTH_NAMES[periodStart.getMonth()],
+      year: periodStart.getFullYear(),
+      date: reportDate,
+      period: periodStr,
+    });
     // The narrative closes with a CONCATENATE that quotes the budget, the
     // amount billed to date and the percent expended by reaching into the
     // Invoice and Sub1 Inv. Unevaluated, it prints the sentence built from the
@@ -1018,7 +1260,9 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
         }
         // The signature block's date sits above its "Date" caption and was a
         // typed 7/8/2026 from the reference invoice.
-        if (v === "Date" && rowNumber > 20 && reportDate) {
+        // (Ryan's caption is padded with spaces; and with no date set the
+        // line is left blank to be dated by hand.)
+        if (typeof v === "string" && /^\s*date\s*$/i.test(v) && rowNumber > 20) {
           setVal(ws, ws.getCell(rowNumber - 1, colNumber).address, reportDate);
         }
       });
@@ -1047,13 +1291,16 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
 
   // -- 6. Generate fresh weekly timesheet tabs (one per week per contributor).
   const weeks = [...ctx.weeks].sort((a, b) => a.sortOrder - b.sortOrder);
-  const people = contributors(ctx);
+  const people = contributors(ctx).sort((a, b) => inRosterOrder(a.name, b.name));
   const persons =
     people.length > 0 ? people : [{ key: "name:", name: "", classification: "" }];
   const usedNames = new Set<string>(wb.worksheets.map((w) => w.name.toLowerCase()));
   const timesheetTabs: string[] = [];
-  weeks.forEach((week, i) => {
-    for (const person of persons) {
+  // One person's weeks together, then the next person's — "Please group
+  // timesheets by person" — in her order of people. They used to run week by
+  // week, every person's first week before anyone's second.
+  for (const person of persons) {
+    weeks.forEach((week, i) => {
       const label = person.name
         ? `${firstNameOf(person.name)} Week ${i + 1}`
         : sheetSafe(week.label, `Week ${i + 1}`);
@@ -1065,7 +1312,7 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
       const hasHours = ctx.entries.some(
         (x) => x.weekId === week.id && contributorKey(x) === person.key && entryHours(x) > 0,
       );
-      if (!hasHours) continue;
+      if (!hasHours) return;
       const ws = wb.addWorksheet(name);
       const cloned = JSON.parse(JSON.stringify(pristineWeek));
       reviveModelDates(cloned);
@@ -1077,10 +1324,19 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
       fillTimesheet(ws, week, ctx, person);
       // The template's timesheets carry Ryan Harper's signature; only that
       // person's own timesheet may keep it.
-      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
+      const signed = settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
+      // Nobody's picture to use: sign the way her workbook signs for the
+      // people it has no picture of, with the name in a script face under
+      // "Submitted by". (Upload a signature on the Signatures page to replace it.)
+      if (signed === "none" && person.name) {
+        setVal(ws, "E17", person.name);
+        ws.getCell("E17").font = { name: "Courgette", size: 18, italic: true };
+        ws.getCell("E17").alignment = { horizontal: "left", vertical: "middle" };
+        ws.getRow(17).height = 24;
+      }
       timesheetTabs.push(name);
-    }
-  });
+    });
+  }
 
   // -- 7. Finalize: freeze straggler shared formulas (Google-Sheets export
   // artifact) so the workbook writes cleanly, scrub internal marks, recalc on
@@ -1093,6 +1349,13 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
 
   fitSheetsToOnePage(wb);
   return { wb, timesheetTabs, financials: fin };
+}
+
+/** The day before a YYYY-MM-DD date: the last day of the previous period. */
+function priorDay(date: string): string {
+  const d = toDate(date);
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function homeHours(fin: TylinFinancials): number {

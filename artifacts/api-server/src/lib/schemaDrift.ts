@@ -65,6 +65,41 @@ export function describeDrift(drift: SchemaDrift[]): string {
   );
 }
 
+/**
+ * Columns that are safe to create at startup: nullable, no default, no
+ * constraint, and declared identically in the drizzle schema, so a later
+ * `db push` finds nothing to do.
+ *
+ * The schema step of a deploy has been skipped before, and it took the package
+ * screen down for a morning. A column that only ever ADDS room for a value
+ * does not need a person to remember a second command.
+ */
+const ADDITIVE_COLUMNS: ReadonlyArray<{ table: string; column: string; type: string }> = [
+  { table: "work_plans", column: "procas_budget", type: "double precision" },
+];
+
+/** Creates any missing additive columns. Never throws; returns what it added. */
+export async function ensureAdditiveColumns(): Promise<string[]> {
+  const added: string[] = [];
+  for (const c of ADDITIVE_COLUMNS) {
+    try {
+      const found = await workspaceDb.db.execute(sql`
+        select 1 from information_schema.columns
+        where table_schema = current_schema() and table_name = ${c.table} and column_name = ${c.column}
+      `);
+      if (found.rows.length > 0) continue;
+      await workspaceDb.db.execute(
+        sql.raw(`alter table "${c.table}" add column if not exists "${c.column}" ${c.type}`),
+      );
+      added.push(`${c.table}.${c.column}`);
+    } catch (err) {
+      logger.warn({ err, column: `${c.table}.${c.column}` }, "Could not add a missing column at startup");
+    }
+  }
+  if (added.length > 0) logger.info({ added }, "Added missing database columns at startup");
+  return added;
+}
+
 let lastKnownDrift: SchemaDrift[] = [];
 
 /** The drift found at startup, for the error handler to quote. */

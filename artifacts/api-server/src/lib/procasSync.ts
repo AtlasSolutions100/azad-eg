@@ -216,6 +216,83 @@ export function effectiveBillingAccount(rows: ProcasRow[], at: Date = new Date()
   return latest(started.length > 0 ? started : pool);
 }
 
+/** A project's own budget in Procas: the obligated amount, else the estimated total. */
+function ownBudget(pr: ProcasRow | undefined): number {
+  if (!pr) return 0;
+  return toNum(pr.ObligatedAmount) > 0 ? toNum(pr.ObligatedAmount) : toNum(pr.EstimatedTotal);
+}
+
+/** Sub-projects of `code` at the shallowest level where `has` finds any. */
+function nearestBelow<T>(code: string, rows: T[], codeOf: (r: T) => string, has: (r: T) => boolean): T[] {
+  const below = rows.filter((r) => codeOf(r).startsWith(code + ".") && has(r));
+  if (below.length === 0) return [];
+  const depth = (r: T) => codeOf(r).split(".").length;
+  const top = Math.min(...below.map(depth));
+  return below.filter((r) => depth(r) === top);
+}
+
+/**
+ * The budget Procas holds for a work plan.
+ *
+ * Usually the project's own. But Procas keeps T.Y. Lin's on the sub-project —
+ * "10014" carries nothing and "10014.01" carries the 3,552,468.46 — so a work
+ * plan on the parent code showed no budget at all, and then one copied off an
+ * old invoice. When the project has none of its own, the sub-projects one
+ * level down that do are added up.
+ */
+export function procasBudgetFor(code: string, projects: ProcasRow[]): number {
+  const own = ownBudget(projects.find((p) => toStr(p.Project) === code));
+  if (own > 0) return own;
+  const below = nearestBelow(code, projects, (p) => toStr(p.Project), (p) => ownBudget(p) > 0);
+  const sum = below.reduce((s, p) => s + ownBudget(p), 0);
+  return Math.round((sum + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * The work plan budget after comparing with Procas.
+ *
+ * The budget follows Procas: when the obligated amount changes there, the new
+ * figure replaces the one here. Julie asked for exactly that ("when we get new
+ * budget we can make changes") after finding a budget on the T.Y. Lin invoice
+ * that matched an old invoice and not Procas.
+ *
+ * A figure typed on the Work Plan screen still holds — until Procas next
+ * changes. `lastProcas` is what Procas said the last time we compared, which
+ * is how "Procas moved" is told apart from "somebody typed over it".
+ *
+ * The first time through there is no such record. A plan the Procas import
+ * owns takes Procas's figure: under the old rule its budget was copied once,
+ * at import, and never refreshed, so what it holds is far more likely a stale
+ * copy than a correction (10014.01 still read 2,596,541.95 after Procas went
+ * to 3,552,468.46). A plan a biller has taken over keeps its budget unless it
+ * is plainly not typed: zero, or a figure the app itself put there (`appSet`).
+ */
+export function syncedBudget(o: {
+  local: number;
+  lastProcas: number | null | undefined;
+  procas: number;
+  procasOwned?: boolean;
+  appSet?: Array<number | null | undefined>;
+}): number {
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
+  if (!(o.procas > 0)) return o.local;
+  if (o.lastProcas != null) return near(o.procas, o.lastProcas) ? o.local : o.procas;
+  const untouched =
+    !!o.procasOwned || !(o.local > 0) || near(o.local, o.procas) || (o.appSet ?? []).some((v) => v != null && near(o.local, v));
+  return untouched ? o.procas : o.local;
+}
+
+/**
+ * The Billing Setup account for a work plan: the project's own, or its single
+ * sub-project's when the project has none (10014 / 10014.01 again).
+ */
+function accountFor(code: string, byProject: Map<string, ProcasRow>): ProcasRow | undefined {
+  const own = byProject.get(code);
+  if (own) return own;
+  const below = nearestBelow(code, [...byProject.keys()], (k) => k, () => true);
+  return below.length === 1 ? byProject.get(below[0]) : undefined;
+}
+
 /** The account in force today for every project that has one. */
 function currentAccountsByProject(billingAccounts: ProcasRow[]): Map<string, ProcasRow> {
   const grouped = new Map<string, ProcasRow[]>();
@@ -351,7 +428,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
     const title = toStr(pr.ProjectDesc) || code;
     const client = toStr(pr.ClientDesc) || toStr(pr.Client) || "Unknown client";
     const status = pr.IsClosed === true ? "archived" : "active";
-    const budget = toNum(pr.ObligatedAmount) > 0 ? toNum(pr.ObligatedAmount) : toNum(pr.EstimatedTotal);
+    const budget = procasBudgetFor(code, projects as ProcasRow[]);
     // Procas' ContractNumber is the prime agreement the work is billed under —
     // "6M8213 GEC" on the T.Y. Lin job, whose invoice carries Agreement No.
     // 6M8213 — and 430 of the 532 projects have one. It is the only invoice
@@ -368,10 +445,8 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       if (title !== linked.title) changes.title = title;
       if (client !== linked.client) changes.client = client;
       if (status !== linked.status) changes.status = status;
-      // Budget: only fill when the local plan has none, so manual budget
-      // decompositions Julie entered are never stomped.
-      if (linked.totalBudget === 0 && budget > 0) changes.totalBudget = budget;
-      // Same rule for the agreement number: fill a blank, never overwrite.
+      // The budget is synced separately, below, for every linked plan.
+      // The agreement number: fill a blank, never overwrite.
       if (!String(linked.agreementNo ?? "").trim() && contractNumber) {
         changes.agreementNo = contractNumber;
       }
@@ -402,7 +477,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       continue;
     }
     if (claimed.has(code) || claimed.has(toStr(pr.ContractNumber))) continue;
-    const acct = acctByProject.get(code);
+    const acct = accountFor(code, acctByProject);
     // Procas returns indirect percentages as FRACTIONS (0.08 = 8%, 1.2058 =
     // 120.58%, 0.0039 = 0.39%); the schema/billing store whole-number percents,
     // so scale by 100. When a billing account exists we set ALL four rates
@@ -420,6 +495,7 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
         client,
         jobNumber: code,
         totalBudget: budget,
+        procasBudget: budget > 0 ? budget : null,
         agreementNo: contractNumber || null,
         procasProject: code,
         // From Julie's invoice register: last-Friday for AECOM, Parsons and
@@ -438,6 +514,45 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
       claimed.add(code);
     }
   }
+  // Budgets follow Procas (see syncedBudget) for every plan linked to a Procas
+  // project, whoever owns its other fields: the budget has its own record of
+  // what Procas last said, so a biller's rates or title are not a reason to
+  // stop tracking it.
+  for (const wp of await db.select().from(workPlansTable)) {
+    const link = (wp.procasProject ?? "").trim();
+    if (!link) continue;
+    const procas = procasBudgetFor(link, projects as ProcasRow[]);
+    if (!(procas > 0)) continue;
+    const next = syncedBudget({
+      local: wp.totalBudget,
+      lastProcas: wp.procasBudget,
+      procas,
+      procasOwned: wp.source === "procas",
+      // What the app itself may have put there before this rule: the project's
+      // own Procas figure, or the budget off the reference invoice.
+      appSet: [
+        ownBudget((projects as ProcasRow[]).find((p) => toStr(p.Project) === link)),
+        knownHeader(link, wp.jobNumber)?.totalBudget,
+      ],
+    });
+    const budgetChanged = Math.abs(next - wp.totalBudget) >= 0.005;
+    if (!budgetChanged && wp.procasBudget != null && Math.abs(wp.procasBudget - procas) < 0.005) continue;
+    await db
+      .update(workPlansTable)
+      .set({ totalBudget: next, procasBudget: procas })
+      .where(eq(workPlansTable.id, wp.id));
+    if (budgetChanged) {
+      updated += 1;
+      const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      await recordAudit({
+        action: "budget updated from Procas",
+        entityType: "workPlan",
+        entityId: wp.id,
+        description: `Work plan ${wp.code}: budget ${money(wp.totalBudget)} → ${money(next)} (Procas obligated amount)`,
+      });
+    }
+  }
+
   return { created, updated, total, cyclesCorrected };
 }
 
@@ -538,7 +653,7 @@ export async function syncReferenceFromProcas(creds: ProcasCreds): Promise<Refer
     if (wp.source !== "procas") continue;
     const proj = projByCode.get(wp.jobNumber.trim());
     if (!proj) continue;
-    const acct = acctByProject.get(toStr(proj.Project));
+    const acct = accountFor(toStr(proj.Project), acctByProject);
     if (!acct) continue;
     const changes: Partial<typeof workPlansTable.$inferInsert> = {};
     // Procas percentages are fractions; scale to whole-number percents. Sync all

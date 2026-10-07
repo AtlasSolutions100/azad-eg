@@ -90,7 +90,7 @@ import { bumpInvoiceNumber } from "../lib/invoiceNumber";
 import { pullPackageHoursFromProcas } from "../lib/procasPackageSync";
 import { toDisplayName } from "../lib/displayName";
 import { seededInvoiceNumber } from "../lib/invoiceRegister";
-import { docWorkPlan, formPrime, knownHeader } from "../lib/knownInvoiceHeaders";
+import { docWorkPlan, formPrime, knownBurden, knownHeader } from "../lib/knownInvoiceHeaders";
 import { burdenMultiplier } from "../lib/procasPackageSync";
 import { computeWspLinesFinancials, isWspLinesForm } from "../lib/wspLinesWorkbook";
 import { recordAudit } from "../lib/audit";
@@ -1655,7 +1655,7 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
   // that has drifted from it bills a different total for the same hours — the
   // AECOM plan sat at 109% overhead and no FCCM, against 120.58% and 0.39% on
   // her invoices, for as long as nobody compared the two.
-  const hers = knownHeader(view.procasProject, view.jobNumber)?.burden;
+  const hers = knownBurden([view.procasProject, view.jobNumber], pkg.payPeriodStart);
   if (hers) {
     const now = burdenMultiplier(view);
     const then = burdenMultiplier(hers);
@@ -1666,7 +1666,7 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
         severity: "warning",
         field: "rates",
         message:
-          `This work plan is set to ${describe(view)}, but the last invoice sent for it used ${describe(hers)}. ` +
+          `This work plan is set to ${describe(view)}, but its invoices for this period carry ${describe(hers)}. ` +
           `That changes this invoice's total by ${(((now - then) / then) * 100).toFixed(1)}%. ` +
           `Click "Refresh from Procas" to bring the work plan up to date, or correct its rates on the Work Plan screen.`,
       });

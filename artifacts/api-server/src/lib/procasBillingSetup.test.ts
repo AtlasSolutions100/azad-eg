@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { billedBeforePeriod, effectiveBillingAccount } from "./procasSync";
-import { formPrime, knownHeader, KNOWN_INVOICE_HEADERS } from "./knownInvoiceHeaders";
-import { burdenOnFringeLine } from "./billingProfile";
-import { burdenMultiplier } from "./procasPackageSync";
+import { billedBeforePeriod, effectiveBillingAccount, procasBudgetFor, syncedBudget } from "./procasSync";
+import { formPrime, knownBurden, knownHeader, KNOWN_INVOICE_HEADERS } from "./knownInvoiceHeaders";
+import { burdenOnFringeLine, effectiveWorkPlan } from "./billingProfile";
+import { burdenMultiplier, directRate } from "./procasPackageSync";
+import { splitDetailTotal } from "./tylinWorkbook";
 
 /**
  * Procas's Billing Setup for project 10007, as the feed returned it on
@@ -102,7 +103,104 @@ describe("the burden on her invoices", () => {
     expect(burdenMultiplier(knownHeader("10007")!.burden!)).toBeCloseTo(2.386164, 6);
     expect(burdenMultiplier(knownHeader("10013.TO02")!.burden!)).toBeCloseTo(2.386164, 6);
     expect(burdenMultiplier(knownHeader("10009.03")!.burden!)).toBeCloseTo(2.386164, 6);
-    expect(burdenMultiplier(knownHeader("10014")!.burden!)).toBeCloseTo(2.382264, 6);
+    expect(burdenMultiplier(knownHeader("10014")!.burden!)).toBeCloseTo(2.386164, 6);
+  });
+
+  it("follows a change the client asked for: FCCM on T.Y. Lin's from September 2026", () => {
+    // Procas's loaded rates changed on 2026-09-01 to include 0.39% FCCM. With
+    // the old burden the September invoice printed $90.15, $83.14, $89.15.
+    const sept = knownBurden(["10014"], "2026-09-01")!;
+    expect(sept.fccmRate).toBe(0.39);
+    expect(directRate(214.75476, sept)).toBe(90); // Amir
+    expect(directRate(198.051612, sept)).toBe(83); // Ryan
+    expect(directRate(212.368596, sept)).toBe(89); // Sarah
+    expect(directRate(180.82350792, sept)).toBe(75.78); // Jordy
+    expect(directRate(196.6199136, sept)).toBe(82.4); // Joanna
+    // An invoice for an earlier month still bills the way that month did.
+    const aug = knownBurden(["10014"], "2026-08-01")!;
+    expect(aug.fccmRate).toBe(0);
+    expect(directRate(214.4, aug)).toBe(90);
+    expect(directRate(197.73, aug)).toBe(83);
+  });
+
+  it("reaches a package through its work plan, by the package's own period", () => {
+    const wp = {
+      code: "10014",
+      title: "T.Y. Lin",
+      client: "T.Y. Lin",
+      jobNumber: "10014",
+      procasProject: "10014",
+      source: "procas",
+      totalBudget: 3552468.46,
+      fringeRate: 120.58,
+      overheadRate: 0,
+      fixedFeeRate: 8,
+      fccmRate: 0.39,
+    } as unknown as Parameters<typeof effectiveWorkPlan>[1];
+    const pkg = { procasProject: null, clientName: null, totalBudget: null, fringeRate: null, overheadRate: null, fixedFeeRate: null, fccmRate: null };
+    expect(effectiveWorkPlan({ ...pkg, payPeriodStart: "2026-09-01" }, wp).fccmRate).toBe(0.39);
+    expect(effectiveWorkPlan({ ...pkg, payPeriodStart: "2026-08-01" }, wp).fccmRate).toBe(0);
+    // A biller who has set the plan's rates owns them for every period…
+    const theirs = { ...(wp as object), source: "manual", fccmRate: 0.5 } as typeof wp;
+    expect(effectiveWorkPlan({ ...pkg, payPeriodStart: "2026-08-01" }, theirs).fccmRate).toBe(0.5);
+    // …and a rate typed on the package beats both.
+    expect(effectiveWorkPlan({ ...pkg, fccmRate: 0.2, payPeriodStart: "2026-08-01" }, wp).fccmRate).toBe(0.2);
+  });
+});
+
+describe("the budget follows Procas", () => {
+  const projects = [
+    { Project: "10014", ObligatedAmount: 0, EstimatedTotal: 0 },
+    { Project: "10014.01", ObligatedAmount: 3552468.46, EstimatedTotal: 3352468.45 },
+    { Project: "10014.01.01.0.CA", ObligatedAmount: 0 },
+    { Project: "10007", ObligatedAmount: 1381971.85 },
+    { Project: "10007.00", ObligatedAmount: 0 },
+    { Project: "100140", ObligatedAmount: 5 },
+  ];
+
+  it("finds a budget Procas keeps on the sub-project", () => {
+    // T.Y. Lin's is on 10014.01; the work plan is 10014.
+    expect(procasBudgetFor("10014", projects)).toBe(3552468.46);
+    expect(procasBudgetFor("10014.01", projects)).toBe(3552468.46);
+    expect(procasBudgetFor("10007", projects)).toBe(1381971.85);
+    expect(procasBudgetFor("10099", projects)).toBe(0);
+  });
+
+  it("replaces a stale or seeded figure the first time, on a plan the import owns", () => {
+    // 2,588,054.11 came off her June invoice; Procas says 3,552,468.46.
+    expect(syncedBudget({ local: 2588054.11, lastProcas: null, procas: 3552468.46, procasOwned: true })).toBe(3552468.46);
+    expect(syncedBudget({ local: 0, lastProcas: null, procas: 40000 })).toBe(40000);
+  });
+
+  it("keeps a figure typed on a plan a biller owns, the first time", () => {
+    expect(syncedBudget({ local: 363069.55, lastProcas: null, procas: 40000, procasOwned: false })).toBe(363069.55);
+    // …unless it is one the app itself put there.
+    expect(syncedBudget({ local: 2588054.11, lastProcas: null, procas: 3552468.46, appSet: [0, 2588054.11] })).toBe(3552468.46);
+  });
+
+  it("takes a new budget from Procas, and holds a typed one until then", () => {
+    // Procas has not moved: whatever is here stands.
+    expect(syncedBudget({ local: 500000, lastProcas: 3552468.46, procas: 3552468.46, procasOwned: true })).toBe(500000);
+    // "When we get new budget": Procas moved, so it wins.
+    expect(syncedBudget({ local: 500000, lastProcas: 3552468.46, procas: 3900000, procasOwned: true })).toBe(3900000);
+    // Procas with no budget never blanks ours.
+    expect(syncedBudget({ local: 500000, lastProcas: 3552468.46, procas: 0 })).toBe(500000);
+  });
+});
+
+describe("splitting a total into the detail page's rows", () => {
+  it("adds back up to the total, to the cent", () => {
+    const rates = { fringeFrac: 1.2058, overheadFrac: 0, feeFrac: 0.08, fccmFrac: 0.0039 };
+    for (const total of [148252.62, 3552468.46, 289493.62, 0.01]) {
+      const p = splitDetailTotal(total, rates);
+      expect(p.labor + p.fringe + p.fee + p.fccm).toBeCloseTo(total, 2);
+      expect(p.total).toBe(total);
+    }
+    // September's own figures come straight back out.
+    const sept = splitDetailTotal(148252.62 - 1328, rates);
+    expect(sept.labor).toBeCloseTo(61573.56, 1);
+    expect(sept.fccm).toBeCloseTo(240.14, 1);
+    expect(splitDetailTotal(0, rates).total).toBe(0);
   });
 
   it("prints on the Fringe line for the forms that have no overhead of their own", () => {

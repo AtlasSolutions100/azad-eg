@@ -284,6 +284,9 @@ export default function WorkPlans() {
             </div>
             <div className="space-y-2">
               <Label>Total Budget</Label>
+              <p className="text-xs text-muted-foreground">
+                Follows the Obligated Amount in Procas. A figure typed here is used until the budget next changes in Procas.
+              </p>
               {/* `?? ''` not `|| ''`: a Procas-imported plan usually has a 0
                   budget, and `0 || ''` renders the required field empty, so the
                   form refused to save — blocking even an unrelated edit like

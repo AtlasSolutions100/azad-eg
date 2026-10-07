@@ -1,4 +1,5 @@
 import type { PackageRow, WorkPlan } from "@workspace/db";
+import { historicalBurden } from "./knownInvoiceHeaders";
 
 /**
  * The billing profile a package actually bills with. Packages may exist
@@ -75,7 +76,10 @@ type PkgProfileFields = Pick<
   | "overheadRate"
   | "fixedFeeRate"
   | "fccmRate"
->;
+> & {
+  /** Lets a burden that applied to an earlier period be used for that period. */
+  payPeriodStart?: string | null;
+};
 
 /**
  * Applies a work plan's Max Bill Rate cap to a raw hourly rate. When a cap is
@@ -92,6 +96,13 @@ export function effectiveWorkPlan(
   wp: WorkPlan | null | undefined,
 ): EffectiveWorkPlan {
   const job = (wp?.jobNumber ?? pkg.procasProject ?? "").trim();
+  // A package for a month before a known burden change bills that month's
+  // burden (see burdenBefore). A work plan whose rates a biller has taken over
+  // is theirs for every period.
+  const past =
+    wp && wp.source !== "manual"
+      ? historicalBurden([wp.procasProject, wp.jobNumber], pkg.payPeriodStart)
+      : null;
   return {
     // Identity/display: real work plan wins; otherwise derive from the Procas
     // job so lists and audit lines still read sensibly.
@@ -104,10 +115,10 @@ export function effectiveWorkPlan(
     // the work plan arrives; 0 means "no budget tracked".
     totalBudget: pkg.totalBudget ?? wp?.totalBudget ?? 0,
     // Rates (percent): package override always wins over the work plan.
-    fringeRate: pkg.fringeRate ?? wp?.fringeRate ?? 0,
-    overheadRate: pkg.overheadRate ?? wp?.overheadRate ?? null,
-    fixedFeeRate: pkg.fixedFeeRate ?? wp?.fixedFeeRate ?? 0,
-    fccmRate: pkg.fccmRate ?? wp?.fccmRate ?? null,
+    fringeRate: pkg.fringeRate ?? past?.fringeRate ?? wp?.fringeRate ?? 0,
+    overheadRate: pkg.overheadRate ?? past?.overheadRate ?? wp?.overheadRate ?? null,
+    fixedFeeRate: pkg.fixedFeeRate ?? past?.fixedFeeRate ?? wp?.fixedFeeRate ?? 0,
+    fccmRate: pkg.fccmRate ?? past?.fccmRate ?? wp?.fccmRate ?? null,
     // Max billable rate cap comes only from the work plan (no package override).
     maxBillRate: wp?.maxBillRate ?? null,
     // Contract/cover-page details only a real work plan can provide.

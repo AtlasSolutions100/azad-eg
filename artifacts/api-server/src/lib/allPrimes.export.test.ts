@@ -197,10 +197,48 @@ describe("T.Y. Lin", () => {
     expect(text(inv, "E22")).toBe("6M8213 General Engineering Services");
   });
 
-  it("signs only the template signer's own timesheets", () => {
+  it("signs each timesheet with that person's own signature, never somebody else's", async () => {
+    // Ryan's is the template's picture; Sarah's is hers off Julie's invoices
+    // ("missing her signature"). Both sheets carry it beside the approver's.
     const sarah = pictures(sheet(wb, /^Sarah Week 1/));
     const ryan = pictures(sheet(wb, /^Ryan Week 1/));
-    expect(ryan).toBe(sarah + 1);
+    expect(sarah).toBe(ryan);
+    const ids = (ws: ExcelJS.Worksheet) => ws.getImages().map((i) => String(i.imageId)).sort().join(",");
+    expect(ids(sheet(wb, /^Sarah Week 1/))).not.toBe(ids(sheet(wb, /^Ryan Week 1/)));
+
+    // Somebody we hold no signature for is signed the way her workbook signs
+    // for such people: the name in a script face, and no borrowed picture.
+    const { wb: other } = await buildTylinWorkbook(
+      ctx("T.Y. Lin", plan("10014.01", "T.Y. Lin", {}), "6M8213 A.02-01-23", [
+        ["Zapanta, Joanna", "Assistant Resident Engineer 2", 82.4],
+      ]),
+    );
+    const joanna = sheet(other, /^Joanna Week 1/);
+    expect(pictures(joanna)).toBe(ryan - 1);
+    expect(joanna.getCell("E17").value).toBe("Joanna Zapanta");
+  });
+
+  it("groups the timesheets by person, in her order of people", () => {
+    // "Please group timesheets by person" — they ran week by week.
+    const tabs = wb.worksheets.map((w) => w.name).filter((n) => /Week \d+$/.test(n));
+    expect(tabs).toEqual([
+      "Sarah Week 1",
+      "Sarah Week 2",
+      "Sarah Week 3",
+      "Sarah Week 4",
+      "Ryan Week 1",
+      "Ryan Week 2",
+      "Ryan Week 3",
+      "Ryan Week 4",
+    ]);
+    // …and the labor attachment lists them the same way round.
+    const labor = wb.getWorksheet("Sub1 Labor")!;
+    expect(labor.getCell("B16").value).toBe("Sarah Boyd");
+    expect(labor.getCell("B17").value).toBe("Ryan Harper");
+  });
+
+  it("keeps the cover's Project No. label", () => {
+    expect(text(wb.getWorksheet("Invoice")!, "L22")).toBe("Project No:");
   });
 
   it("keeps the timesheet's merged cells", () => {

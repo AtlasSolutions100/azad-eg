@@ -6,7 +6,7 @@ import { startProcasScheduler } from "./lib/procasScheduler";
 import { reencryptProcasConnectionIfNeeded, autoConnectProcasFromEnv } from "./lib/procas";
 import { backfillTimesheetEmployeeIds } from "./lib/employeeResolve";
 import { pruneGeneratedFiles } from "./lib/generatedCleanup";
-import { checkSchemaAtStartup } from "./lib/schemaDrift";
+import { checkSchemaAtStartup, ensureAdditiveColumns } from "./lib/schemaDrift";
 import { applyKnownInvoiceHeaders } from "./lib/applyKnownInvoiceHeaders";
 
 const rawPort = process.env["PORT"];
@@ -33,6 +33,7 @@ app.listen(port, async (err) => {
   // First, before anything writes: is the database the shape the code expects?
   // A skipped `db push` is logged here in one sentence instead of surfacing as
   // a raw HTML 500 on the first request that touches the new column.
+  await ensureAdditiveColumns();
   await checkSchemaAtStartup();
   try {
     await seedDatabase();

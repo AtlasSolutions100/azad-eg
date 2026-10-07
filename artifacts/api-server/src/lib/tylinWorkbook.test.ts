@@ -278,20 +278,36 @@ describe("buildTylinWorkbook", () => {
     const subinv = wb.getWorksheet("Sub1 Inv")!;
     // Budget / Previously Billed / Amount To Date / % Expended used to carry
     // the template's $1.2M and $2.39M budgets, $1.95M previously billed and
-    // 87.6% expended. Only the row-42 totals are ours to state.
-    // I11/I12/I35 are the one thing we do state above row 42: the scalar
-    // previously-billed carry-forward (or its per-category split).
-    const carryForward = new Set(["I11", "I12", "I35"]);
+    // 87.6% expended. None of those may survive.
+    const stale = [1145407.63, 1248494.32, 2393901.95, 927591.35, 1024446.52, 1952037.87, 993573.03, 2097580.26];
     for (let r = 5; r <= 41; r++) {
       for (const col of ["G", "I", "J", "K"]) {
-        const addr = `${col}${r}`;
-        if (carryForward.has(addr)) continue;
-        const v = subinv.getCell(addr).value;
-        expect(v === null || v === undefined || v === 0, `${addr} = ${String(v)}`).toBe(true);
+        const v = subinv.getCell(`${col}${r}`).value;
+        if (typeof v !== "number") continue;
+        for (const s of stale) expect(Math.abs(v - s) < 0.005, `${col}${r} = ${v}`).toBe(false);
       }
     }
     expect(subinv.getCell("G42").value).toBeCloseTo(2588054.112, 2);
     expect(subinv.getCell("I42").value).toBeCloseTo(2117497.17, 2);
+  });
+
+  it("fills Budget, Previously Billed and Amount To Date on every row, adding up to the totals", () => {
+    // "Not seeing any information populated in the Budget, Previously billed
+    // or amount to date field" — only row 42 was filled.
+    const subinv = wb.getWorksheet("Sub1 Inv")!;
+    const n = (a: string) => Number(subinv.getCell(a).value ?? 0);
+    for (const col of ["G", "I", "J"]) {
+      for (const row of [11, 12, 14, 20, 35, 39]) {
+        expect(n(`${col}${row}`), `${col}${row}`).toBeGreaterThan(0);
+      }
+      // labor + fringe + ODC + subconsultants + fee (+ FCCM) = the total row
+      const rows = n(`${col}20`) + n(`${col}27`) + n(`${col}33`) + n(`${col}39`) + n(`${col}40`);
+      expect(rows).toBeCloseTo(n(`${col}42`), 1);
+    }
+    // To date = previous + this period, row by row.
+    expect(n("J11")).toBeCloseTo(n("I11") + n("H11"), 2);
+    expect(n("J35")).toBeCloseTo(n("I35") + n("H35"), 2);
+    expect(n("K20")).toBeCloseTo(n("J20") / n("G20"), 6);
   });
 
   it("writes the Hours to Date row as values instead of a stale formula", () => {

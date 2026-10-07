@@ -81,6 +81,25 @@ export interface KnownInvoiceHeader {
    * is what a package is checked against.
    */
   burden?: Burden;
+  /**
+   * Burdens that applied to earlier billing periods: each is in force for a
+   * period that starts before its `before` date. A client can change what an
+   * invoice carries (BART added FCCM to T.Y. Lin's from September 2026), and
+   * an invoice for an earlier month must still bill the way that month did.
+   */
+  burdenBefore?: Array<{ before: string; burden: Burden }>;
+  /**
+   * Procas bills this project at loaded hourly rates and holds no burden
+   * percentages for it, so the burden here is the only record of it.
+   */
+  procasRatesLoaded?: boolean;
+  /**
+   * Her last invoice's "Amount To Date" column, row by row, and the budget
+   * column beside it. The detail page prints Budget / Previously Billed /
+   * Amount To Date on every row; only the totals can be had from Procas, so
+   * the rows start from the last ones she printed.
+   */
+  detailAnchor?: DetailAnchor;
   // --- stored on the work plan, only while its budget is unset ---
   /** The work plan budget printed on her invoice. */
   totalBudget?: number;
@@ -93,6 +112,24 @@ export interface Burden {
   overheadRate: number;
   fixedFeeRate: number;
   fccmRate: number;
+}
+
+/** One column of an invoice detail page, row by row. */
+export interface DetailParts {
+  labor: number;
+  fringe: number;
+  odc: number;
+  premium: number;
+  fee: number;
+  fccm: number;
+  total: number;
+}
+
+export interface DetailAnchor {
+  /** Last day of the period the invoice billed (YYYY-MM-DD). */
+  through: string;
+  toDate: DetailParts;
+  budget: DetailParts;
 }
 
 const WSP_SEND_TO = {
@@ -128,8 +165,37 @@ const PARSONS_SEND_TO = {
 const TYLIN: KnownInvoiceHeader = {
   prime: "T.Y. Lin",
   owner: "BART",
-  // "Fringe Benefits 120.58%", fee 8%, and no FCCM line.
-  burden: { fringeRate: 120.58, overheadRate: 0, fixedFeeRate: 8, fccmRate: 0 },
+  // "Fringe Benefits 120.58%", fee 8%, and — from the September 2026 invoice,
+  // at BART's request — FCCM at 0.39% of direct labor. Procas's loaded rates
+  // for the project changed on the same day: Field Inspector went from 197.73
+  // ($83.00 x 2.2058 x 1.08) to 198.051612 (the same plus $83.00 x 0.0039).
+  burden: { fringeRate: 120.58, overheadRate: 0, fixedFeeRate: 8, fccmRate: 0.39 },
+  burdenBefore: [
+    { before: "2026-09-01", burden: { fringeRate: 120.58, overheadRate: 0, fixedFeeRate: 8, fccmRate: 0 } },
+  ],
+  procasRatesLoaded: true,
+  // Invoice 6M8213 A.02-01-20, period 6/01/2026 - 6/30/2026.
+  detailAnchor: {
+    through: "2026-06-30",
+    toDate: {
+      labor: 993573.03,
+      fringe: 1104007.23,
+      odc: 7304.25,
+      premium: 3358.8,
+      fee: 167806.44,
+      fccm: 0,
+      total: 2276049.75,
+    },
+    budget: {
+      labor: 1145407.63,
+      fringe: 1248494.32,
+      odc: 2640,
+      premium: 0,
+      fee: 191512.16,
+      fccm: 0,
+      total: 2588054.11,
+    },
+  },
   sendToCompany: "T.Y. Lin International + TSE, JV",
   sendToAddress1: "Accounts Payable Department",
   poNumber: "BARTD-0000069210",
@@ -199,6 +265,7 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
   "10013.TO02": {
     ...WSP_SEND_TO,
     contactPerson: "Candelaria (Cindy) Aldan - Project Financial Analyst",
+    procasRatesLoaded: true,
     poNumber: "71262",
     wspProjectNo: "30900569.4687",
     bartProjectNumbers: "60C004",
@@ -210,6 +277,7 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
   "10013.TO03": {
     ...WSP_SEND_TO,
     contactPerson: "Candelaria (Cindy) Aldan - Project Financial Analyst",
+    procasRatesLoaded: true,
     poNumber: "71994",
     wspProjectNo: "30900569.7859",
     bartProjectNumbers: "47CJ016, 20LT008",
@@ -283,7 +351,9 @@ export function agreementLine(
 ): string {
   const no = (agreementNo ?? "").trim();
   const own = knownHeader(...projectKeys)?.agreementLine;
-  if (own && (!no || own.startsWith(no))) return own;
+  // Matched on the number alone: Procas files T.Y. Lin's as "6M8213 GEC", and
+  // her invoice reads "6M8213 General Engineering Services".
+  if (own && (!no || own.startsWith(agreementNumber(no)))) return own;
   if (!no) return "";
   const title = AGREEMENT_TITLES[no];
   return title ? `${no} ${title}` : no;
@@ -295,6 +365,43 @@ export function agreementLine(
  */
 export function agreementNumber(agreementNo: string | null | undefined): string {
   return (agreementNo ?? "").trim().split(/\s+/)[0] ?? "";
+}
+
+/** True when two burdens bill the same percentages. */
+export function sameBurden(
+  a: { fringeRate?: number | null; overheadRate?: number | null; fixedFeeRate?: number | null; fccmRate?: number | null },
+  b: { fringeRate?: number | null; overheadRate?: number | null; fixedFeeRate?: number | null; fccmRate?: number | null },
+): boolean {
+  const near = (x?: number | null, y?: number | null) => Math.abs((x ?? 0) - (y ?? 0)) < 0.0005;
+  return (
+    near(a.fringeRate, b.fringeRate) &&
+    near(a.overheadRate, b.overheadRate) &&
+    near(a.fixedFeeRate, b.fixedFeeRate) &&
+    near(a.fccmRate, b.fccmRate)
+  );
+}
+
+/**
+ * The earlier burden in force for a period that starts on `periodStart`, or
+ * null when the work plan's current burden applies.
+ */
+export function historicalBurden(
+  keys: Array<string | null | undefined>,
+  periodStart: string | null | undefined,
+): Burden | null {
+  if (!periodStart) return null;
+  const earlier = (knownHeader(...keys)?.burdenBefore ?? [])
+    .filter((b) => periodStart < b.before)
+    .sort((a, b) => a.before.localeCompare(b.before))[0];
+  return earlier?.burden ?? null;
+}
+
+/** The burden her invoices carry for a period: the earlier one if it applies, else today's. */
+export function knownBurden(
+  keys: Array<string | null | undefined>,
+  periodStart?: string | null,
+): Burden | null {
+  return historicalBurden(keys, periodStart) ?? knownHeader(...keys)?.burden ?? null;
 }
 
 /**

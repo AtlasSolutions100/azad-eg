@@ -1,7 +1,7 @@
 import { eq, or } from "drizzle-orm";
 import { db, workPlansTable } from "@workspace/db";
 import { logger } from "./logger";
-import { KNOWN_INVOICE_HEADERS, STORED_HEADER_FIELDS } from "./knownInvoiceHeaders";
+import { KNOWN_INVOICE_HEADERS, STORED_HEADER_FIELDS, sameBurden } from "./knownInvoiceHeaders";
 
 /**
  * Fills blank header fields on the work plans we hold real invoices for.
@@ -30,7 +30,18 @@ export async function applyKnownInvoiceHeaders(): Promise<number> {
       // burdenFromAccount, which does the same on every sync).
       const noBurden =
         !plan.fringeRate && !plan.overheadRate && !plan.fixedFeeRate && !plan.fccmRate;
-      const burden = header.burden && plan.source === "procas" && noBurden ? header.burden : null;
+      // Where Procas holds no percentages at all (procasRatesLoaded), this is
+      // the only place the burden comes from, so a change to it — FCCM on
+      // T.Y. Lin's from September 2026 — has to reach the work plan from here.
+      // A plan still carrying one of the burdens we knew before is brought up
+      // to date; one a biller has set to something else is left alone.
+      const stale =
+        !!header.burden &&
+        !!header.procasRatesLoaded &&
+        !sameBurden(plan, header.burden) &&
+        (plan.source === "procas" || (header.burdenBefore ?? []).some((b) => sameBurden(plan, b.burden)));
+      const burden =
+        header.burden && ((plan.source === "procas" && noBurden) || stale) ? header.burden : null;
       if (Object.keys(changes).length === 0 && budget == null && burden == null) continue;
       await db
         .update(workPlansTable)

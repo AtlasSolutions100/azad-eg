@@ -15,6 +15,11 @@ export const workPlansTable = pgTable("work_plans", {
   poNumber: text("po_number"),
   wspProjectNo: text("wsp_project_no"),
   totalBudget: doublePrecision("total_budget").notNull(),
+  // What Procas said this work plan's budget was the last time the two were
+  // compared (null = never). The budget follows Procas — a new figure there
+  // replaces the one here — and this is how a change in Procas is told apart
+  // from a figure a biller typed in. See syncedBudget in procasSync.ts.
+  procasBudget: doublePrecision("procas_budget"),
   // Per-category decomposition of the budget and previously-billed amounts,
   // mirroring the reference Sub Calc rows (labor / overhead / fixed fee /
   // FCCM). Null means "not decomposed" — the export back-solves from totals.
