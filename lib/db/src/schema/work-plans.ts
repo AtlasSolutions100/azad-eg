@@ -27,6 +27,10 @@ export const workPlansTable = pgTable("work_plans", {
   budgetOverhead: doublePrecision("budget_overhead"),
   budgetFixedFee: doublePrecision("budget_fixed_fee"),
   budgetFccm: doublePrecision("budget_fccm"),
+  // The budget's earlier versions and the day each took effect, as JSON; null
+  // until a biller dates a change. The columns above always hold the latest
+  // one. See budgetHistory.ts in the API server.
+  budgetHistory: text("budget_history"),
   prevBilledLabor: doublePrecision("prev_billed_labor"),
   prevBilledOverhead: doublePrecision("prev_billed_overhead"),
   prevBilledFixedFee: doublePrecision("prev_billed_fixed_fee"),

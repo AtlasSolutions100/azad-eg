@@ -12,6 +12,7 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
   settleTimesheetSignature,
+  formatHoursUniformly,
   ExportBlockedError,
 } from "./excel";
 import { agreementLine, agreementNumber } from "./knownInvoiceHeaders";
@@ -401,6 +402,13 @@ function fillWeekTab(
     grand += colTotal;
   }
   setVal(ws, `O${WEEK_TOTAL_ROW}`, round2(grand));
+  // One number of decimals for every hours figure on the sheet (see
+  // formatHoursUniformly): whole hours print with none.
+  const hourCells: string[] = [];
+  for (const r of [...WEEK_HOUR_ROWS, WEEK_TOTAL_ROW]) {
+    for (const col of [...DAY_COLS, "O"]) hourCells.push(`${col}${r}`);
+  }
+  formatHoursUniformly(ws, hourCells);
 
   return rowTotals;
 }

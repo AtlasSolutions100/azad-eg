@@ -13,6 +13,9 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
   settleTimesheetSignature,
+  formatHoursUniformly,
+  setNumberFormat,
+  MONEY_FORMAT,
 } from "./excel";
 import { agreementLine } from "./knownInvoiceHeaders";
 import { contributorKey } from "./packageMappers";
@@ -518,6 +521,11 @@ function fillTimesheet(
   // TOTAL HOURS row (16): column sums + grand total.
   for (const col of DAY_COLS) setVal(ws, `${col}16`, round2(colTotals[col]));
   setVal(ws, "O16", round2(grandTotal));
+  // One number of decimals for every hours figure on the sheet (see
+  // formatHoursUniformly): whole hours print with none.
+  const hourCells: string[] = [];
+  for (let r = 9; r <= 16; r++) for (const col of [...DAY_COLS, "O"]) hourCells.push(`${col}${r}`);
+  formatHoursUniformly(ws, hourCells);
 }
 
 // ---------------------------------------------------------------------------
@@ -747,6 +755,8 @@ function writeLaborAttachment(
   setVal(ws, "E26", field.hours);
   setVal(ws, "F26", field.uniformRate);
   setVal(ws, "G26", fin.fieldDirectLabor);
+  // "$66.56", as the amounts beside it already read (see MONEY_FORMAT).
+  setNumberFormat(ws, "F26", MONEY_FORMAT);
   // Field + total-labor subtotals.
   setVal(ws, "E28", field.hours);
   setVal(ws, "G28", fin.fieldDirectLabor);

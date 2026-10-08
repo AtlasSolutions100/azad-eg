@@ -7,6 +7,7 @@ import {
   type LineItemRow,
   type ProcasConnectionRow,
 } from "@workspace/db";
+import { serializeBudgetHistory, withCurrentBudget } from "./budgetHistory";
 import { and, eq } from "drizzle-orm";
 import {
   fetchProcasTable,
@@ -537,9 +538,16 @@ export async function importWorkPlansFromProcas(creds: ProcasCreds): Promise<Wor
     });
     const budgetChanged = Math.abs(next - wp.totalBudget) >= 0.005;
     if (!budgetChanged && wp.procasBudget != null && Math.abs(wp.procasBudget - procas) < 0.005) continue;
+    // A new figure from Procas is the current budget. Budgets entered with
+    // the date they took effect are kept for the periods before it.
+    const history = budgetChanged ? withCurrentBudget(wp, { totalBudget: next }) : [];
     await db
       .update(workPlansTable)
-      .set({ totalBudget: next, procasBudget: procas })
+      .set({
+        totalBudget: next,
+        procasBudget: procas,
+        ...(history.length > 0 ? { budgetHistory: serializeBudgetHistory(history) } : {}),
+      })
       .where(eq(workPlansTable.id, wp.id));
     if (budgetChanged) {
       updated += 1;

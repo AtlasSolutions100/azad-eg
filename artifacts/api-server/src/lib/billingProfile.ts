@@ -1,5 +1,6 @@
 import type { PackageRow, WorkPlan } from "@workspace/db";
 import { historicalBurden } from "./knownInvoiceHeaders";
+import { budgetInForce } from "./budgetHistory";
 
 /**
  * The billing profile a package actually bills with. Packages may exist
@@ -79,6 +80,8 @@ type PkgProfileFields = Pick<
 > & {
   /** Lets a burden that applied to an earlier period be used for that period. */
   payPeriodStart?: string | null;
+  /** Lets a budget that was in force for an earlier period be used for it. */
+  payPeriodEnd?: string | null;
 };
 
 /**
@@ -103,6 +106,9 @@ export function effectiveWorkPlan(
     wp && wp.source !== "manual"
       ? historicalBurden([wp.procasProject, wp.jobNumber], pkg.payPeriodStart)
       : null;
+  // …and the budget that was in force for this package's period, which is the
+  // work plan's current one unless a later change was entered with its date.
+  const budget = wp ? budgetInForce(wp, pkg.payPeriodEnd) : null;
   return {
     // Identity/display: real work plan wins; otherwise derive from the Procas
     // job so lists and audit lines still read sensibly.
@@ -113,7 +119,7 @@ export function effectiveWorkPlan(
     procasProject: wp?.procasProject ?? pkg.procasProject ?? null,
     // Budget: package override wins so a known ceiling can be tracked before
     // the work plan arrives; 0 means "no budget tracked".
-    totalBudget: pkg.totalBudget ?? wp?.totalBudget ?? 0,
+    totalBudget: pkg.totalBudget ?? budget?.total ?? 0,
     // Rates (percent): package override always wins over the work plan.
     fringeRate: pkg.fringeRate ?? past?.fringeRate ?? wp?.fringeRate ?? 0,
     overheadRate: pkg.overheadRate ?? past?.overheadRate ?? wp?.overheadRate ?? null,
@@ -133,10 +139,10 @@ export function effectiveWorkPlan(
     contactPerson: wp?.contactPerson ?? null,
     bartProjectNumbers: wp?.bartProjectNumbers ?? null,
     terms: wp?.terms ?? null,
-    budgetLabor: wp?.budgetLabor ?? null,
-    budgetOverhead: wp?.budgetOverhead ?? null,
-    budgetFixedFee: wp?.budgetFixedFee ?? null,
-    budgetFccm: wp?.budgetFccm ?? null,
+    budgetLabor: budget?.labor ?? null,
+    budgetOverhead: budget?.overhead ?? null,
+    budgetFixedFee: budget?.fixedFee ?? null,
+    budgetFccm: budget?.fccm ?? null,
     prevBilledLabor: wp?.prevBilledLabor ?? null,
     prevBilledOverhead: wp?.prevBilledOverhead ?? null,
     prevBilledFixedFee: wp?.prevBilledFixedFee ?? null,

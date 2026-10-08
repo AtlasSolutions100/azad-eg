@@ -3,10 +3,7 @@ import { Link, useLocation, useParams } from "wouter";
 import { useState } from "react";
 import {
   useGetPackage,
-  useUpdateWorkPlan,
-  useUpdatePackage,
   useDeletePackage,
-  getGetPackageQueryKey,
   getListPackagesQueryKey,
 } from "@workspace/api-client-react";
 import {
@@ -22,7 +19,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   Tabs,
@@ -40,6 +36,7 @@ import {
   formatHours,
 } from "@/lib/package-ui";
 import ExportBar from "@/components/package/export-bar";
+import BudgetDialog from "@/components/package/budget-dialog";
 import OverviewTab from "@/components/package/overview-tab";
 import TimesheetsTab from "@/components/package/timesheets-tab";
 import LaborTab from "@/components/package/labor-tab";
@@ -62,8 +59,6 @@ export default function PackageWorkspace() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const updateWorkPlan = useUpdateWorkPlan();
-  const updatePackage = useUpdatePackage();
   const deletePackage = useDeletePackage();
 
   const handleDelete = async () => {
@@ -80,42 +75,9 @@ export default function PackageWorkspace() {
       });
     }
   };
-  // Inline budget editing: the budget lives on the work plan (pulled from
-  // Procas when available); saving here overrides it. Remaining and
-  // % Expended recompute server-side on refetch.
-  const [budgetEditing, setBudgetEditing] = useState(false);
-  const [budgetInput, setBudgetInput] = useState("");
-
-  const saveBudget = async () => {
-    const value = Number(budgetInput);
-    if (!Number.isFinite(value) || value < 0) return;
-    const pkg = detail?.package;
-    if (!pkg) return;
-    try {
-      if (pkg.workPlanId != null) {
-        // Budget belongs to the work plan (three-layer model), so the edit
-        // persists there and every future package for the plan sees it.
-        await updateWorkPlan.mutateAsync({
-          id: pkg.workPlanId,
-          data: { totalBudget: value },
-        });
-        // Clear any package-level override so the work-plan budget actually
-        // takes effect here (overrides beat the work plan in the rollup).
-        await updatePackage.mutateAsync({ id, data: { totalBudget: null } });
-      } else {
-        await updatePackage.mutateAsync({ id, data: { totalBudget: value } });
-      }
-      await queryClient.invalidateQueries({ queryKey: getGetPackageQueryKey(id) });
-      setBudgetEditing(false);
-      toast({ title: "Budget updated", description: "Remaining and % expended recalculated." });
-    } catch (err) {
-      toast({
-        title: "Could not update budget",
-        description: err instanceof Error ? err.message : "Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
+  // The budget lives on the work plan and can change over time; the pencil
+  // opens the dialog that enters it (see BudgetDialog).
+  const [budgetOpen, setBudgetOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -247,56 +209,27 @@ export default function PackageWorkspace() {
             <CardContent className="p-4">
               <p className="flex items-center justify-between text-[11px] uppercase tracking-wide text-[#9a9a9a]">
                 {card.label}
-                {"editableBudget" in card && card.editableBudget && !budgetEditing && (
+                {"editableBudget" in card && card.editableBudget && (
                   <button
                     type="button"
                     aria-label="Edit budget"
                     className="text-[#9a9a9a] hover:text-[#333333]"
                     data-testid="edit-budget"
-                    onClick={() => {
-                      setBudgetInput(rollup.budget > 0 ? String(rollup.budget) : "");
-                      setBudgetEditing(true);
-                    }}
+                    onClick={() => setBudgetOpen(true)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                 )}
               </p>
-              {"editableBudget" in card && card.editableBudget && budgetEditing ? (
-                <div className="mt-1 flex items-center gap-1.5">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    autoFocus
-                    className="h-8 text-sm"
-                    value={budgetInput}
-                    onChange={(e) => setBudgetInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { e.preventDefault(); void saveBudget(); }
-                      if (e.key === "Escape") setBudgetEditing(false);
-                    }}
-                    data-testid="budget-input"
-                  />
-                  <Button
-                    size="sm"
-                    className="h-8 bg-[#CFAF42] px-2 text-white hover:bg-[#CFAF42]/90"
-                    disabled={updateWorkPlan.isPending || updatePackage.isPending}
-                    onClick={() => void saveBudget()}
-                    data-testid="save-budget"
-                  >
-                    Save
-                  </Button>
-                </div>
-              ) : (
-                <p className="mt-1 text-lg font-semibold text-[#333333]">
-                  {card.value}
-                </p>
-              )}
+              <p className="mt-1 text-lg font-semibold text-[#333333]">
+                {card.value}
+              </p>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      <BudgetDialog packageId={id} open={budgetOpen} onOpenChange={setBudgetOpen} />
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">
@@ -304,8 +237,8 @@ export default function PackageWorkspace() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="invoice">Invoice</TabsTrigger>
           <TabsTrigger value="subcalc">Sub Calc</TabsTrigger>
-          <TabsTrigger value="progress">Progress Report</TabsTrigger>
           <TabsTrigger value="labor">Labor Attachment</TabsTrigger>
+          <TabsTrigger value="progress">Progress Report</TabsTrigger>
           <TabsTrigger value="timesheets">Timesheets</TabsTrigger>
         </TabsList>
 

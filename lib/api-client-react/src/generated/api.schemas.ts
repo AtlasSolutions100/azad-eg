@@ -1542,6 +1542,80 @@ export interface LaborOverride {
   editedAt: string;
 }
 
+export interface BudgetVersion {
+  /**
+     * First day this budget applies to (YYYY-MM-DD); null = from the start.
+     * @nullable
+     */
+  from: string | null;
+  total: number;
+  /** @nullable */
+  labor: number | null;
+  /** @nullable */
+  overhead: number | null;
+  /** @nullable */
+  fixedFee: number | null;
+  /** @nullable */
+  fccm: number | null;
+}
+
+export interface PackageBudget {
+  /** @nullable */
+  workPlanId: number | null;
+  total: number;
+  /** @nullable */
+  labor: number | null;
+  /** @nullable */
+  overhead: number | null;
+  /** @nullable */
+  fixedFee: number | null;
+  /** @nullable */
+  fccm: number | null;
+  /**
+     * When the budget in force for this package took effect; null = from the start.
+     * @nullable
+     */
+  effectiveFrom: string | null;
+  /**
+     * What Procas last reported as this work plan's budget.
+     * @nullable
+     */
+  procasBudget: number | null;
+  periodStart: string;
+  periodEnd: string;
+  history: BudgetVersion[];
+}
+
+export interface PackageBudgetInput {
+  /** @minimum 0 */
+  total: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  labor?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  overhead?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fixedFee?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  fccm?: number | null;
+  /**
+     * The day the budget changed (YYYY-MM-DD). Invoices for periods that ended before it keep the budget they had. Null or absent = this has been the budget from the start.
+     * @nullable
+     */
+  effectiveFrom?: string | null;
+}
+
 export interface LaborOverrideInput {
   /** @minLength 1 */
   cellKey: string;

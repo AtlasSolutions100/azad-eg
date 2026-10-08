@@ -14,6 +14,7 @@ import { toApiWorkPlan } from "../lib/mappers";
 import { recordAudit } from "../lib/audit";
 import { getProcasConnection, credsFromConnection } from "../lib/procas";
 import { importWorkPlansFromProcas } from "../lib/procasSync";
+import { parseBudgetHistory, serializeBudgetHistory, withCurrentBudget } from "../lib/budgetHistory";
 
 const router: IRouter = Router();
 
@@ -87,9 +88,30 @@ router.patch("/work-plans/:id", async (req, res): Promise<void> => {
     parsed.data.fixedFeeRate !== undefined ||
     parsed.data.fccmRate !== undefined ||
     parsed.data.billingCycle !== undefined;
+  // A budget edited here is the work plan's current one. When earlier budgets
+  // are on record with their dates, the edit belongs to the latest of them and
+  // the earlier ones stay as they were.
+  const editsBudget =
+    parsed.data.totalBudget !== undefined ||
+    parsed.data.budgetLabor !== undefined ||
+    parsed.data.budgetOverhead !== undefined ||
+    parsed.data.budgetFixedFee !== undefined ||
+    parsed.data.budgetFccm !== undefined;
+  let budgetHistory: string | null | undefined;
+  if (editsBudget) {
+    const [before] = await db.select().from(workPlansTable).where(eq(workPlansTable.id, id));
+    if (before && parseBudgetHistory(before.budgetHistory).length > 0) {
+      budgetHistory = serializeBudgetHistory(withCurrentBudget(before, parsed.data));
+    }
+  }
+  const changes = {
+    ...parsed.data,
+    ...(editsProcasOwnedFields ? { source: "manual" } : {}),
+    ...(budgetHistory !== undefined ? { budgetHistory } : {}),
+  };
   const [row] = await db
     .update(workPlansTable)
-    .set(editsProcasOwnedFields ? { ...parsed.data, source: "manual" } : parsed.data)
+    .set(changes)
     .where(eq(workPlansTable.id, id))
     .returning();
   if (!row) {

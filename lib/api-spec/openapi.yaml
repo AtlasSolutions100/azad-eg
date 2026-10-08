@@ -1493,6 +1493,65 @@ paths:
           description: Deleted
         "404":
           $ref: "#/components/responses/NotFound"
+  /packages/{id}/budget:
+    get:
+      operationId: getPackageBudget
+      tags: [packages]
+      summary: The budget this package is stated against, and the work plan's budget history
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Budget
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageBudget"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: savePackageBudget
+      tags: [packages]
+      summary: Enter a budget (total and by cost category), optionally from a date
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageBudgetInput"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageBudget"
+        "400":
+          description: Invalid budget
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /packages/{id}/budget/{from}:
+    delete:
+      operationId: deletePackageBudgetVersion
+      tags: [packages]
+      summary: Remove a dated budget change
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: from
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageBudget"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /packages/{id}/validations:
     get:
       operationId: getPackageValidations
@@ -3094,6 +3153,66 @@ components:
         value: { type: string }
         editedBy: { type: ["string", "null"] }
         editedAt: { type: string }
+    BudgetVersion:
+      type: object
+      required: [from, total, labor, overhead, fixedFee, fccm]
+      properties:
+        from:
+          type: ["string", "null"]
+          description: First day this budget applies to (YYYY-MM-DD); null = from the start.
+        total: { type: number }
+        labor: { type: ["number", "null"] }
+        overhead: { type: ["number", "null"] }
+        fixedFee: { type: ["number", "null"] }
+        fccm: { type: ["number", "null"] }
+    PackageBudget:
+      type: object
+      required:
+        - workPlanId
+        - total
+        - labor
+        - overhead
+        - fixedFee
+        - fccm
+        - effectiveFrom
+        - procasBudget
+        - periodStart
+        - periodEnd
+        - history
+      properties:
+        workPlanId: { type: ["integer", "null"] }
+        total: { type: number }
+        labor: { type: ["number", "null"] }
+        overhead: { type: ["number", "null"] }
+        fixedFee: { type: ["number", "null"] }
+        fccm: { type: ["number", "null"] }
+        effectiveFrom:
+          type: ["string", "null"]
+          description: When the budget in force for this package took effect; null = from the start.
+        procasBudget:
+          type: ["number", "null"]
+          description: What Procas last reported as this work plan's budget.
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetVersion"
+    PackageBudgetInput:
+      type: object
+      required: [total]
+      properties:
+        total: { type: number, minimum: 0 }
+        labor: { type: ["number", "null"], minimum: 0 }
+        overhead: { type: ["number", "null"], minimum: 0 }
+        fixedFee: { type: ["number", "null"], minimum: 0 }
+        fccm: { type: ["number", "null"], minimum: 0 }
+        effectiveFrom:
+          type: ["string", "null"]
+          description: >-
+            The day the budget changed (YYYY-MM-DD). Invoices for periods that
+            ended before it keep the budget they had. Null or absent = this has
+            been the budget from the start.
     LaborOverrideInput:
       type: object
       required: [cellKey, value]

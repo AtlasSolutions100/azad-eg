@@ -2603,6 +2603,115 @@ export const DeleteLaborOverrideResponse = zod.void()
 
 
 /**
+ * @summary The budget this package is stated against, and the work plan's budget history
+ */
+export const GetPackageBudgetParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetPackageBudgetResponse = zod.object({
+  "workPlanId": zod.number().nullable(),
+  "total": zod.number(),
+  "labor": zod.number().nullable(),
+  "overhead": zod.number().nullable(),
+  "fixedFee": zod.number().nullable(),
+  "fccm": zod.number().nullable(),
+  "effectiveFrom": zod.string().nullable().describe('When the budget in force for this package took effect; null = from the start.'),
+  "procasBudget": zod.number().nullable().describe('What Procas last reported as this work plan\'s budget.'),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "history": zod.array(zod.object({
+  "from": zod.string().nullable().describe('First day this budget applies to (YYYY-MM-DD); null = from the start.'),
+  "total": zod.number(),
+  "labor": zod.number().nullable(),
+  "overhead": zod.number().nullable(),
+  "fixedFee": zod.number().nullable(),
+  "fccm": zod.number().nullable()
+}))
+})
+
+
+/**
+ * @summary Enter a budget (total and by cost category), optionally from a date
+ */
+export const SavePackageBudgetParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const savePackageBudgetBodyTotalMin = 0;
+
+export const savePackageBudgetBodyLaborMin = 0;
+
+export const savePackageBudgetBodyOverheadMin = 0;
+
+export const savePackageBudgetBodyFixedFeeMin = 0;
+
+export const savePackageBudgetBodyFccmMin = 0;
+
+
+
+export const SavePackageBudgetBody = zod.object({
+  "total": zod.number().min(savePackageBudgetBodyTotalMin),
+  "labor": zod.number().min(savePackageBudgetBodyLaborMin).nullish(),
+  "overhead": zod.number().min(savePackageBudgetBodyOverheadMin).nullish(),
+  "fixedFee": zod.number().min(savePackageBudgetBodyFixedFeeMin).nullish(),
+  "fccm": zod.number().min(savePackageBudgetBodyFccmMin).nullish(),
+  "effectiveFrom": zod.string().nullish().describe('The day the budget changed (YYYY-MM-DD). Invoices for periods that ended before it keep the budget they had. Null or absent = this has been the budget from the start.')
+})
+
+export const SavePackageBudgetResponse = zod.object({
+  "workPlanId": zod.number().nullable(),
+  "total": zod.number(),
+  "labor": zod.number().nullable(),
+  "overhead": zod.number().nullable(),
+  "fixedFee": zod.number().nullable(),
+  "fccm": zod.number().nullable(),
+  "effectiveFrom": zod.string().nullable().describe('When the budget in force for this package took effect; null = from the start.'),
+  "procasBudget": zod.number().nullable().describe('What Procas last reported as this work plan\'s budget.'),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "history": zod.array(zod.object({
+  "from": zod.string().nullable().describe('First day this budget applies to (YYYY-MM-DD); null = from the start.'),
+  "total": zod.number(),
+  "labor": zod.number().nullable(),
+  "overhead": zod.number().nullable(),
+  "fixedFee": zod.number().nullable(),
+  "fccm": zod.number().nullable()
+}))
+})
+
+
+/**
+ * @summary Remove a dated budget change
+ */
+export const DeletePackageBudgetVersionParams = zod.object({
+  "id": zod.coerce.number(),
+  "from": zod.coerce.string()
+})
+
+export const DeletePackageBudgetVersionResponse = zod.object({
+  "workPlanId": zod.number().nullable(),
+  "total": zod.number(),
+  "labor": zod.number().nullable(),
+  "overhead": zod.number().nullable(),
+  "fixedFee": zod.number().nullable(),
+  "fccm": zod.number().nullable(),
+  "effectiveFrom": zod.string().nullable().describe('When the budget in force for this package took effect; null = from the start.'),
+  "procasBudget": zod.number().nullable().describe('What Procas last reported as this work plan\'s budget.'),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "history": zod.array(zod.object({
+  "from": zod.string().nullable().describe('First day this budget applies to (YYYY-MM-DD); null = from the start.'),
+  "total": zod.number(),
+  "labor": zod.number().nullable(),
+  "overhead": zod.number().nullable(),
+  "fixedFee": zod.number().nullable(),
+  "fccm": zod.number().nullable()
+}))
+})
+
+
+/**
  * @summary Validate a package and flag anomalies
  */
 export const GetPackageValidationsParams = zod.object({

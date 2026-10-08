@@ -76,6 +76,7 @@ export function describeDrift(drift: SchemaDrift[]): string {
  */
 const ADDITIVE_COLUMNS: ReadonlyArray<{ table: string; column: string; type: string }> = [
   { table: "work_plans", column: "procas_budget", type: "double precision" },
+  { table: "work_plans", column: "budget_history", type: "text" },
 ];
 
 /** Creates any missing additive columns. Never throws; returns what it added. */

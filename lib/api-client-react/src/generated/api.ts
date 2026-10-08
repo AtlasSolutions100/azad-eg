@@ -62,6 +62,8 @@ import type {
   ListPackagesParams,
   ListProcasWorkPlanEmployeesParams,
   NotFoundResponse,
+  PackageBudget,
+  PackageBudgetInput,
   PackageClientGroup,
   PackageDetail,
   PackageExport,
@@ -6274,6 +6276,226 @@ export const useDeleteLaborOverride = <TError = ErrorType<NotFoundResponse>,
         TContext
       > => {
       return useMutation(getDeleteLaborOverrideMutationOptions(options));
+    }
+
+export const getGetPackageBudgetUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/budget`
+}
+
+/**
+ * @summary The budget this package is stated against, and the work plan's budget history
+ */
+export const getPackageBudget = async (id: number, options?: RequestInit): Promise<PackageBudget> => {
+
+  return customFetch<PackageBudget>(getGetPackageBudgetUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPackageBudgetQueryKey = (id: number,) => {
+    return [
+    `/api/packages/${id}/budget`
+    ] as const;
+    }
+
+
+export const getGetPackageBudgetQueryOptions = <TData = Awaited<ReturnType<typeof getPackageBudget>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageBudget>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPackageBudgetQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPackageBudget>>> = ({ signal }) => getPackageBudget(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPackageBudget>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPackageBudgetQueryResult = NonNullable<Awaited<ReturnType<typeof getPackageBudget>>>
+export type GetPackageBudgetQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary The budget this package is stated against, and the work plan's budget history
+ */
+
+export function useGetPackageBudget<TData = Awaited<ReturnType<typeof getPackageBudget>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPackageBudget>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPackageBudgetQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSavePackageBudgetUrl = (id: number,) => {
+
+
+
+
+  return `/api/packages/${id}/budget`
+}
+
+/**
+ * @summary Enter a budget (total and by cost category), optionally from a date
+ */
+export const savePackageBudget = async (id: number,
+    packageBudgetInput: PackageBudgetInput, options?: RequestInit): Promise<PackageBudget> => {
+
+  return customFetch<PackageBudget>(getSavePackageBudgetUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(packageBudgetInput)
+  }
+);}
+
+
+
+
+export const getSavePackageBudgetMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePackageBudget>>, TError,{id: number;data: BodyType<PackageBudgetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof savePackageBudget>>, TError,{id: number;data: BodyType<PackageBudgetInput>}, TContext> => {
+
+const mutationKey = ['savePackageBudget'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof savePackageBudget>>, {id: number;data: BodyType<PackageBudgetInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  savePackageBudget(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SavePackageBudgetMutationResult = NonNullable<Awaited<ReturnType<typeof savePackageBudget>>>
+    export type SavePackageBudgetMutationBody = BodyType<PackageBudgetInput>
+    export type SavePackageBudgetMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Enter a budget (total and by cost category), optionally from a date
+ */
+export const useSavePackageBudget = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePackageBudget>>, TError,{id: number;data: BodyType<PackageBudgetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof savePackageBudget>>,
+        TError,
+        {id: number;data: BodyType<PackageBudgetInput>},
+        TContext
+      > => {
+      return useMutation(getSavePackageBudgetMutationOptions(options));
+    }
+
+export const getDeletePackageBudgetVersionUrl = (id: number,
+    from: string,) => {
+
+
+
+
+  return `/api/packages/${id}/budget/${from}`
+}
+
+/**
+ * @summary Remove a dated budget change
+ */
+export const deletePackageBudgetVersion = async (id: number,
+    from: string, options?: RequestInit): Promise<PackageBudget> => {
+
+  return customFetch<PackageBudget>(getDeletePackageBudgetVersionUrl(id,from),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeletePackageBudgetVersionMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePackageBudgetVersion>>, TError,{id: number;from: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePackageBudgetVersion>>, TError,{id: number;from: string}, TContext> => {
+
+const mutationKey = ['deletePackageBudgetVersion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePackageBudgetVersion>>, {id: number;from: string}> = (props) => {
+          const {id,from} = props ?? {};
+
+          return  deletePackageBudgetVersion(id,from,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePackageBudgetVersionMutationResult = NonNullable<Awaited<ReturnType<typeof deletePackageBudgetVersion>>>
+
+    export type DeletePackageBudgetVersionMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Remove a dated budget change
+ */
+export const useDeletePackageBudgetVersion = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePackageBudgetVersion>>, TError,{id: number;from: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePackageBudgetVersion>>,
+        TError,
+        {id: number;from: string},
+        TContext
+      > => {
+      return useMutation(getDeletePackageBudgetVersionMutationOptions(options));
     }
 
 export const getGetPackageValidationsUrl = (id: number,) => {

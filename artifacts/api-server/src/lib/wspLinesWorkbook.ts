@@ -7,6 +7,9 @@ import {
   reviveModelDates,
   scrubInternalMarks,
   settleTimesheetSignature,
+  formatHoursUniformly,
+  setNumberFormat,
+  MONEY_FORMAT,
   stripBrokenDefinedNames,
 } from "./excel";
 import { agreementNumber, knownHeader } from "./knownInvoiceHeaders";
@@ -505,6 +508,10 @@ function writeLabor(
     setVal(ws, `D${r}`, row.hours);
     setVal(ws, `E${r}`, row.rate);
     setVal(ws, `F${r}`, row.amount);
+    // The rate printed bare ("74.00") beside an amount whose "$" sat a column
+    // away from it (see MONEY_FORMAT).
+    setNumberFormat(ws, `E${r}`, MONEY_FORMAT);
+    setNumberFormat(ws, `F${r}`, MONEY_FORMAT);
     hours += row.hours;
     amount += row.amount;
   }
@@ -512,6 +519,7 @@ function writeLabor(
   setVal(ws, `F${LABOR_FIELD.subtotal}`, round2(amount));
   setVal(ws, `D${LABOR_FIELD.total}`, round2(hours));
   setVal(ws, `F${LABOR_FIELD.total}`, round2(amount));
+  for (const r of [LABOR_FIELD.subtotal, LABOR_FIELD.total]) setNumberFormat(ws, `F${r}`, MONEY_FORMAT);
   ws.pageSetup = { ...ws.pageSetup, printArea: `A1:F${LABOR_FIELD.total}` };
 }
 
@@ -599,6 +607,11 @@ function fillTimesheet(
   }
   DAY_COLS.forEach((col, i) => setVal(ws, `${col}15`, round2(colTotals[i])));
   setVal(ws, "O15", round2(grand));
+  // One number of decimals for every hours figure on the sheet (see
+  // formatHoursUniformly): whole hours print with none.
+  const hourCells: string[] = [];
+  for (let r = 9; r <= 15; r++) for (const col of [...DAY_COLS, "O"]) hourCells.push(`${col}${r}`);
+  formatHoursUniformly(ws, hourCells);
   ws.pageSetup = { ...ws.pageSetup, printArea: "A1:O20" };
 }
 

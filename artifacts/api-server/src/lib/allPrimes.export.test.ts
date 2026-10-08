@@ -169,16 +169,27 @@ describe("WSP — a work plan that is not the template's", () => {
     expect(merges(sheet(wb, /Week 1$/))).toBeGreaterThan(5);
   });
 
-  it("does not sign Imani's timesheet with Jordy's signature", () => {
-    // Logo/approver stay; the template employee's signature does not.
-    const imani = pictures(sheet(wb, /Week 1$/));
+  it("signs Imani's timesheet with her own signature, not Jordy's", () => {
+    // "Missing signature for Imani": the template carries Jordy's, which was
+    // rightly removed from her timesheet — and nothing put hers in its place.
+    const signatureOf = (ws: ExcelJS.Worksheet): number => {
+      const media = (ws as unknown as {
+        _media: Array<{ imageId: number | string; range?: { tl?: { nativeRow?: number; nativeCol?: number } } }>;
+      })._media;
+      const beside = media.filter((m) => (m.range?.tl?.nativeRow ?? 0) >= 15 && (m.range?.tl?.nativeCol ?? 9) < 4);
+      expect(beside).toHaveLength(1);
+      return (ws.workbook.getImage(Number(beside[0].imageId)).buffer as unknown as Uint8Array).length;
+    };
+    const imani = sheet(wb, /Week 1$/);
     return buildWspWorkbook(
       ctx("WSP", plan("10013.TO03", "WSP", { fringeRate: 120.58, overheadRate: null }), "A.04-02-15", [
         ["Peralta, Jordy", "Assistant Resident Engineer", 76.22],
       ]),
     ).then(({ wb: jordys }) => {
-      // Jordy is the template signer, so his own timesheet keeps it.
-      expect(pictures(sheet(jordys, /Week 1$/))).toBe(imani + 1);
+      // Both timesheets are signed (logo/approver/employee)…
+      expect(pictures(imani)).toBe(pictures(sheet(jordys, /Week 1$/)));
+      // …each by its own employee.
+      expect(signatureOf(imani)).not.toBe(signatureOf(sheet(jordys, /Week 1$/)));
     });
   });
 });

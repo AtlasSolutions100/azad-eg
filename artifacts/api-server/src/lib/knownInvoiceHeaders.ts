@@ -271,6 +271,20 @@ export const KNOWN_INVOICE_HEADERS: Record<string, KnownInvoiceHeader> = {
     bartProjectNumbers: "60C004",
     workPlanNo: "A.05-01",
     title: "MOCC & LMA HVAC",
+    // Invoice A.05-01-16, period 5/30/2026 - 6/30/2026.
+    detailAnchor: {
+      through: "2026-06-30",
+      toDate: {
+        labor: 249978.04,
+        fringe: 281687.84,
+        odc: 0,
+        premium: 822.5,
+        fee: 42533.26,
+        fccm: 310.24,
+        total: 575331.88,
+      },
+      budget: { labor: 198600, fringe: 216474, odc: 0, premium: 0, fee: 33203.84, fccm: 0, total: 448277.84 },
+    },
     totalBudget: 448277.84,
   },
   // BART / WSP — Jordy Peralta, work plan A.04-02.

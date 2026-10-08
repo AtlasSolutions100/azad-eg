@@ -24,6 +24,8 @@ import {
   UpdateTimesheetEntryBody,
   SavePackageProgressReportBody,
   SaveLaborOverrideBody,
+  SavePackageBudgetBody,
+  GetPackageBudgetResponse,
   ListPackagesResponse,
   CreatePackageResponse,
   ListPackagesGroupedResponse,
@@ -84,6 +86,16 @@ import {
   fetchBillingRatesFromProcas,
 } from "../lib/procasSync";
 import { effectiveWorkPlan, cappedBillRate } from "../lib/billingProfile";
+import {
+  budgetInForce,
+  columnsOf,
+  isDay,
+  parseBudgetHistory,
+  serializeBudgetHistory,
+  withBudgetVersion,
+  withoutBudgetVersion,
+  type BudgetVersion,
+} from "../lib/budgetHistory";
 import { deriveBillingPeriod, type BillingCycle } from "../lib/billingPeriod";
 import { computePtoFill, totalDayHours } from "../lib/ptoFill";
 import { bumpInvoiceNumber } from "../lib/invoiceNumber";
@@ -1444,6 +1456,145 @@ router.delete("/packages/:id/overrides/:cellKey", async (req, res): Promise<void
 });
 
 // ---------------------------------------------------------------------------
+// Budget (the pencil beside a package's Budget figure)
+// ---------------------------------------------------------------------------
+//
+// The budget belongs to the work plan; the package is where the biller is
+// standing when they change it, and its billing period decides which of the
+// work plan's budgets it is stated against.
+
+type PackageRowForBudget = typeof packagesTable.$inferSelect;
+
+function packageBudgetView(pkg: PackageRowForBudget, wp: WorkPlan | null) {
+  const inForce: BudgetVersion = wp
+    ? budgetInForce(wp, pkg.payPeriodEnd)
+    : { from: null, total: 0, labor: null, overhead: null, fixedFee: null, fccm: null };
+  return GetPackageBudgetResponse.parse({
+    workPlanId: wp?.id ?? null,
+    // A figure set on the package itself (one with no work plan yet) wins.
+    total: pkg.totalBudget ?? inForce.total,
+    labor: inForce.labor,
+    overhead: inForce.overhead,
+    fixedFee: inForce.fixedFee,
+    fccm: inForce.fccm,
+    effectiveFrom: inForce.from,
+    procasBudget: wp?.procasBudget ?? null,
+    periodStart: pkg.payPeriodStart,
+    periodEnd: pkg.payPeriodEnd,
+    history: wp ? parseBudgetHistory(wp.budgetHistory) : [],
+  });
+}
+
+async function loadPackageAndPlan(
+  id: number,
+): Promise<{ pkg: PackageRowForBudget; wp: WorkPlan | null } | null> {
+  const [pkg] = await db.select().from(packagesTable).where(eq(packagesTable.id, id));
+  if (!pkg) return null;
+  const wp =
+    pkg.workPlanId != null
+      ? await db.select().from(workPlansTable).where(eq(workPlansTable.id, pkg.workPlanId)).then((r) => r[0] ?? null)
+      : null;
+  return { pkg, wp };
+}
+
+const budgetMoney = (n: number) =>
+  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+router.get("/packages/:id/budget", async (req, res): Promise<void> => {
+  const found = await loadPackageAndPlan(parseId(req.params.id));
+  if (!found) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  res.json(packageBudgetView(found.pkg, found.wp));
+});
+
+router.put("/packages/:id/budget", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const found = await loadPackageAndPlan(id);
+  if (!found) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const parsed = SavePackageBudgetBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const from = parsed.data.effectiveFrom ?? null;
+  if (from != null && !isDay(from)) {
+    res.status(400).json({ error: "The date the budget changed must be a calendar day (YYYY-MM-DD)." });
+    return;
+  }
+  const { pkg, wp } = found;
+  if (!wp) {
+    // No work plan to hold it yet: the total rides on the package.
+    const [row] = await db
+      .update(packagesTable)
+      .set({ totalBudget: parsed.data.total })
+      .where(eq(packagesTable.id, id))
+      .returning();
+    res.json(packageBudgetView(row, null));
+    return;
+  }
+  const { history, latest } = withBudgetVersion(wp, {
+    from,
+    total: parsed.data.total,
+    labor: parsed.data.labor ?? null,
+    overhead: parsed.data.overhead ?? null,
+    fixedFee: parsed.data.fixedFee ?? null,
+    fccm: parsed.data.fccm ?? null,
+  });
+  const [plan] = await db
+    .update(workPlansTable)
+    .set({ ...columnsOf(latest), budgetHistory: serializeBudgetHistory(history) })
+    .where(eq(workPlansTable.id, wp.id))
+    .returning();
+  // A figure left on the package would hide the work plan's from this page.
+  const [row] =
+    pkg.totalBudget != null
+      ? await db.update(packagesTable).set({ totalBudget: null }).where(eq(packagesTable.id, id)).returning()
+      : [pkg];
+  await recordAudit({
+    action: "budget updated",
+    entityType: "workPlan",
+    entityId: wp.id,
+    description:
+      `Work plan ${wp.code}: budget ${budgetMoney(parsed.data.total)}` +
+      (from ? ` from ${from}` : "") +
+      ` (entered on package ${pkg.invoiceNumber || `#${pkg.id}`})`,
+  });
+  res.json(packageBudgetView(row, plan));
+});
+
+router.delete("/packages/:id/budget/:from", async (req, res): Promise<void> => {
+  const id = parseId(req.params.id);
+  const from = Array.isArray(req.params.from) ? req.params.from[0] : req.params.from;
+  const found = await loadPackageAndPlan(id);
+  if (!found) {
+    res.status(404).json({ error: "Package not found" });
+    return;
+  }
+  const next = found.wp ? withoutBudgetVersion(found.wp, from) : null;
+  if (!found.wp || !next) {
+    res.status(404).json({ error: "There is no budget change on that date." });
+    return;
+  }
+  const [plan] = await db
+    .update(workPlansTable)
+    .set({ ...columnsOf(next.latest), budgetHistory: serializeBudgetHistory(next.history) })
+    .where(eq(workPlansTable.id, found.wp.id))
+    .returning();
+  await recordAudit({
+    action: "budget updated",
+    entityType: "workPlan",
+    entityId: found.wp.id,
+    description: `Work plan ${found.wp.code}: removed the budget change dated ${from}`,
+  });
+  res.json(packageBudgetView(found.pkg, plan));
+});
+
+// ---------------------------------------------------------------------------
 // Rollup + validations
 // ---------------------------------------------------------------------------
 
@@ -1549,7 +1700,8 @@ router.get("/packages/:id/validations", async (req, res): Promise<void> => {
     if (entryTotalHours(e) <= 0) {
       flags.push({ severity: "warning", field: "entries", message: `${e.employeeName} has an entry with zero hours.` });
     }
-    if (e.rate <= 0) {
+    // Holiday and PTO rows are on the timesheet, not the invoice: no rate.
+    if (e.rate <= 0 && e.category !== "pto" && e.category !== "holiday") {
       flags.push({ severity: "warning", field: "entries", message: `${e.employeeName} has an entry with a zero rate.` });
     }
   }

@@ -34,14 +34,27 @@ export interface PullHoursResult {
 // is one of these. Everything else (e.g. "Unsubmitted") is treated as not yet
 // approved. Kept in one place so the warning, the per-entry `approved` flag,
 // and the unapproved-hours tally all agree.
-const FINAL_STATUS_RE = /processed|approved|posted|locked/i;
+const FINAL_STATUS_RE = /\b(processed|approved|posted|locked)\b/i;
+const NOT_FINAL_RE = /\b(not|rejected|pending|un\w+|dis\w+)\b/i;
+
+/**
+ * True for a Procas timesheet status that means the hours are approved.
+ *
+ * The test used to be "contains the word approved", and Procas has a status
+ * called "Disapproved". A whole month of a project manager's disapproved
+ * hours (September 2026, work plan B.40-02) pulled in as approved, with no
+ * red rows and nothing to stop the export.
+ */
+export function isFinalStatus(status: string): boolean {
+  return FINAL_STATUS_RE.test(status) && !NOT_FINAL_RE.test(status);
+}
 
 /** True when every observed status on an aggregated entry is finalized. An
  * entry with no status at all is treated as approved (nothing signals
  * otherwise). */
 function statusesApproved(statuses: Set<string>): boolean {
   for (const s of statuses) {
-    if (!FINAL_STATUS_RE.test(s)) return false;
+    if (!isFinalStatus(s)) return false;
   }
   return true;
 }
@@ -73,6 +86,19 @@ function dayColumn(dateISO: string): (typeof DAY_COLUMNS)[number] | null {
   if (!m) return null;
   const dow = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
   return DAY_COLUMNS[dow];
+}
+
+/**
+ * "holiday" or "pto" for a Procas pay code that is leave (Holiday; Sick;
+ * "Vacation (or PTO)"), null for anything else — regular time, overtime, and
+ * leave without pay, which is neither worked nor paid and has no row on the
+ * timesheet.
+ */
+export function leaveCategory(payCodeDesc: string): "holiday" | "pto" | null {
+  const v = payCodeDesc.trim().toLowerCase();
+  if (v === "h" || v.includes("holiday")) return "holiday";
+  if (v === "s" || v === "v" || /\b(sick|vacation|pto)\b/.test(v)) return "pto";
+  return null;
 }
 
 export function normalizeCategory(payCodeDesc: string, accountDesc = ""): string {
@@ -334,11 +360,70 @@ export async function pullPackageHoursFromProcas(
     warnings.push(`${skippedRows} Procas row(s) had an unreadable work date and were skipped.`);
   }
 
+  // Leave. Procas books sick and vacation time to its own projects ("Sick Time
+  // 2026", "Vacation Time 2026") and holidays to no project at all, so a pull
+  // by client project never saw them and every timesheet's "PTO
+  // (Sick/Vacation)" and "Holiday" rows printed empty. BART's timesheets have
+  // to show them ("Need to show on timesheet if Imani worked Holiday or PTO.
+  // This needs to be on for all BART timesheets"). They are fetched for the
+  // people on this package, for the same dates, and carried as non-billable
+  // rows: they print on the timesheet and add nothing to the invoice.
+  const personnel = [...new Set(tsRows.map((r) => toStr(r.Personnel)).filter(Boolean))];
+  if (personnel.length > 0) {
+    try {
+      const who = personnel.map((p) => `Personnel eq ${odataString(p)}`).join(" or ");
+      const others = await fetchProcasTable(creds, "Timesheet", {
+        filter: `(${who}) and WorkDate ge ${dayStart(pkg.payPeriodStart)} and WorkDate le ${dayEnd(pkg.payPeriodEnd)}`,
+      });
+      // The classification a person's leave is filed under on the timesheet
+      // is the one they work under here, not Procas's generic "Employee".
+      const worksAs = new Map<string, string>();
+      for (const e of agg.values()) {
+        const k = e.employeeName.toLowerCase();
+        if (e.category === "regular" || !worksAs.has(k)) worksAs.set(k, e.classification);
+      }
+      for (const r of others) {
+        if (toStr(r.Project).startsWith(project)) continue; // already counted above
+        const category = leaveCategory(toStr(r.PayCodeDesc) || toStr(r.PayCode));
+        if (!category) continue;
+        const name = toStr(r.PersonnelName) || toStr(r.Personnel);
+        const workDate = datePart(r.WorkDate);
+        const hours = toNum(r.HoursWorked);
+        const col = dayColumn(workDate);
+        if (!name || !col || hours === 0) continue;
+        const weekStart = datePart(r.TimePeriodBeginningDate) || workDate;
+        const key = `${weekStart}|${name.toLowerCase()}|leave|${category}|`;
+        let entry = agg.get(key);
+        if (!entry) {
+          entry = {
+            bartProject: "",
+            weekStart,
+            weekEnd: datePart(r.TimePeriodEndingDate) || workDate,
+            employeeName: name,
+            lcItem: "",
+            classification: worksAs.get(name.toLowerCase()) ?? toStr(r.LCItemDesc),
+            category,
+            days: { hoursSun: 0, hoursMon: 0, hoursTue: 0, hoursWed: 0, hoursThu: 0, hoursFri: 0, hoursSat: 0 },
+            statuses: new Set(),
+          };
+          agg.set(key, entry);
+        }
+        entry.days[col] += hours;
+        const status = toStr(r.Status);
+        if (status) entry.statuses.add(status);
+      }
+    } catch (e) {
+      warnings.push(
+        `Holiday and PTO hours could not be read from Procas (${e instanceof Error ? e.message : "request failed"}), so those timesheet rows are blank. Pull again to retry.`,
+      );
+    }
+  }
+
   const entries = [...agg.values()];
   const nonFinal = new Set<string>();
   for (const e of entries) {
     for (const s of e.statuses) {
-      if (!FINAL_STATUS_RE.test(s)) nonFinal.add(s);
+      if (!isFinalStatus(s)) nonFinal.add(s);
     }
   }
   if (nonFinal.size > 0) {
@@ -391,7 +476,9 @@ export async function pullPackageHoursFromProcas(
     const baseLc = premium ? baseLcItem(e.lcItem) : e.lcItem;
     const rateLc = premium && rateByLc.has(baseLc) ? baseLc : e.lcItem;
     if (premium && lcDesc.has(baseLc)) e.classification = lcDesc.get(baseLc)!;
-    let rate = rateByLc.get(rateLc) ?? 0;
+    // Leave is not billed: no rate, and no "missing rate" warning for it.
+    const leave = e.category === "pto" || e.category === "holiday";
+    let rate = leave ? 0 : (rateByLc.get(rateLc) ?? 0);
     if (rate > 0) {
       const direct = directRate(rate, workPlan);
       if (direct !== rate) {
@@ -402,13 +489,13 @@ export async function pullPackageHoursFromProcas(
         rate = direct;
       }
     }
-    if (rate <= 0) {
+    if (rate <= 0 && !leave) {
       const empRow = emp ?? employees.find((x) => x.id === employeeId);
       if (empRow) {
         rate = effectiveRate(empRow, rateChanges.get(empRow.id) ?? [], "home", week.weekStart);
       }
     }
-    if (rate <= 0) missingRates.add(e.classification || e.employeeName);
+    if (rate <= 0 && !leave) missingRates.add(e.classification || e.employeeName);
     const approved = statusesApproved(e.statuses);
     if (!approved) {
       for (const col of DAY_COLUMNS) unapprovedHours += e.days[col];
@@ -426,7 +513,7 @@ export async function pullPackageHoursFromProcas(
       source: "procas",
       approved,
       taskNo: e.bartProject || null,
-      notes: e.lcItem ? `Procas LC ${e.lcItem}` : null,
+      notes: e.lcItem ? `Procas LC ${e.lcItem}` : leave ? "Procas leave (not billed)" : null,
     });
   }
   unapprovedHours = Math.round((unapprovedHours + Number.EPSILON) * 100) / 100;

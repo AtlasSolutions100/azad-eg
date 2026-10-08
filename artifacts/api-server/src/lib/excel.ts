@@ -582,6 +582,58 @@ export function shrinkCellToFit(ws: ExcelJS.Worksheet, address: string): void {
   };
 }
 
+/**
+ * Dollars with the sign against the figure: "$83.00".
+ *
+ * The templates use Excel's accounting format on their labor attachments,
+ * which parks the "$" at the far left of its cell — hard against the hours in
+ * the column before it, so a line read "128.00 $   83.00 $   10,624.00"
+ * ("There's funky dollar signs here.. 128.00 is hours, $83.00 is money").
+ */
+export const MONEY_FORMAT = '"$"#,##0.00';
+
+/** Sets one cell's number format without touching the cells that share its style. */
+export function setNumberFormat(ws: ExcelJS.Worksheet, address: string, numFmt: string): void {
+  const cell = ws.getCell(address);
+  cell.style = { ...cell.style, numFmt };
+}
+
+/**
+ * Gives every hours figure on a timesheet the same number of decimals.
+ *
+ * The reference tabs format the day cells "0.00" and leave some totals
+ * General, so one column read 32.00 / 0.00 / 0 / 32 ("Can we be consistent
+ * with the number of decimal points… for this invoice no decimal points are
+ * needed"). Whole hours print with none; if anything on the sheet is a
+ * fraction of an hour, everything prints with two.
+ */
+export function formatHoursUniformly(ws: ExcelJS.Worksheet, addresses: string[]): void {
+  const fractional = addresses.some((a) => {
+    const v = ws.getCell(a).value;
+    return typeof v === "number" && Math.abs(v - Math.round(v)) > 1e-9;
+  });
+  for (const a of addresses) setNumberFormat(ws, a, fractional ? "0.00" : "0");
+}
+
+/**
+ * Word-wraps a line of text to at most `width` characters per line, for forms
+ * whose narrative cells run on into their neighbours instead of wrapping.
+ */
+export function wrapWords(text: string, width: number): string[] {
+  const out: string[] = [];
+  let line = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (line && line.length + 1 + word.length > width) {
+      out.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) out.push(line);
+  return out;
+}
+
 /** A person's name reduced to comparable tokens ("Johnson, Travis" = "Travis Johnson"). */
 export function personKey(name: string | null | undefined): string {
   return (name ?? "")
@@ -614,6 +666,7 @@ export function settleTimesheetSignature(
   employeeName: string,
   templateSigner: string,
   signatures?: Record<string, string>,
+  opts: { shiftRightPx?: number } = {},
 ): "kept" | "placed" | "none" {
   if (personKey(employeeName) === personKey(templateSigner)) return "kept";
   let submitted: { row: number; col: number } | null = null;
@@ -633,7 +686,7 @@ export function settleTimesheetSignature(
       type?: string;
       imageId?: number | string;
       range?: {
-        tl?: { nativeRow?: number; nativeCol?: number };
+        tl?: { nativeRow?: number; nativeCol?: number; nativeColOff?: number };
         br?: unknown;
         ext?: { width?: number; height?: number };
       };
@@ -667,8 +720,15 @@ export function settleTimesheetSignature(
         if (shape && m.range?.ext && !m.range.br) {
           // …and inside the slot: a long name must stop short of "Approved by".
           const aspect = shape.width / shape.height;
-          const width = Math.min(Math.round(Math.min(Math.max(m.range.ext.height ?? 30, 26), 36) * aspect), 150);
+          const shift = opts.shiftRightPx ?? 0;
+          const width = Math.min(
+            Math.round(Math.min(Math.max(m.range.ext.height ?? 30, 26), 36) * aspect),
+            150 - shift,
+          );
           m.range.ext = { width, height: Math.round(width / aspect) };
+          if (shift > 0 && m.range.tl) {
+            m.range.tl.nativeColOff = (m.range.tl.nativeColOff ?? 0) + shift * EMU_PER_PIXEL;
+          }
         }
       }
       return "placed";
@@ -679,6 +739,8 @@ export function settleTimesheetSignature(
   sheet._media = sheet._media.filter((m) => !isEmployeeSignature(m));
   return "none";
 }
+
+const EMU_PER_PIXEL = 9525;
 
 /** Pixel size of a PNG, read from its header; null for anything else. */
 function pngSize(file: Buffer): { width: number; height: number } | null {

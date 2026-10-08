@@ -447,6 +447,142 @@ describe("buildWspWorkbook — no reference-workbook leftovers", () => {
     // The template ships A1:Q59 / A1:U31, which reach the scratch beside each
     // form and stretch the page past 19in.
     expect(wb.getWorksheet("Sub Calc _revised")!.pageSetup.printArea).toBe("A1:K52");
-    expect(wb.getWorksheet("Sub Labor")!.pageSetup.printArea).toBe("A1:H29");
+    expect(wb.getWorksheet("Sub Labor")!.pageSetup.printArea).toBe("B1:F29");
+  });
+});
+
+/**
+ * Julie's notes on the September A.05-01 invoice (Imani Lawson), which she
+ * expects on the other invoices too.
+ */
+describe("buildWspWorkbook — notes on the A.05-01 invoice", () => {
+  const leaveCtx = (): PackageDocContext => {
+    const base = makeCtx();
+    // Week 4 is worked Mon–Wed; Thursday is sick leave and Friday a holiday.
+    const leave = (id: number, category: string, day: "hoursThu" | "hoursFri") =>
+      ({
+        ...base.entries[3],
+        id,
+        category,
+        rate: 0,
+        hoursMon: 0,
+        hoursTue: 0,
+        hoursWed: 0,
+        [day]: 8,
+      }) as unknown as PackageDocContext["entries"][number];
+    return { ...base, entries: [...base.entries, leave(90, "pto", "hoursThu"), leave(91, "holiday", "hoursFri")] };
+  };
+  let wb: ExcelJS.Workbook;
+  let timesheetTabs: string[];
+  beforeAll(async () => {
+    ({ wb, timesheetTabs } = await buildWspWorkbook(leaveCtx()));
+  });
+
+  it("puts the labor attachment before the progress report", () => {
+    const order = [...wb.worksheets]
+      .sort((a, b) => (a as unknown as { orderNo: number }).orderNo - (b as unknown as { orderNo: number }).orderNo)
+      .map((w) => w.name);
+    expect(order.slice(0, 4)).toEqual(["Invoice", "Sub Calc _revised", "Sub Labor", "Progress Report"]);
+    expect(order.slice(4)).toEqual(timesheetTabs);
+  });
+
+  it("prints no \"Billed $\" column or row flags on the labor attachment", () => {
+    const sl = wb.getWorksheet("Sub Labor")!;
+    expect(sl.getColumn("A").hidden).toBe(true);
+    for (let r = 1; r <= 33; r++) {
+      for (const col of ["A", "G", "H"]) expect(sl.getCell(`${col}${r}`).value ?? null).toBeNull();
+    }
+  });
+
+  it("formats hours as hours and money as money on the labor attachment", () => {
+    // "There's funky dollar signs here.. 128.00 is hours, $83.00 is money."
+    const sl = wb.getWorksheet("Sub Labor")!;
+    expect(sl.getCell("D20").numFmt).toBe("0.00");
+    expect(sl.getCell("E20").numFmt).toBe('"$"#,##0.00');
+    expect(sl.getCell("F20").numFmt).toBe('"$"#,##0.00');
+    for (const total of ["F18", "F26", "F29"]) expect(sl.getCell(total).numFmt).toBe('"$"#,##0.00');
+    // Leave is not labor: the attachment still bills 144 hours.
+    expect(num(sl, "D29")).toBe(144);
+  });
+
+  it("shows PTO and holiday hours on the timesheet without billing them", () => {
+    const w4 = wb.getWorksheet(timesheetTabs[3])!;
+    expect(w4.getCell("C13").value).toBe("PTO (Sick/Vacation)");
+    expect(w4.getCell("C14").value).toBe("Holiday");
+    expect(num(w4, "L13")).toBe(8); // Thursday, sick
+    expect(num(w4, "M14")).toBe(8); // Friday, holiday
+    expect(num(w4, "N9")).toBe(24);
+    expect(num(w4, "N13")).toBe(8);
+    expect(num(w4, "N14")).toBe(8);
+    expect(num(w4, "N16")).toBe(40);
+    const fin = computeWspFinancials(leaveCtx());
+    expect(fin.totalHours).toBe(144);
+    expect(round2(fin.totalThisPeriod)).toBe(26189.78);
+  });
+
+  it("gives every hours figure on a timesheet the same decimals", async () => {
+    // Whole hours: none anywhere ("no decimal points are needed").
+    const w4 = wb.getWorksheet(timesheetTabs[3])!;
+    for (const addr of ["I9", "N9", "N11", "N12", "N13", "N14", "I16", "N16"]) {
+      expect(w4.getCell(addr).numFmt).toBe("0");
+    }
+    // A half hour anywhere on the sheet: two everywhere on it.
+    const base = makeCtx();
+    const half = { ...base.entries[0], hoursMon: 7.5 } as PackageDocContext["entries"][number];
+    const built = await buildWspWorkbook({ ...base, entries: [half, ...base.entries.slice(1)] });
+    const w1 = built.wb.getWorksheet(built.timesheetTabs[0])!;
+    for (const addr of ["I9", "J9", "N9", "N12", "N16"]) expect(w1.getCell(addr).numFmt).toBe("0.00");
+    expect(built.wb.getWorksheet(built.timesheetTabs[1])!.getCell("N9").numFmt).toBe("0");
+  });
+
+  it("states the period under the progress report's title and the forecast as sentences", () => {
+    const report = wb.getWorksheet("Progress Report")!;
+    expect(report.getCell("B4").value).toBe("4/25/2026 to 5/29/2026");
+    expect(String(report.getCell("B29").value)).toBe(
+      "Cost Forecast at Completion:  Current approved budget is $156,185.34.",
+    );
+    expect(String(report.getCell("B30").value)).toBe("Through this invoice, $178,883.04 (115%) has been billed.");
+    // It wrapped inside a column a few characters wide and showed one word.
+    expect(report.getCell("B30").alignment?.wrapText).toBeFalsy();
+    for (const addr of ["F29", "G29", "C30", "E30"]) expect(report.getCell(addr).value ?? null).toBeNull();
+    expect(report.getRow(28).hidden).toBe(true);
+    expect(report.pageSetup.printArea).toBe("A1:I38");
+  });
+
+  it("fills the detail page's Budget and Previously Billed columns row by row", () => {
+    const sc = wb.getWorksheet("Sub Calc _revised")!;
+    const rows = (col: string) => round2([11, 12, 23, 24, 43, 49].reduce((s, r) => s + (num(sc, `${col}${r}`) || 0), 0));
+    expect(num(sc, "G11")).toBeGreaterThan(0);
+    expect(num(sc, "G12")).toBeGreaterThan(0);
+    expect(num(sc, "I11")).toBeGreaterThan(0);
+    expect(num(sc, "I12")).toBeGreaterThan(0);
+    // The rows add up to the totals printed under them.
+    expect(rows("G")).toBe(156185.34);
+    expect(rows("I")).toBe(152693.26);
+    expect(num(sc, "G51")).toBe(156185.34);
+    // % Expended on the "Total" rows only; the block subtotal printed 1.14532…
+    expect(sc.getCell("K14").value ?? null).toBeNull();
+    expect(num(sc, "K20")).toBeCloseTo(178840.23 / 156142.53, 1);
+    expect(sc.getCell("K20").numFmt).toBe("0.0%");
+  });
+
+  it("prints the budget by cost category as the biller entered it", async () => {
+    const base = makeCtx();
+    const { wb: entered } = await buildWspWorkbook({
+      ...base,
+      workPlan: {
+        ...base.workPlan,
+        budgetLabor: 66000,
+        budgetOverhead: 79000,
+        budgetFixedFee: 11000,
+        budgetFccm: 185.34,
+      } as PackageDocContext["workPlan"],
+    });
+    const sc = entered.getWorksheet("Sub Calc _revised")!;
+    expect(num(sc, "G11")).toBe(66000);
+    expect(num(sc, "G12")).toBe(79000);
+    expect(num(sc, "G43")).toBe(11000);
+    expect(num(sc, "G49")).toBe(185.34);
+    expect(num(sc, "G51")).toBe(156185.34);
   });
 });

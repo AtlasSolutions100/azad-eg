@@ -11,7 +11,13 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
   settleTimesheetSignature,
+  formatHoursUniformly,
+  setNumberFormat,
+  MONEY_FORMAT,
+  shrinkCellToFit,
+  wrapWords,
 } from "./excel";
+import { detailColumns } from "./detailColumns";
 import { knownHeader } from "./knownInvoiceHeaders";
 import { buildWspLinesWorkbook, isWspLinesForm } from "./wspLinesWorkbook";
 import { contributorKey } from "./packageMappers";
@@ -131,6 +137,9 @@ const SUBCALC_SUBTOTALS: ReadonlyArray<readonly [number, number, number]> = [
   [41, 39, 40], // Total PMAC
   [47, 42, 46], // Total Fixed Fee
 ];
+
+/** The subtotal rows that state a "% Expended": Total Labor, ODC, Fixed Fee. */
+const SUBCALC_PERCENT_ROWS: readonly number[] = [20, 31, 47];
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -505,6 +514,30 @@ function fillTimesheet(
   // TOTAL HOURS row (16 in the cloned layout): column sums + grand total.
   for (const col of dayCols) setVal(ws, `${col}16`, round2(colTotals[col]));
   setVal(ws, "N16", round2(grandTotal));
+
+  // One number of decimals for every hours figure on the sheet.
+  const hourCells: string[] = [];
+  for (const r of [9, 10, 11, 12, 13, 14, 15, 16]) {
+    for (const col of [...dayCols, "N"]) hourCells.push(`${col}${r}`);
+  }
+  formatHoursUniformly(ws, hourCells);
+  // The day headings as "8/29": the full date in bold filled its cell edge to
+  // edge. And the labels that lost their ends — "ntract / Workpl",
+  // "Assistant Resident Engineer - Strai" — fit their cells.
+  for (const col of dayCols) setNumberFormat(ws, `${col}6`, "m/d");
+  shrinkCellToFit(ws, "A7");
+  for (const r of [9, 11, 12]) shrinkCellToFit(ws, `C${r}`);
+  // The TOTAL column is bold except on the PTO row, and the two leave labels
+  // are a size larger than the rows above them.
+  const totalFont = ws.getCell("N9").style.font;
+  for (const r of [10, 11, 12, 13, 14, 15]) {
+    const cell = ws.getCell(`N${r}`);
+    cell.style = { ...cell.style, font: { ...cell.style.font, bold: totalFont?.bold ?? true } };
+  }
+  for (const r of [13, 14]) {
+    const cell = ws.getCell(`C${r}`);
+    cell.style = { ...cell.style, font: { ...cell.style.font, size: 10 } };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -710,37 +743,35 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   // Previously Billed (I). We carry a scalar forward, so unused leaves are zero
   // (never left as template constants) and the scalar lands on the field-labor
   // row unless the work plan supplies an explicit per-category split.
+  // (Now on every row, not one lump on the labor line: see detailColumns.)
+  const cols = detailColumns(ctx, fin);
+  // The block this period's labor is in carries the history too.
+  const laborRow = fieldIsBilling || hoursAt("home") === 0 ? 11 : 7;
+  const fccmRow = laborRow === 11 ? 49 : 48;
   const previouslyBilledRows: Record<number, number> = {};
   for (const r of Object.keys(amountThisPeriod)) previouslyBilledRows[Number(r)] = 0;
-  const prevSplit =
-    wp.prevBilledLabor != null ||
-    wp.prevBilledOverhead != null ||
-    wp.prevBilledFixedFee != null ||
-    wp.prevBilledFccm != null;
-  if (prevSplit) {
-    previouslyBilledRows[11] = round2(wp.prevBilledLabor ?? 0);
-    previouslyBilledRows[12] = round2(wp.prevBilledOverhead ?? 0);
-    previouslyBilledRows[43] = round2(wp.prevBilledFixedFee ?? 0);
-    previouslyBilledRows[49] = round2(wp.prevBilledFccm ?? 0);
-  } else if (fin.previouslyBilled !== 0) {
-    previouslyBilledRows[11] = fin.previouslyBilled;
-  }
+  previouslyBilledRows[laborRow] = cols.previous.labor;
+  previouslyBilledRows[laborRow + 1] = cols.previous.fringe;
+  previouslyBilledRows[23] = cols.previous.odc;
+  previouslyBilledRows[24] = cols.previous.premium;
+  previouslyBilledRows[43] = cols.previous.fee;
+  previouslyBilledRows[fccmRow] = cols.previous.fccm;
 
   // Budget (G) per row. The work plan stores a total; the per-category split is
   // optional and only the biller can supply it, so the column stays blank
   // rather than showing a back-solved figure that would not tie to the
   // contract. The total (G51) and remaining balance (G52) are always stated.
+  //
+  // The split is what the biller entered with the budget (the pencil on a
+  // package); until one is entered it is worked out from the total at this
+  // work plan's rates, so the column is not empty in the meantime.
   const budgetRows: Record<number, number> = {};
-  if (
-    wp.budgetLabor != null ||
-    wp.budgetOverhead != null ||
-    wp.budgetFixedFee != null ||
-    wp.budgetFccm != null
-  ) {
-    budgetRows[11] = round2(wp.budgetLabor ?? 0);
-    budgetRows[12] = round2(wp.budgetOverhead ?? 0);
-    budgetRows[43] = round2(wp.budgetFixedFee ?? 0);
-    budgetRows[49] = round2(wp.budgetFccm ?? 0);
+  if (fin.budget > 0) {
+    budgetRows[laborRow] = cols.budget.labor;
+    budgetRows[laborRow + 1] = cols.budget.fringe;
+    if (cols.budget.odc) budgetRows[23] = cols.budget.odc;
+    budgetRows[43] = cols.budget.fee;
+    if (cols.budget.fccm) budgetRows[fccmRow] = cols.budget.fccm;
   }
 
   // Written UNROUNDED, as the reference workbook's own formulas leave them: the
@@ -769,7 +800,17 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
     setVal(subcalc, `J${row}`, period + prev);
     if (budgeted > 0) {
       setVal(subcalc, `G${row}`, budgeted);
-      setVal(subcalc, `K${row}`, (period + prev) / budgeted);
+      // % Expended goes on the "Total …" rows, as on hers. The block subtotals
+      // above them have no percent format, and printed "0.78078237".
+      if (SUBCALC_PERCENT_ROWS.includes(row)) {
+        setVal(subcalc, `K${row}`, (period + prev) / budgeted);
+        const pctCell = subcalc.getCell(`K${row}`);
+        pctCell.style = {
+          ...pctCell.style,
+          numFmt: "0.0%",
+          alignment: { ...pctCell.style.alignment, horizontal: "center" },
+        };
+      }
     }
   }
 
@@ -808,6 +849,10 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   headings.height = Math.max(headings.height ?? 0, 30);
   const expended = subcalc.getColumn("K");
   expended.width = Math.max(expended.width ?? 0, 11);
+  // "Home & Branch (H&B", "Fringe Benefits on Labc": the row labels run from
+  // column A into the hours box and lost their last letters to it.
+  const labelRoom = subcalc.getColumn("C");
+  labelRoom.width = Math.max(labelRoom.width ?? 0, 17.5);
 
   // -- 3. Sub Labor (per-employee lines). Clear both blocks, then write rows.
   //
@@ -820,13 +865,29 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   for (let r = 1; r <= 31; r++) {
     for (const col of SUBLABOR_SCRATCH_COLS) clearCell(sublabor, `${col}${r}`);
   }
-  sublabor.pageSetup = { ...sublabor.pageSetup, printArea: "$A$1:$H$29" };
+  // The attachment is Classification / Name / Hours / Rate / Amount, columns B
+  // to F, as on the one she sends. Column A is a row-has-hours flag ("1", "0")
+  // and column H a "Billed $" working column with the burdened figures; both
+  // printed ("Please delete the column that says billed").
+  sublabor.pageSetup = { ...sublabor.pageSetup, printArea: "$B$1:$F$29" };
+  sublabor.getColumn("A").hidden = true;
+  for (let r = 1; r <= 33; r++) {
+    clearCell(sublabor, `A${r}`);
+    clearCell(sublabor, `G${r}`);
+    clearCell(sublabor, `H${r}`);
+  }
+  // "Hours" is right-aligned hard against "Rate/Hour": "HoursRate/Hour".
+  const hoursHeading = sublabor.getCell("D5");
+  hoursHeading.style = {
+    ...hoursHeading.style,
+    alignment: { ...hoursHeading.style.alignment, horizontal: "center" },
+  };
+  const rateCol = sublabor.getColumn("E");
+  rateCol.width = Math.max(rateCol.width ?? 0, 11.5);
   setVal(sublabor, "B1", firmName);
   setVal(sublabor, "F1", pkg.invoiceDate ? toDate(pkg.invoiceDate) : "");
   setVal(sublabor, "F2", invoiceNo);
   setVal(sublabor, "F3", wp.code);
-  setVal(sublabor, "H6", round2(fin.fringeFrac)); // home fringe fraction
-  setVal(sublabor, "H19", round2(fin.fringeFrac)); // field fringe fraction
   writeLaborBlock(sublabor, fin, "home", { start: 7, end: 17, subtotal: 18 });
   writeLaborBlock(sublabor, fin, "field", { start: 20, end: 25, subtotal: 26 });
   // TOTAL LABOR (row 29) and the ODC / grand rows.
@@ -834,10 +895,12 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
     fin.laborRows.reduce((s, r) => s + r.hours, 0),
   );
   const totalAmount = round2(fin.home.directLabor + fin.field.directLabor);
-  const burden = (1 + fin.fringeFrac) * (1 + fin.feeFrac);
   setVal(sublabor, "D29", totalHours);
   setVal(sublabor, "F29", totalAmount);
-  setVal(sublabor, "H29", round2(totalAmount * burden));
+  // Money reads as money and hours as hours. The accounting format parks its
+  // "$" at the far left of the cell, where it sat against the hours in the
+  // next column: "128.00 $   83.00" ("There's funky dollar signs here").
+  for (const r of [18, 26, 29]) setNumberFormat(sublabor, `F${r}`, MONEY_FORMAT);
   // Rows 30-31 were a reconciliation strip below TOTAL LABOR — two burdened
   // figures whose only labels ("ODC", "manual") lived in the notes column we
   // clear above, leaving bare numbers under the total. The attachment ends at
@@ -845,25 +908,22 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   for (let r = 30; r <= 31; r++) {
     for (const col of ["A", ...LABOR_COLS]) clearCell(sublabor, `${col}${r}`);
   }
-  // Column A carries a one-per-row "does this line have hours" flag, written in
-  // the template as `=IF(D7=0,"0","1")`. Evaluate it against the lines we just
-  // wrote; left as a formula it printed the reference workbook's flags.
-  for (let r = 5; r <= 31; r++) {
-    const flag = sublabor.getCell(`A${r}`).value;
-    if (!flag || typeof flag !== "object") continue;
-    const hours = sublabor.getCell(`D${r}`).value;
-    setVal(sublabor, `A${r}`, typeof hours === "number" && hours !== 0 ? "1" : "0");
-  }
 
   // -- 4. Progress Report: header, period, dates, narrative, percent expended.
   const reportDate = ctx.progress?.reportDate || pkg.invoiceDate;
   setVal(report, "B2", `Agreement No. ${wp.agreementNo ?? ""}`.trim());
   setVal(report, "B6", `Work Plan ${wp.code}`);
   setVal(report, "E6", wp.poNumber || "");
+  const mdy = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  // Under the title goes the period the report covers, as on hers
+  // ("5/30/2026 to 6/30/2026"), not a second copy of the invoice date.
+  setVal(report, "B4", `${mdy(toDate(pkg.payPeriodStart))} to ${mdy(toDate(pkg.payPeriodEnd))}`);
   if (reportDate) {
     setVal(report, "I6", toDate(reportDate));
-    setVal(report, "B4", toDate(reportDate));
     setVal(report, "G35", toDate(reportDate));
+  } else {
+    clearCell(report, "I6");
+    clearCell(report, "G35");
   }
   setVal(report, "B7", wp.title || "");
   setVal(report, "G7", toDate(pkg.payPeriodStart));
@@ -881,21 +941,33 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
       .map((p) => p.name)
       .join(", ")}`,
   );
-  for (let r = 11; r <= 18; r++) {
+  const NARRATIVE = { first: 11, last: 20 };
+  for (let r = NARRATIVE.first; r <= NARRATIVE.last; r++) {
     clearCell(report, `B${r}`);
     clearCell(report, `C${r}`);
   }
+  // Every line the PM wrote goes on the report. It used to stop at eight, and
+  // a long line ran straight through the box's right-hand edge. Each bullet is
+  // wrapped to the width of the box; when there are more lines than the form
+  // has rows, the last row grows to hold the rest.
   const narrative = (ctx.progress?.workPerformed || ctx.progress?.summary || "").trim();
-  const lines = narrative
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .slice(0, 8);
-  let rr = 11;
-  for (const line of lines) {
-    setVal(report, `B${rr}`, "•");
-    setVal(report, `C${rr}`, line.replace(/^[-•·*]\s*/, ""));
-    rr += 1;
+  const physical: Array<{ bullet: boolean; text: string }> = [];
+  for (const line of narrative.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+    wrapWords(line.replace(/^[-•·*]\s*/, ""), 92).forEach((text, i) => physical.push({ bullet: i === 0, text }));
+  }
+  const rowsAvailable = NARRATIVE.last - NARRATIVE.first + 1;
+  const single = physical.length <= rowsAvailable ? physical : physical.slice(0, rowsAvailable - 1);
+  single.forEach((p, i) => {
+    if (p.bullet) setVal(report, `B${NARRATIVE.first + i}`, "•");
+    setVal(report, `C${NARRATIVE.first + i}`, p.text);
+  });
+  const rest = physical.slice(single.length);
+  if (rest.length > 0) {
+    const last = report.getCell(`C${NARRATIVE.last}`);
+    report.mergeCells(`C${NARRATIVE.last}:H${NARRATIVE.last}`);
+    last.value = rest.map((p) => `${p.bullet ? "•  " : "    "}${p.text}`).join("\n");
+    last.style = { ...last.style, alignment: { ...last.style.alignment, wrapText: true, vertical: "top" } };
+    report.getRow(NARRATIVE.last).height = 15.75 * rest.length;
   }
   setVal(report, "C22", (ctx.progress?.concerns || "").trim() || "N/A");
   setVal(report, "C25", (ctx.progress?.correctiveAction || "").trim() || "N/A");
@@ -906,14 +978,65 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
   // than restated from another work plan's schedule.
   clearCell(report, "B28");
   clearCell(report, "K28");
+  // …and the emptied row is hidden: it kept its grey fill, a bar across the page.
+  report.getRow(28).hidden = true;
   const pct =
     ctx.progress?.percentComplete != null
       ? round2(ctx.progress.percentComplete / 100)
       : round2(fin.percentExpended);
   setVal(report, "E26", pct);
-  setVal(report, "F29", fin.budget);
-  setVal(report, "D30", fin.totalToDate);
-  setVal(report, "E30", fin.budget > 0 ? round2(fin.totalToDate / fin.budget) : 0);
+  // The cost forecast was a sentence assembled from six cells, and printed
+  // with its figures adrift of its words ("…budget is        $ 850,000.00 .").
+  // Written as the two sentences it is.
+  const money = (n: number) =>
+    `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const billedPct = fin.budget > 0 ? Math.round((fin.totalToDate / fin.budget) * 100) : 0;
+  setVal(report, "B29", `Cost Forecast at Completion:  Current approved budget is ${money(fin.budget)}.`);
+  try {
+    report.unMergeCells("B30:C30");
+  } catch {
+    // not merged in this copy of the template
+  }
+  setVal(report, "B30", `Through this invoice, ${money(fin.totalToDate)} (${billedPct}%) has been billed.`);
+  for (const addr of ["F29", "G29", "C30", "D30", "E30", "F30"]) clearCell(report, addr);
+  // B30 wraps, in a column a few characters wide: only "billed." showed.
+  const second = report.getCell("B30");
+  second.style = {
+    ...second.style,
+    alignment: { ...second.style.alignment, wrapText: false, horizontal: "left", vertical: "middle" },
+  };
+  report.getRow(30).height = Math.max(report.getRow(30).height ?? 0, 18);
+
+  // The frame. The report is one box, columns A to I, with A as its left
+  // margin. The reference sheet also draws a line down the inside of that
+  // margin, closes the title off in a box of its own, and the print area
+  // stopped two rows short of the bottom edge — so the page came out as a
+  // narrow strip down the left with an open-ended box beside it ("Please fix
+  // the formatting so it looks good").
+  for (let r = 1; r <= 38; r++) {
+    for (const col of ["A", "B", "C", "D", "E", "F", "G", "H", "I"]) {
+      const cell = report.getCell(`${col}${r}`);
+      const border = { ...(cell.style.border ?? {}) };
+      if (col === "B") delete border.left; // the line inside the margin
+      if (col === "A") delete border.right;
+      if (r === 2) delete border.top; // the line boxing the title in
+      if (r === 1) border.top = { style: "thin" };
+      if (r === 38) border.bottom = { style: "thin" };
+      if (col === "A") border.left = { style: "thin" };
+      if (col === "I") border.right = { style: "thin" };
+      if (col === "A") {
+        // The rules under the title carry on across the margin at the same
+        // weight, instead of thinning out for its width.
+        const beside = report.getCell(`B${r}`).style.border ?? {};
+        if (r >= 5 && r <= 8) {
+          if (beside.top) border.top = beside.top;
+          if (beside.bottom) border.bottom = beside.bottom;
+        }
+      }
+      cell.style = { ...cell.style, border };
+    }
+  }
+  report.pageSetup = { ...report.pageSetup, printArea: "$A$1:$I$38" };
 
   // -- 5. Remove internal sheets + template week tabs, then sever any straggler
   // formulas/defined names that still pointed at them.
@@ -945,9 +1068,22 @@ export async function buildWspWorkbook(ctx: PackageDocContext): Promise<WspBuild
       fillTimesheet(ws, week, ctx, person);
       // The template's timesheets carry Jordy Peralta's signature; only that
       // person's own timesheet may keep it.
-      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures);
+      // …and anyone else's starts clear of the words "Submitted by:", which
+      // the template's own signature leaves room for inside its picture.
+      settleTimesheetSignature(ws, person.name, TEMPLATE_SIGNER, ctx.employeeSignatures, { shiftRightPx: 26 });
       timesheetTabs.push(name);
     }
+  });
+
+  // Page order: the labor attachment comes before the progress report, as in
+  // the packet she sends ("This page should be before progress report").
+  const front = [INVOICE_SHEET, SUBCALC_SHEET, SUBLABOR_SHEET, PROGRESS_SHEET];
+  const ordered = [
+    ...front.map((n) => wb.getWorksheet(n)).filter((w): w is ExcelJS.Worksheet => !!w),
+    ...wb.worksheets.filter((w) => !front.includes(w.name)),
+  ];
+  ordered.forEach((w, i) => {
+    (w as unknown as { orderNo: number }).orderNo = i;
   });
 
   // -- 7. Finalize: scrub internal marks, recalc on load, Invoice active tab.
@@ -1034,23 +1170,28 @@ function writeLaborBlock(
   }
   const rows = fin.laborRows.filter((r) => r.location === location);
   const cap = block.end - block.start + 1;
-  const burden = (1 + fin.fringeFrac) * (1 + fin.feeFrac);
   let hours = 0;
   let amount = 0;
-  let billed = 0;
   rows.slice(0, cap).forEach((r, i) => {
     const row = block.start + i;
     const amt = round2(r.hours * r.rate);
-    const bill = round2(amt * burden);
     setVal(ws, `B${row}`, r.classification);
     setVal(ws, `C${row}`, r.employeeName);
     setVal(ws, `D${row}`, r.hours);
     setVal(ws, `E${row}`, r.rate);
     setVal(ws, `F${row}`, amt);
-    setVal(ws, `H${row}`, bill);
+    setNumberFormat(ws, `D${row}`, "0.00");
+    setNumberFormat(ws, `E${row}`, MONEY_FORMAT);
+    setNumberFormat(ws, `F${row}`, MONEY_FORMAT);
+    // The rate cell alone is centred top-to-bottom, so it printed a little
+    // above the hours and amount either side of it.
+    const hoursCell = ws.getCell(`D${row}`);
+    for (const col of ["E", "F"]) {
+      const cell = ws.getCell(`${col}${row}`);
+      cell.style = { ...cell.style, alignment: { ...hoursCell.style.alignment, horizontal: "right" } };
+    }
     hours += r.hours;
     amount += amt;
-    billed += bill;
   });
   if (rows.length > cap) {
     logger.warn(
@@ -1060,7 +1201,6 @@ function writeLaborBlock(
   }
   setVal(ws, `D${block.subtotal}`, round2(hours));
   setVal(ws, `F${block.subtotal}`, round2(amount));
-  setVal(ws, `H${block.subtotal}`, round2(billed));
 }
 
 /**

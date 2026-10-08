@@ -13,10 +13,15 @@ import {
   scrubInternalMarks,
   stripBrokenDefinedNames,
   settleTimesheetSignature,
+  formatHoursUniformly,
+  setNumberFormat,
+  MONEY_FORMAT,
   personKey,
   shrinkCellToFit,
 } from "./excel";
-import { agreementLine, knownBurden, knownHeader, type DetailParts } from "./knownInvoiceHeaders";
+import { agreementLine, knownHeader, type DetailParts } from "./knownInvoiceHeaders";
+import { detailColumns } from "./detailColumns";
+export { splitDetailTotal } from "./detailColumns";
 import { contributorKey } from "./packageMappers";
 import { burdenOnFringeLine } from "./billingProfile";
 import { logger } from "./logger";
@@ -574,6 +579,11 @@ function fillTimesheet(
   // TOTAL HOURS row (14): column sums + grand total.
   for (const col of DAY_COLS) setVal(ws, `${col}14`, round2(colTotals[col]));
   setVal(ws, "O14", round2(grandTotal));
+  // One number of decimals for every hours figure on the sheet (see
+  // formatHoursUniformly): whole hours print with none.
+  const hourCells: string[] = [];
+  for (let r = 8; r <= 14; r++) for (const col of [...DAY_COLS, "O"]) hourCells.push(`${col}${r}`);
+  formatHoursUniformly(ws, hourCells);
 }
 
 // ---------------------------------------------------------------------------
@@ -619,111 +629,6 @@ function byRoster(order: string[]): (a: string, b: string) => number {
     return i < 0 ? order.length : i;
   };
   return (a, b) => rank(a) - rank(b) || a.localeCompare(b);
-}
-
-const NO_PARTS: DetailParts = { labor: 0, fringe: 0, odc: 0, premium: 0, fee: 0, fccm: 0, total: 0 };
-
-/**
- * Splits a known total into the detail page's rows at the given burden: labor,
- * fringe on it, the fee on both, FCCM on the labor. Any cent of rounding is
- * left on the labor so the rows add up to the total.
- */
-export function splitDetailTotal(
-  total: number,
-  r: { fringeFrac: number; overheadFrac: number; feeFrac: number; fccmFrac: number },
-): DetailParts {
-  const burden = r.fringeFrac + r.overheadFrac;
-  const multiplier = (1 + burden) * (1 + r.feeFrac) + r.fccmFrac;
-  if (!(total > 0) || multiplier <= 0) return { ...NO_PARTS };
-  const labor = round2(total / multiplier);
-  const fringe = round2(labor * burden);
-  const fee = round2((labor + fringe) * r.feeFrac);
-  const fccm = round2(labor * r.fccmFrac);
-  const residue = round2(total - (labor + fringe + fee + fccm));
-  return { labor: round2(labor + residue), fringe, odc: 0, premium: 0, fee, fccm, total: round2(total) };
-}
-
-function addParts(a: DetailParts, b: DetailParts): DetailParts {
-  return {
-    labor: round2(a.labor + b.labor),
-    fringe: round2(a.fringe + b.fringe),
-    odc: round2(a.odc + b.odc),
-    premium: round2(a.premium + b.premium),
-    fee: round2(a.fee + b.fee),
-    fccm: round2(a.fccm + b.fccm),
-    total: round2(a.total + b.total),
-  };
-}
-
-/**
- * The detail page's Budget and Previously Billed columns, row by row.
- *
- * Julie's page fills all four money columns on every row; ours printed only
- * the totals ("Not seeing any information populated in the Budget, Previously
- * billed or amount to date field"). Procas knows the totals but not the rows.
- * In order of preference:
- *
- *  - the split typed on the Work Plan screen (Budget / Previously billed by
- *    cost category), which is exact;
- *  - her last invoice's own rows, for whatever of the total it accounts for;
- *  - the remainder split at the burden of the periods it was billed in. That
- *    part is arithmetic: it puts everything billed since her invoice on the
- *    labor, fringe and fee rows, and cannot know how much of it was overtime
- *    premium. The column totals are exact either way.
- */
-export function tylinDetailColumns(
-  ctx: PackageDocContext,
-  fin: TylinFinancials,
-  pastRates: { fringeFrac: number; overheadFrac: number; feeFrac: number; fccmFrac: number },
-): { budget: DetailParts; previous: DetailParts } {
-  const wp = ctx.workPlan;
-  const anchor = knownHeader((wp as { procasProject?: string | null }).procasProject, wp.jobNumber)
-    ?.detailAnchor;
-  const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
-
-  const prev = round2(fin.previouslyBilled);
-  let previous: DetailParts;
-  if (
-    wp.prevBilledLabor != null ||
-    wp.prevBilledOverhead != null ||
-    wp.prevBilledFixedFee != null ||
-    wp.prevBilledFccm != null
-  ) {
-    previous = {
-      labor: round2(wp.prevBilledLabor ?? 0),
-      fringe: round2(wp.prevBilledOverhead ?? 0),
-      odc: 0,
-      premium: 0,
-      fee: round2(wp.prevBilledFixedFee ?? 0),
-      fccm: round2(wp.prevBilledFccm ?? 0),
-      total: prev,
-    };
-  } else {
-    const from = anchor && prev >= anchor.toDate.total - 0.005 && ctx.pkg.payPeriodStart > anchor.through
-      ? anchor.toDate
-      : NO_PARTS;
-    previous = addParts(from, splitDetailTotal(round2(prev - from.total), pastRates));
-    previous.total = prev;
-  }
-
-  const total = fin.budget;
-  let budget: DetailParts;
-  if (wp.budgetLabor != null || wp.budgetOverhead != null || wp.budgetFixedFee != null || wp.budgetFccm != null) {
-    budget = {
-      labor: round2(wp.budgetLabor ?? 0),
-      fringe: round2(wp.budgetOverhead ?? 0),
-      odc: 0,
-      premium: 0,
-      fee: round2(wp.budgetFixedFee ?? 0),
-      fccm: round2(wp.budgetFccm ?? 0),
-      total,
-    };
-  } else if (anchor && near(total, anchor.budget.total)) {
-    budget = anchor.budget;
-  } else {
-    budget = splitDetailTotal(total, fin);
-  }
-  return { budget, previous };
 }
 
 /**
@@ -824,6 +729,9 @@ function writeLaborBlock(
     setVal(ws, `C${row}`, r.hours);
     setVal(ws, `D${row}`, r.rate);
     setVal(ws, `E${row}`, amt);
+    // "$89.00", not a "$" adrift beside the hours (see MONEY_FORMAT).
+    setNumberFormat(ws, `D${row}`, MONEY_FORMAT);
+    setNumberFormat(ws, `E${row}`, MONEY_FORMAT);
     hours += r.hours;
     amount += amt;
   });
@@ -835,6 +743,8 @@ function writeLaborBlock(
   }
   setVal(ws, block.hoursSubtotal, round2(hours));
   setVal(ws, block.amountSubtotal, round2(amount));
+  // An empty block keeps the template's dash.
+  if (amount > 0) setNumberFormat(ws, block.amountSubtotal, MONEY_FORMAT);
 }
 
 /**
@@ -1067,17 +977,8 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
     clearCell(subinv, `I${r}`);
   }
   // Budget (G), Previously Billed (I) and Amount To Date (J) on every row, and
-  // % Expended (K) on the section totals — see tylinDetailColumns.
-  const pastRates = {
-    ...burdenOnFringeLine(
-      knownBurden([(wp as { procasProject?: string | null }).procasProject, wp.jobNumber], priorDay(pkg.payPeriodStart)) ?? wp,
-    ),
-    feeFrac: fin.feeFrac,
-    fccmFrac:
-      (knownBurden([(wp as { procasProject?: string | null }).procasProject, wp.jobNumber], priorDay(pkg.payPeriodStart))
-        ?.fccmRate ?? wp.fccmRate ?? 0) / 100,
-  };
-  const cols = tylinDetailColumns(ctx, fin, pastRates);
+  // % Expended (K) on the section totals — see detailColumns.
+  const cols = detailColumns(ctx, fin);
   const current: DetailParts = {
     labor: round2(fin.home.directLabor + fin.field.directLabor),
     fringe: round2(fin.home.fringe + fin.home.overheadPool + fin.field.fringe + fin.field.overheadPool),
@@ -1138,6 +1039,7 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
   const totalLaborAmount = round2(fin.home.directLabor + fin.field.directLabor);
   setVal(sublabor, "C38", totalLaborHours);
   setVal(sublabor, "E38", totalLaborAmount);
+  if (totalLaborAmount > 0) setNumberFormat(sublabor, "E38", MONEY_FORMAT);
   // Row 38 also carried Julie's own reconciliation scratch — `=59250.7-E38` in
   // H38 and the bare label "ODC" in I38 — parked to the right of TOTAL LABOR
   // and outside both labor blocks, so nothing ever cleared it. It printed on
@@ -1349,13 +1251,6 @@ export async function buildTylinWorkbook(ctx: PackageDocContext): Promise<TylinB
 
   fitSheetsToOnePage(wb);
   return { wb, timesheetTabs, financials: fin };
-}
-
-/** The day before a YYYY-MM-DD date: the last day of the previous period. */
-function priorDay(date: string): string {
-  const d = toDate(date);
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function homeHours(fin: TylinFinancials): number {
